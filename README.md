@@ -1,6 +1,9 @@
-# AI Student Setup
+# Setup Center
 
-面向普通大学生的一键 AI 环境安装器（Windows 桌面应用）。
+面向普通大学生的桌面环境与常用工具配置器（Windows 桌面应用）。
+
+它安装的软件里包含 AI 工具（Claude、Codex、ChatGPT 等），但这个工具本身不是
+AI 产品：它检测系统环境、按方案安装软件、写入配置并验证结果。
 
 **当前状态：第三阶段完成** —— Execution Engine 已实现并验证：
 程序现在可以真实安装软件，并在安装后重新检测验证。四个阶段已全部落地。
@@ -249,7 +252,7 @@ provider 只能报"证据"和"没有证据"，**不能报"未安装"** —— �
 |---|---|---|
 | Windows 版本 | `[System.Environment]::OSVersion` | `cmd ver` 在现代 Windows 上被兼容性垫片固定返回 `10.0.0`，**不可用**；注册表 `CurrentBuildNumber` 是 `REG_SZ` 在部分版本上类型不一致 |
 | 管理员权限 | `net session` + `whoami /groups` | 同时区分"已提权"与"在管理员组但没提权"，后者能给出更准确的建议 |
-| 磁盘空间 | `.NET DriveInfo` | `fsutil volume diskfree` **需要管理员权限**，普通学生会拿到 `Error 5`；写入测试针对 `%LOCALAPPDATA%\AI Student Setup` 而不是盘根（盘根写入被系统拒绝，会把健康机器误判为不可用） |
+| 磁盘空间 | `.NET DriveInfo` | `fsutil volume diskfree` **需要管理员权限**，普通学生会拿到 `Error 5`；写入测试针对 `%LOCALAPPDATA%\Setup Center` 而不是盘根（盘根写入被系统拒绝，会把健康机器误判为不可用） |
 | 网络 | 裸 TCP 连接（无 HTTP 依赖） | 分别探测 winget CDN / github / claude.ai；校园网认证墙是真实故障场景 |
 
 ---
@@ -352,7 +355,7 @@ Codex           0.153.4           onPath ✅    …\hermes\node\codex.cmd
 |---|---|---|---|
 | 1 | `currentBuildNumber` 按 `REG_DWORD` 读取 | 识别为 Windows 10 / build 10.0.0 | 改用 `OSVersion`，并在 `cmd ver` 回退里拒绝 build==0 |
 | 2 | `fsutil` 需要提权 | 磁盘显示 0 GB，误报"不可写" | 改用 `.NET DriveInfo` |
-| 3 | 写测试打在盘根 | 健康机器被判"系统盘不可写" | 改测 `%LOCALAPPDATA%\AI Student Setup` |
+| 3 | 写测试打在盘根 | 健康机器被判"系统盘不可写" | 改测 `%LOCALAPPDATA%\Setup Center` |
 | 4 | `index.html` 内联脚本 | 打包后 CSP 拦截，且削弱 CSP 是更差的交换 | 移到 `main.tsx` |
 | 5 | 当前步骤回退用 `findIndex(...)` 的 `-1` | 面板显示"…"且计数变成 7/7 | 显式处理 `firstPending < 0` |
 | 6 | 计数器用 preview 长度 | 方案 4 项时显示 7/7 | 改用 plan 长度 |

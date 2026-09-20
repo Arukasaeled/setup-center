@@ -3,7 +3,7 @@
     "detected": true,
     "machine": {
       "cpu": "Intel(R) Core(TM) Ultra 7 251HX · 18 线程",
-      "disk": "C:\\Users\\35074\\AppData\\Local\\AI Student Setup 可用 103.0 GB",
+      "disk": "C:\\Users\\35074\\AppData\\Local\\Setup Center 可用 103.0 GB",
       "gpu": "OrayIddDriver Device (显存未知)、NVIDIA GeForce RTX 5060 Laptop GPU (8.0 GB)、Intel(R) Graphics (2.0 GB)、GameViewer Virtual Display Adapter (显存未知)",
       "memory": "15.5 GB",
       "notes": []
@@ -5045,7 +5045,7 @@
         "freeBytes": 110547546112,
         "label": null,
         "lowSpace": false,
-        "root": "C:\\Users\\35074\\AppData\\Local\\AI Student Setup",
+        "root": "C:\\Users\\35074\\AppData\\Local\\Setup Center",
         "totalBytes": 322128834560,
         "writable": true
       }
@@ -8030,7 +8030,7 @@
           "freeBytes": 110547546112,
           "label": null,
           "lowSpace": false,
-          "root": "C:\\Users\\35074\\AppData\\Local\\AI Student Setup",
+          "root": "C:\\Users\\35074\\AppData\\Local\\Setup Center",
           "totalBytes": 322128834560,
           "writable": true
         }
