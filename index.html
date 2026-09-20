@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost" />
+    <title>Setup Center</title>
+    <!--
+      The dark background is applied from main.tsx rather than an inline script
+      here: an inline script is blocked by the CSP in `tauri.conf.json`, and
+      weakening the policy to allow it would be a worse trade than moving one
+      class assignment. `backgroundColor` on the window also prevents a flash.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

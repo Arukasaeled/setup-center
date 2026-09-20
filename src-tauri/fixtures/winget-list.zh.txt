@@ -1,0 +1,8 @@
+名称                                                         ID                                                                                      版本               可用            源
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ChatGPT                                                      MSIX\OpenAI.Codex_26.911.7940.0_x64__2p2nqsd0c76g0                                      26.911.7940.0                      
+Claude                                                       Anthropic.Claude                                                                        1.40609.0.0        1.44121.2       winget
+GitHub CLI                                                   GitHub.cli                                                                              2.100.0            2.101.0         winget
+Microsoft Visual Studio Code (User)                          Microsoft.VisualStudioCode                                                              1.136.2            1.138.0         winget
+Node.js                                                      ARP\Machine\X64\{89850E15-F7D6-476D-972E-F8F5215E4498}                                  24.19.0                            
+Python 3.14.7                                                ARP\User\X64\pymanager-pythoncore-3.14-64                                               3.14-64                            

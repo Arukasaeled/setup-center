@@ -1,0 +1,11 @@
+{
+  "id": "codex",
+  "target": "Codex",
+  "description": "为 Codex CLI 写入中文回复偏好",
+  "file": "%USERPROFILE%\\.codex\\config.toml",
+  "strategy": "textPatch",
+  "settings": {
+    "preferred_language": "zh-CN",
+    "verbosity": "medium"
+  }
+}

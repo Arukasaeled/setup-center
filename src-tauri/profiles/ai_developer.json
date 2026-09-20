@@ -1,0 +1,47 @@
+{
+  "id": "ai_developer",
+  "name": "AI 开发版",
+  "tagline": "要做 Agent 项目，把命令行那套配齐",
+  "audience": "要写 AI 应用、跑 Agent 项目、用 Claude Code 或 Codex 的同学。",
+  "rationale": "在基础版之上补齐两套命令行编程助手所需的运行环境（Node.js、Python），并把 MCP 服务器和编辑器插件配置好。命令行 AI 助手需要 Node.js 才能运行，因此三项必须一起装——只装其中一项会出现「命令找不到」。",
+  "software": ["vscode", "git", "python", "node", "claude_code", "codex"],
+  "configure": ["vscode", "git.baseline", "claude", "codex"],
+  "estimatedMinutes": 18,
+  "estimatedDownloadMb": 1400,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": ["filesystem"],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.powershell",
+        "eamodio.gitlens",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.autoSave": "onFocusChange",
+        "terminal.integrated.defaultProfile.windows": "PowerShell",
+        "git.autofetch": true,
+        "python.analysis.typeCheckingMode": "basic"
+      }
+    },
+    "git": {
+      "configure": true
+    },
+    "mcp": [
+      {
+        "name": "filesystem",
+        "spec": "@modelcontextprotocol/server-filesystem"
+      }
+    ],
+    "skills": [],
+    "localization": ["vscode"]
+  }
+}

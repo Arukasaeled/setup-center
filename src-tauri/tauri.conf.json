@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Setup Center",
+  "version": "0.1.0",
+  "identifier": "app.aistudent.setup",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Setup Center",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#08090B",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "resources": ["profiles/*.json", "localization/*.json", "knowledge/software/*.yaml", "knowledge/concept/*.yaml"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"]
+      }
+    },
+    "shortDescription": "桌面环境与常用工具配置中心",
+    "longDescription": "Setup Center：检测电脑环境、选择配置方案、自动安装与配置常用软件（Git、Python、Node.js、VS Code、Claude、Codex、ChatGPT、Cursor 等）、验证结果并生成报告。"
+  }
+}

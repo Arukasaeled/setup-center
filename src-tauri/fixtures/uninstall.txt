@@ -1,0 +1,6 @@
+Git	2.51.0.1	C:\Program Files\Git	C:\Program Files\Git\git-basics.ico,0	Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Git_is1
+Node.js	24.19.0	C:\Program Files\nodejs\	C:\Program Files\nodejs\node.exe	Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{89850E15-F7D6-476D-972E-F8F5215E4498}
+Python 3.14.7	3.14-64	C:\Users\35111\AppData\Local\Python\pythoncore-3.14-64		Microsoft.PowerShell.Core\Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\pymanager-pythoncore-3.14-64
+Claude		D:\工具软件\Claude	D:\工具软件\Claude\claude.exe	Microsoft.PowerShell.Core\Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Claude
+Microsoft Visual Studio Code (User)	1.136.2	D:\工具软件\Microsoft VS Code	D:\工具软件\Microsoft VS Code\Code.exe	Microsoft.PowerShell.Core\Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{771FD6B0-FA20-440A-A002-3B3BAC16DC50}_is1
+TooFewFields	1.0

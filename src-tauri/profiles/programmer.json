@@ -1,0 +1,43 @@
+{
+  "id": "programmer",
+  "name": "程序员版",
+  "tagline": "计算机专业上课用的一套",
+  "audience": "计算机相关专业、需要写 C/C++ 和 Python 作业、要交课程设计的同学。",
+  "rationale": "按课程需要配齐：编译 C/C++ 的 MSVC 工具链与 CMake、写 Python 的编辑器与插件、以及提交作业必需的 Git 身份配置。不含 AI 命令行助手，因为课程通常不要求。MSVC 编译工具体积较大，是这一套里耗时最长的部分。",
+  "software": ["vscode", "git", "python", "msvc_build_tools", "cmake"],
+  "configure": ["vscode", "git.baseline"],
+  "estimatedMinutes": 25,
+  "estimatedDownloadMb": 2600,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": [],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.cmake-tools",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.autoSave": "onFocusChange",
+        "terminal.integrated.defaultProfile.windows": "PowerShell",
+        "C_Cpp.default.cppStandard": "c++17",
+        "C_Cpp.default.cStandard": "c17"
+      }
+    },
+    "git": {
+      "configure": true
+    },
+    "mcp": [],
+    "skills": [],
+    "localization": ["vscode"]
+  }
+}

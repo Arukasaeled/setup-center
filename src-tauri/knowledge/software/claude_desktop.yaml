@@ -1,0 +1,19 @@
+id: claude_desktop
+name: Claude Desktop
+category: AI 工具
+description: 桌面版 Claude 对话应用，不写代码也能用。
+purpose:
+  - 查资料、改作文、翻译、解释概念
+  - 通过 MCP 连接本地文件，问它关于自己电脑里的内容
+  - 不需要任何编程基础
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - MCP 服务器
+studentExplanation: |
+  这是最省事的 AI 工具：装完打开就能用，不需要命令行，也不需要配置。
+  如果你现在只是想有个 AI 帮忙写作业、查资料，装这一个就够了。
+  它支持 MCP，也就是说以后你装了本工具提供的 MCP 服务器之后，
+  可以直接问它"帮我看看下载文件夹里那个 PDF 讲了什么"。
+versions: []

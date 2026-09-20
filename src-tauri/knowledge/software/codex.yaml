@@ -1,0 +1,21 @@
+id: codex
+name: Codex
+category: AI 工具
+description: OpenAI 的 AI 编程助手。
+purpose:
+  - 在命令行或编辑器里让 AI 写代码
+  - 自动完成多步骤的编码任务
+  - 与 VS Code 集成使用
+relatedCapabilities:
+  - ai-cli-assistant
+dependsOn:
+  - node
+commonlyUsedBy:
+  - VS Code
+  - Git
+studentExplanation: |
+  Codex 和 Claude Code 定位类似，都是能直接操作项目文件的 AI 编程助手，
+  区别主要在背后的模型和交互习惯。两者可以同时安装，你可以在不同任务上
+  选择更顺手的一个。使用前需要登录 OpenAI 账号。
+  它的桌面版通过官方安装包分发，不在 winget 仓库里，本工具会从官方地址下载。
+versions: []

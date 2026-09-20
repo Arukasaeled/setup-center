@@ -1,0 +1,10 @@
+id: cuda
+name: CUDA
+category: 概念
+summary: NVIDIA 显卡的并行计算平台，让显卡参与 AI 模型计算。
+whyItMatters: >
+  显卡做矩阵运算比 CPU 快很多，训练和运行大模型基本都依赖它。
+  只有 NVIDIA 显卡支持 CUDA，AMD 和 Intel 显卡有各自的方案，兼容性相对差一些。
+  如果你要做深度学习，优先选择带 NVIDIA 独立显卡的电脑。
+relatedCapabilities:
+  - local-model-inference

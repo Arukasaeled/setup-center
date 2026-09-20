@@ -1,0 +1,47 @@
+{
+  "id": "ai_engineer",
+  "name": "AI 开发版 + 桌面应用",
+  "tagline": "开发版再加桌面版 Claude，什么都齐了",
+  "audience": "做 AI 相关项目、需要同时用多个 AI 编程工具的同学",
+  "rationale": "在编程方案的基础上补齐 Node.js、Claude Code 与 Codex 两套命令行助手，并配置 MCP 服务器与编辑器插件。安装内容最多，耗时长、占用空间大。",
+  "software": ["vscode", "git", "python", "node", "claude_desktop", "claude_code", "codex"],
+  "configure": ["vscode", "git.baseline", "claude", "codex"],
+  "estimatedMinutes": 18,
+  "estimatedDownloadMb": 1400,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": ["filesystem"],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.powershell",
+        "eamodio.gitlens",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.autoSave": "onFocusChange",
+        "terminal.integrated.defaultProfile.windows": "PowerShell",
+        "git.autofetch": true,
+        "python.analysis.typeCheckingMode": "basic"
+      }
+    },
+    "git": {
+      "configure": true
+    },
+    "mcp": [
+      {
+        "name": "filesystem",
+        "spec": "@modelcontextprotocol/server-filesystem"
+      }
+    ],
+    "skills": [],
+    "localization": ["vscode"]
+  }
+}

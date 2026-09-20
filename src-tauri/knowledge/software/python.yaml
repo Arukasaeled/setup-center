@@ -1,0 +1,35 @@
+id: python
+name: Python
+category: 编程语言
+description: AI 领域最常用的编程语言，语法简单，生态庞大。
+purpose:
+  - 写数据分析脚本、跑课程实验
+  - 调用大模型接口，做自己的 AI 小工具
+  - 几乎所有 AI 教程都默认使用 Python
+relatedCapabilities:
+  - python-development
+  - ai-agent-development
+dependsOn: []
+commonlyUsedBy:
+  - VS Code
+  - Claude Code
+studentExplanation: |
+  Python 是入门 AI 的首选语言。它的语法接近英语，不需要先学复杂的内存管理，
+  可以把注意力放在解决问题上。目前主流的 AI 框架、教程和开源项目基本都提供
+  Python 接口，遇到问题时能搜到的答案也最多。
+  装好之后建议在命令行里运行 python --version 确认能调用，如果提示找不到命令，
+  通常重新打开一次终端就可以了。
+versions:
+  - topic: AI 生态兼容性
+    versions:
+      - "3.13"
+      - "3.14"
+    note: >
+      较新的 Python 版本发布后，部分 AI 相关的第三方库需要一段时间才会提供
+      对应的安装包。3.11 和 3.12 目前被支持得最完整，遇到某个库装不上时，
+      换用这两个版本通常可以直接解决。这不是错误，只是版本更新的正常节奏。
+  - topic: 版本共存
+    versions: []
+    note: >
+      一台电脑上可以同时安装多个 Python 版本，它们不会互相覆盖。
+      如果课程要求特定版本，两者并存即可。

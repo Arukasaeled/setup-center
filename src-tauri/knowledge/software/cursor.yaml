@@ -1,0 +1,20 @@
+id: cursor
+name: Cursor
+category: 编辑器
+description: 基于 VS Code 深度改造的 AI 编辑器。
+purpose:
+  - 在编辑器内直接和 AI 对话改代码
+  - 对整个项目做问答
+  - 熟悉 VS Code 的话可以直接上手
+relatedCapabilities:
+  - vscode-ai-pairing
+dependsOn: []
+commonlyUsedBy:
+  - Python
+  - Node.js
+studentExplanation: |
+  Cursor 的界面和 VS Code 基本一致，但它把 AI 做进了核心功能里：
+  你可以选中一段代码直接问它，也可以让它根据描述修改整个文件。
+  如果你已经在用 VS Code 加 AI 插件，效果接近；想要更顺手的体验可以试试它。
+  两个编辑器可以同时装在电脑上，互不影响。
+versions: []

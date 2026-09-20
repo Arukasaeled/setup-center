@@ -1,0 +1,11 @@
+id: wsl
+name: WSL
+category: 概念
+summary: Windows Subsystem for Linux，在 Windows 里直接运行 Linux 环境。
+whyItMatters: >
+  很多 AI 开源项目只在 Linux 下测试过，在 Windows 上会遇到路径、脚本格式、
+  依赖编译等问题。WSL 让你不装双系统也能用 Linux 命令。
+  它需要开启虚拟化支持，占用内存和磁盘较多，配置较低的电脑会明显变慢。
+relatedCapabilities:
+  - linux-environment
+  - container-development

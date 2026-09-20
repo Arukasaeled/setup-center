@@ -1,0 +1,21 @@
+id: wsl
+name: WSL
+category: 运行环境
+description: 在 Windows 里直接运行 Linux 环境。
+purpose:
+  - 使用大量只支持 Linux 的开源 AI 工具
+  - 为 Docker 提供更稳定的运行环境
+  - 学习 Linux 命令，不需要装双系统
+relatedCapabilities:
+  - linux-environment
+  - container-development
+dependsOn: []
+commonlyUsedBy:
+  - Docker
+  - 各类开源 AI 项目
+studentExplanation: |
+  Windows 和 Linux 的命令行差异很大，而多数 AI 开源项目是在 Linux 上开发的。
+  装了 WSL 以后，你可以在 Windows 里打开一个真正的 Linux 终端，直接运行那些项目。
+  它需要开启虚拟化支持，并且会占用一部分内存和磁盘。
+  安装后通常需要重启一次电脑才能完全生效。
+versions: []

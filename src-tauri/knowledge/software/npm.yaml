@@ -1,0 +1,22 @@
+id: npm
+name: npm
+category: 开发工具
+description: Node.js 自带的包管理器，用来安装 JavaScript 工具。
+purpose:
+  - 安装命令行工具和 MCP 服务器
+  - 管理项目依赖
+  - 随 Node.js 一起安装，通常不需要单独处理
+relatedCapabilities:
+  - node-development
+  - ai-agent-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - Claude Code
+  - MCP 服务器
+studentExplanation: |
+  npm 是 Node.js 的附赠品——装上 Node 之后，npm 命令就可以用了。
+  它的作用类似手机的应用商店：想要什么工具，用 npm install 装一下。
+  很多 AI 命令行工具和 MCP 服务器都是这样分发的，所以你会经常用到它。
+  如果提示 npm 找不到，说明 Node.js 没有装好或者终端需要重开。
+versions: []

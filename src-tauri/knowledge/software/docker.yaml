@@ -1,0 +1,21 @@
+id: docker
+name: Docker
+category: 运行环境
+description: 把程序连同运行环境一起打包的工具。
+purpose:
+  - 让程序在你电脑和服务器上跑出一样的结果
+  - 一键启动数据库、后端服务等依赖
+  - 部署项目到云服务器
+relatedCapabilities:
+  - container-development
+dependsOn: []
+commonlyUsedBy:
+  - WSL
+  - 后端开发
+studentExplanation: |
+  代码在你电脑上能跑、传到别人电脑上报错，是初学者最常见的挫折，原因是两边
+  的环境不同。Docker 把程序和它需要的环境一起打包成一个"容器"，在任何地方
+  运行结果都一致。
+  它需要的磁盘空间较大，而且必须开启虚拟化（本工具会检测）。
+  如果你只是学习编程基础，可以暂时不装；等开始做需要数据库或部署的项目时再装。
+versions: []

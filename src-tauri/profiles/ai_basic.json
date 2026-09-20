@@ -1,0 +1,33 @@
+{
+  "id": "ai_basic",
+  "name": "AI 基础版",
+  "tagline": "只想用 AI，先装上能用的",
+  "audience": "平时用 AI 写作业、查资料、做 PPT 的同学。不需要写代码，也不用懂命令行。",
+  "rationale": "只装两个开箱即用的桌面客户端和写代码用的编辑器。装完打开就能聊天，不需要配置环境变量，也不需要理解 Git。这是耗时最短、出错概率最低的一套。",
+  "software": ["chatgpt_desktop", "claude_desktop", "vscode", "git"],
+  "configure": ["vscode"],
+  "estimatedMinutes": 8,
+  "estimatedDownloadMb": 700,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": [],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "editor.fontSize": 14,
+        "editor.wordWrap": "on",
+        "files.autoSave": "onFocusChange"
+      }
+    },
+    "git": {
+      "configure": false
+    },
+    "mcp": [],
+    "skills": [],
+    "localization": ["vscode"]
+  }
+}

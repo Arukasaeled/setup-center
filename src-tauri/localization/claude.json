@@ -1,0 +1,11 @@
+{
+  "id": "claude",
+  "target": "Claude",
+  "description": "为 Claude 桌面版与 Claude Code 写入中文偏好设置",
+  "file": "%USERPROFILE%\\.claude\\settings.json",
+  "strategy": "jsonMerge",
+  "settings": {
+    "language": "zh-CN",
+    "outputStyle": "concise"
+  }
+}

@@ -1,0 +1,19 @@
+id: chatgpt_desktop
+name: ChatGPT Desktop
+category: AI 工具
+description: 桌面版 ChatGPT 应用，装完打开就能用，不需要编程基础。
+purpose:
+  - 写作业、查资料、翻译、解释概念
+  - 比网页版更稳定，不用每次登录浏览器
+  - 可以按下快捷键随时唤起，不用切标签页
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - Codex
+studentExplanation: |
+  这是最省事的 AI 工具之一：装完打开就能用，不需要命令行，也不需要配置。
+  如果你现在只是想有个 AI 帮忙写作业、查资料，装这一个就够了。
+  它和 Claude Desktop 是同类工具（都是聊天客户端），两个都装也不冲突，
+  可以按哪个回答得更合你心意来用。
+versions: []

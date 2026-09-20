@@ -1,0 +1,10 @@
+id: virtualenv
+name: 虚拟环境
+category: 概念
+summary: 为每个项目单独隔离的 Python 依赖空间。
+whyItMatters: >
+  不同项目依赖的库版本常常互相冲突：A 项目要 1.0，B 项目要 2.0。
+  如果都装在全局，只能有一个版本能用。虚拟环境让每个项目拥有独立的依赖目录，
+  互不影响。Python 自带 venv 模块，不需要额外安装。
+relatedCapabilities:
+  - python-development

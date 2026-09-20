@@ -1,0 +1,24 @@
+id: node
+name: Node.js
+category: 运行环境
+description: 让 JavaScript 在浏览器之外运行的环境。
+purpose:
+  - 运行许多 AI 命令行工具
+  - 大部分 MCP 服务器通过 npm 分发，需要 Node 才能启动
+  - 做网页前端开发
+relatedCapabilities:
+  - node-development
+  - ai-agent-development
+  - ai-cli-assistant
+dependsOn: []
+commonlyUsedBy:
+  - Claude Code
+  - VS Code
+  - MCP 服务器
+studentExplanation: |
+  Node.js 本身不是 AI 工具，但很多 AI 工具是用它写的。
+  最典型的例子是 MCP 服务器——它的作用范围很广，可以在 AI 助手和你电脑上的
+  文件、数据库之间搭桥，而绝大多数 MCP 服务器都需要 Node 才能运行。
+  如果你只做数据分析，Node 可以暂时不装；但只要你想用命令行 AI 助手，
+  它基本是必需项。
+versions: []

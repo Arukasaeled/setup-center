@@ -1,0 +1,21 @@
+id: msvc_build_tools
+name: MSVC 编译工具
+category: 开发工具
+description: 微软的 C/C++ 编译器与标准库。
+purpose:
+  - 编译 C/C++ 课程作业
+  - 与 VS Code 的 C/C++ 插件配合完成编译和调试
+  - 编译某些需要本地扩展的 Python 包
+relatedCapabilities:
+  - cpp-learning
+dependsOn: []
+commonlyUsedBy:
+  - VS Code
+  - CMake
+studentExplanation: |
+  写 C/C++ 和写 Python 最大的不同在于：Python 代码敲完直接能跑，
+  C/C++ 必须先"编译"——把源代码翻译成计算机能执行的程序。
+  这个过程需要一个编译器，Windows 上官方就是微软的这套构建工具。
+  它安装包比较大，装的过程中会问很多选项，本工具会选择合适的默认项；
+  如果一次没装成功，重新运行本工具会接着上次的进度继续。
+versions: []

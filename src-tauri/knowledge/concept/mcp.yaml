@@ -1,0 +1,12 @@
+id: mcp
+name: MCP
+category: 概念
+summary: Model Context Protocol，AI 助手连接外部工具的通用协议。
+whyItMatters: >
+  没有 MCP 时，AI 只能看到你粘贴给它的内容。有了 MCP，AI 可以读取你电脑上的
+  文件、查询数据库、访问网页、操作 Git——你只需要在对话里说明需求。
+  多数 MCP 服务器通过 npm 安装，所以需要先有 Node.js。
+relatedCapabilities:
+  - ai-agent-development
+  - ai-cli-assistant
+  - ai-desktop-assistant

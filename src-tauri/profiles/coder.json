@@ -1,0 +1,40 @@
+{
+  "id": "coder",
+  "name": "AI 编程",
+  "tagline": "让 AI 帮你写代码",
+  "audience": "要写课程设计、做项目、学编程的同学",
+  "rationale": "装上编辑器、版本管理和 Python，再把终端里的 AI 编程助手配好，并完成编辑器插件、Git 与中文界面配置。全部使用免管理员的用户级安装，装完即可开始写代码。",
+  "software": ["vscode", "git", "python", "claude_code"],
+  "configure": ["vscode", "git.baseline", "claude"],
+  "estimatedMinutes": 10,
+  "estimatedDownloadMb": 700,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": [],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.powershell",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.autoSave": "onFocusChange",
+        "terminal.integrated.defaultProfile.windows": "PowerShell",
+        "git.autofetch": true
+      }
+    },
+    "git": {
+      "configure": true
+    },
+    "mcp": [],
+    "skills": [],
+    "localization": ["vscode"]
+  }
+}

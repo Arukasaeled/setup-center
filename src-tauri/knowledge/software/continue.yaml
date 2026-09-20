@@ -1,0 +1,21 @@
+id: continue
+name: Continue
+category: AI 工具
+description: 开源的 VS Code AI 编程插件。
+purpose:
+  - 在编辑器里直接和 AI 对话
+  - 可以使用自己的 API 密钥，不绑定单一服务商
+  - 支持接入本地运行的模型
+relatedCapabilities:
+  - vscode-ai-pairing
+dependsOn:
+  - vscode
+commonlyUsedBy:
+  - VS Code
+  - Ollama
+studentExplanation: |
+  Continue 是装在 VS Code 里的插件，让你不离开编辑器就能问 AI。
+  它的特点是开放：可以填自己的 API 密钥，也可以连接本机运行的模型，
+  不强制使用某一家服务。
+  它必须先有 VS Code 才能装。刚安装时需要在插件设置里配置一个模型来源。
+versions: []

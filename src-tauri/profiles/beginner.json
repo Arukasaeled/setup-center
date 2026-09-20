@@ -1,0 +1,29 @@
+{
+  "id": "beginner",
+  "name": "只想先试一下",
+  "tagline": "只装一个，三分钟就能用",
+  "audience": "还没想好要不要折腾，只想要一个能立刻打开的 AI 助手的同学",
+  "rationale": "只装 Claude 桌面版这一个程序，不装编辑器、不装 Git、不碰命令行。装完打开就能聊天。如果之后想多装一些，可以随时回来换成 AI 基础版。",
+  "software": ["claude_desktop"],
+  "configure": ["claude"],
+  "estimatedMinutes": 3,
+  "estimatedDownloadMb": 220,
+  "requiresAdmin": false,
+  "future": {
+    "mcp": [],
+    "skills": [],
+    "agents": []
+  },
+  "bootstrap": {
+    "vscode": {
+      "extensions": [],
+      "settings": {}
+    },
+    "git": {
+      "configure": false
+    },
+    "mcp": [],
+    "skills": [],
+    "localization": []
+  }
+}

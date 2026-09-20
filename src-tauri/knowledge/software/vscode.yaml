@@ -1,0 +1,24 @@
+id: vscode
+name: VS Code
+category: 编辑器
+description: 免费代码编辑器，插件生态最丰富。
+purpose:
+  - 写代码、调试、看报错
+  - 通过插件接入 AI 助手，在编辑器里直接改代码
+  - 支持几乎所有编程语言
+relatedCapabilities:
+  - python-development
+  - cpp-learning
+  - node-development
+  - vscode-ai-pairing
+dependsOn: []
+commonlyUsedBy:
+  - Python
+  - C/C++
+  - AI 编程助手
+studentExplanation: |
+  编辑器是你花时间最多的地方。VS Code 的优势在于插件——装了 Python 插件后，
+  它会帮你补全代码、标出错误、一键运行；装了 AI 插件后，你可以直接在编辑器里
+  让 AI 修改代码，不用来回切换窗口。
+  单独装上 VS Code 还不能写 Python，需要再装对应的语言插件，本工具会自动处理。
+versions: []

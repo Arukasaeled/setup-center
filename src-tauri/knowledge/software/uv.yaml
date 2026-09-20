@@ -1,0 +1,20 @@
+id: uv
+name: uv
+category: 开发工具
+description: 用 Rust 写的 Python 包管理器，速度远快于 pip。
+purpose:
+  - 快速安装 Python 依赖
+  - 自动管理 Python 版本和虚拟环境
+  - 替代 pip + venv + pyenv 的组合
+relatedCapabilities:
+  - python-development
+dependsOn: []
+commonlyUsedBy:
+  - Python
+studentExplanation: |
+  pip 安装大型依赖包时经常要等很久，uv 把同样的过程缩短到几秒。
+  它还能自动为项目创建虚拟环境、下载需要的 Python 版本，省掉几个手工步骤。
+  不是必需工具——用 pip 也完全可以；但如果你的项目依赖很多，
+  换用 uv 会明显节省时间。
+  它和 pip 可以共存，不会互相干扰。
+versions: []

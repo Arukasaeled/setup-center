@@ -1,0 +1,22 @@
+id: git
+name: Git
+category: 开发工具
+description: 分布式版本控制系统，记录代码的每一次改动。
+purpose:
+  - 保存代码的历史版本，改错了可以退回去
+  - 把项目上传到 GitHub，和别人协作
+  - 几乎所有 AI 编程工具都依赖它
+relatedCapabilities:
+  - git-collaboration
+  - python-development
+dependsOn: []
+commonlyUsedBy:
+  - VS Code
+  - Claude Code
+  - Codex
+studentExplanation: |
+  Git 是代码的"存档"系统。你写代码时会反复修改，Git 让你给每个阶段存一次档，
+  以后想回到任何一版都可以。它也是上传 GitHub 的前提——没有 Git，
+  你的代码只能留在自己电脑上，老师看不到，同学也帮不了你。
+  第一次使用前需要设置名字和邮箱，这样每一条改动记录才知道是谁做的。
+versions: []

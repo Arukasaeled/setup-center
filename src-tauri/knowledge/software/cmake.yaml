@@ -1,0 +1,20 @@
+id: cmake
+name: CMake
+category: 开发工具
+description: 跨平台的 C/C++ 项目构建工具。
+purpose:
+  - 编译稍大一些的 C/C++ 项目
+  - 课程或开源项目要求的标准构建方式
+  - 与编译器配合，自动生成编译命令
+relatedCapabilities:
+  - cpp-learning
+dependsOn:
+  - msvc_build_tools
+commonlyUsedBy:
+  - VS Code
+studentExplanation: |
+  只写一两个 .cpp 文件时，手动写编译命令还行；项目一大，文件之间的依赖关系
+  就变成手工维护的负担。CMake 让你写一份描述文件，它负责算出正确的编译顺序。
+  大多数 C/C++ 开源项目都用 CMake，学会它以后拿到别人的项目就知道怎么编译了。
+  它需要先有编译器才能工作，所以要在 MSVC 构建工具之后安装。
+versions: []

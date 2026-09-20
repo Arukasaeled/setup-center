@@ -1,0 +1,22 @@
+id: claude_code
+name: Claude Code
+category: AI 工具
+description: 在终端里运行的 AI 编程助手。
+purpose:
+  - 用自然语言描述需求，让 AI 直接修改项目文件
+  - 读懂并解释已有代码
+  - 不需要打开编辑器就能写代码
+relatedCapabilities:
+  - ai-cli-assistant
+  - vscode-ai-pairing
+dependsOn:
+  - node
+commonlyUsedBy:
+  - VS Code
+  - Git
+studentExplanation: |
+  普通的 AI 对话工具需要你复制代码过去、再把结果复制回来。
+  Claude Code 直接在当前项目目录里工作，它能看到你的文件，也能直接改，
+  你说"把这个函数改成支持中文"，它就动手改好。
+  它通过 npm 安装，所以需要先装 Node.js。使用前需要在命令行登录你的账号。
+versions: []
