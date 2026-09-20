@@ -604,6 +604,16 @@ const lightBg = await page.evaluate(
 );
 const lightThemeOk = lightBg !== darkBg && isLight(lightBg);
 
+// The software list is captured in the light theme specifically because that is
+// where a stencil mark is most likely to disappear: Cursor, Windsurf, LM Studio,
+// OpenCode and Continue are drawn in the *text* colour, which is near-black on
+// paper and near-white on ink. Only one of those two can be the default, so a
+// dark-only screenshot cannot prove both work.
+await page.getByRole("button", { name: /^软件\s*\d*$/ }).click();
+await page.waitForTimeout(700);
+await shot("14b-software-light");
+const lightIconContrast = await collectIconContrastReport();
+
 await page.getByRole("button", { name: /^深色$/ }).click();
 await page.waitForTimeout(600);
 await shot("15-dashboard-dark");
@@ -611,6 +621,8 @@ const restoredBg = await page.evaluate(
   () => getComputedStyle(document.body).backgroundColor,
 );
 const darkThemeOk = !isLight(restoredBg);
+const darkIconContrast = await collectIconContrastReport();
+await shot("15b-software-dark");
 
 // --- 9b. Branding / icons / window chrome -------------------------------------
 //
@@ -702,6 +714,141 @@ async function collectIconReport() {
               .join(", ")}`,
     };
   }, selector);
+}
+
+/**
+ * Proves every rendered mark actually has visible contrast against its surface.
+ *
+ * ## Why this probe exists
+ *
+ * `collectIconReport` proves the assets *load*. It cannot prove they are
+ * *visible*, and those are different failures. Three real cases in this codebase
+ * loaded perfectly and were invisible:
+ *
+ * - Rust, Java and JetBrains ship `fill="#000000"`, drawn on a `#0c0e11` surface.
+ * - ChatGPT declares no `fill` at all and inherits black the same way.
+ * - Continue ships `fill="white"` — legible on dark, invisible on paper.
+ *
+ * A masked mark renders through `background-color` and an `<img>` through its own
+ * pixels, so the colour has to be read from whichever path applies. Chromium is
+ * asked for the computed `background-color` of masked marks; for `<img>` the
+ * pixels are sampled from a canvas.
+ *
+ * The threshold is deliberately loose (per-channel delta > 24 against the plate
+ * behind the row). It is not a perceptual contrast model — it only needs to
+ * separate "this is a real mark" from "this is the same colour as its surface".
+ */
+async function collectIconContrastReport() {
+  return await page.evaluate(async () => {
+    // Resolve the surface an icon actually sits on by walking up from the mark
+    // and compositing every layer over the page canvas.
+    //
+    // The naive version of this probe read `document.querySelector("main")`
+    // and got `rgba(0, 0, 0, 0)` — so it compared every icon against *black in
+    // both themes*, and passed the light-theme case by luck. The rows use
+    // `--surface-raised` at 40% over the page background, so the true plate is a
+    // composite, not a single computed colour.
+    const parse = (c) => {
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const p = m[1].split(",").map((n) => parseFloat(n));
+      return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 };
+    };
+
+    /** Composite `top` (with alpha) over `bottom` (opaque). */
+    const over = (top, bottom) => ({
+      r: top.r * top.a + bottom.r * (1 - top.a),
+      g: top.g * top.a + bottom.g * (1 - top.a),
+      b: top.b * top.a + bottom.b * (1 - top.a),
+      a: 1,
+    });
+
+    const canvasRgb = parse(getComputedStyle(document.documentElement).backgroundColor) ??
+      parse(getComputedStyle(document.body).backgroundColor);
+    const pageRgb = canvasRgb && canvasRgb.a > 0
+      ? canvasRgb
+      : { r: 255, g: 255, b: 255, a: 1 };
+
+    /** Walk ancestors, collecting opaque-ish background layers, then composite. */
+    const plateBehind = (el) => {
+      const layers = [];
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor);
+        if (c && c.a > 0.01) {
+          layers.push(c);
+          if (c.a === 1) break;
+        }
+      }
+      let acc = pageRgb;
+      for (let i = layers.length - 1; i >= 0; i--) acc = over(layers[i], acc);
+      return acc;
+    };
+
+    const delta = (a, b) =>
+      Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b));
+
+    const items = [];
+    const masked = [...document.querySelectorAll('[style*="mask-image"]')];
+    for (const el of masked) {
+      const c = parse(getComputedStyle(el).backgroundColor);
+      if (c) items.push({ kind: "mask", c, plate: plateBehind(el.parentElement ?? el) });
+    }
+
+    const imgs = [...document.querySelectorAll(
+      'img[src^="data:image"], img[src*="/assets/"], img[src^="asset:"], img[src*="asset.localhost"]',
+    )];
+    for (const el of imgs) {
+      if (!el.complete || el.naturalWidth === 0) continue;
+      try {
+        const cv = document.createElement("canvas");
+        cv.width = el.naturalWidth;
+        cv.height = el.naturalHeight;
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(el, 0, 0);
+        const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        // Average only the pixels that are actually painted. An SVG logo is
+        // mostly transparent margin, and averaging that in would wash the mark
+        // out toward the plate and hide the very failure being tested for.
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 40) continue;
+          r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+        }
+        const plate = plateBehind(el.parentElement ?? el);
+        if (n === 0) {
+          items.push({ kind: "img", c: { r: 0, g: 0, b: 0 }, plate, empty: true });
+          continue;
+        }
+        items.push({ kind: "img", c: { r: r / n, g: g / n, b: b / n }, plate });
+      } catch {
+        // A tainted canvas cannot happen for bundled assets, but a read failure
+        // must not be reported as a contrast failure.
+      }
+    }
+
+    if (items.length === 0) {
+      return { ok: false, detail: "no rendered marks to measure" };
+    }
+
+    const empty = items.filter((i) => i.empty).length;
+    const invisible = items.filter((i) => delta(i.c, i.plate) <= 24);
+    const deltas = items
+      .map((i) => Math.round(delta(i.c, i.plate)))
+      .sort((a, b) => a - b);
+
+    // Report the plate too: if this reads 0,0,0 on the light theme again, the
+    // probe is broken and the pass is meaningless.
+    const plateSample = items[0].plate;
+    const plateStr = `${Math.round(plateSample.r)},${Math.round(plateSample.g)},${Math.round(plateSample.b)}`;
+
+    return {
+      ok: invisible.length === 0 && empty === 0,
+      detail:
+        invisible.length === 0 && empty === 0
+          ? `${items.length} marks visible on plate ${plateStr} — smallest channel delta ${deltas[0]}`
+          : `${invisible.length} of ${items.length} marks blend into plate ${plateStr} (deltas ${deltas.slice(0, 5).join(", ")}), ${empty} fully transparent`,
+    };
+  });
 }
 
 /**
@@ -1181,6 +1328,17 @@ const checks = [
     // The fallback tile is allowed *only* for ids with no official asset. A
     // letter tile appearing on a row that has a brand mark is the bug.
     !/^(vs$|cl$|ch$|cu$|gi$|py$|no$)/im.test(dashboardSoftware),
+  ],
+  [
+    "icons: every mark is visible against the light surface",
+    // Loading is not seeing. A `fill="white"` glyph loads at full size and
+    // disappears on paper — that was Continue, and only a contrast probe catches
+    // it. See `collectIconContrastReport` for the three real cases behind this.
+    [lightIconContrast.ok, lightIconContrast.detail],
+  ],
+  [
+    "icons: every mark is visible against the dark surface",
+    [darkIconContrast.ok, darkIconContrast.detail],
   ],
   [
     "titlebar: a drag region exists and reaches the top edge",
