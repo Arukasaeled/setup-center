@@ -50,6 +50,7 @@ import { useApp, type Section } from "../lib/store";
 import {
   ContactRows,
   LicenseSection,
+  UpgradePrompt,
 } from "../components/ActivationPanel";
 import type {
   CapabilityStatus,
@@ -73,7 +74,12 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "software", label: "软件", hint: "这台电脑装了什么" },
   { id: "config", label: "配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
-  { id: "license", label: "版本", hint: "当前权益与激活" },
+  // "版本与授权" rather than "版本". The section manages the version, the
+  // licence, activation and device binding, and `ActivationGate` already
+  // promises the customer they can "随时可以在「版本与授权」中升级" — a label
+  // reading only 版本 sent them looking for a page that does not exist by that
+  // name. One string, two places that must agree.
+  { id: "license", label: "版本与授权", hint: "当前权益与激活" },
   { id: "about", label: "关于", hint: "购买与联系作者" },
 ];
 export function Dashboard() {
@@ -133,6 +139,23 @@ export function Dashboard() {
 
       <div className="flex min-w-0 flex-1">
         <section className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
+          {/* The persistent tier row. It sits at the top of every section rather
+              than only on 版本与授权, because the whole gap this closes is that a
+              FREE customer had no visible route to activation anywhere they
+              habitually look.
+
+              The licence section does not get a second copy: it renders the full
+              scope list, the contacts and the card already, and stacking the
+              entry on top of them would put the same control on screen twice. */}
+          {section !== "license" && (
+            <div className="mb-6 flex justify-end">
+              <UpgradePrompt
+                onNavigate={() => setSection("license")}
+                onUpgraded={() => setSection("license")}
+              />
+            </div>
+          )}
+
           {/* A refused gated action surfaces here rather than inside whichever
               section triggered it: the refusal can come from install, resume or
               bootstrap, and the customer should see the same explanation and the

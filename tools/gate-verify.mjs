@@ -61,12 +61,34 @@ async function boot({ licenseMode = "freeEnforced", entry = null, locale = "dark
 
       const invoke = (cmd, args) => {
         const noop = { unlisten: () => Promise.resolve() };
+        // Which entitlement `license_status` reports. A page-global rather than
+        // a closed-over constant so a test can flip the machine from FREE to PRO
+        // *while the page is open*. That is the only way to prove the entry
+        // updates the running screen without a reload — the behaviour a customer
+        // actually experiences after typing a code, and the one a reload would
+        // hide by rebuilding the whole app from scratch.
+        let activeTier = licMode;
         const handlers = {
           load_status: () => data.status,
           load_resumable: () => data.resumable ?? null,
-          license_status: () => data.license[licMode],
-          license_device: () => data.licenseDevice[licMode],
-          activate_license: () => data.license.freeEnforced,
+          // `unreadable` has no fixture on purpose: it stands for "the Rust
+          // command failed", so the mock has to *reject* rather than return a
+          // shape. Rejecting drives `loadEntitlements` into its error branch,
+          // which is the state under test.
+          license_status: () => {
+            if (activeTier === "unreadable") {
+              return Promise.reject(new Error("无法读取 license.dat"));
+            }
+            return data.license[activeTier];
+          },
+          license_device: () => data.licenseDevice[activeTier],
+          // Activating makes this machine PRO for the rest of the session. It
+          // must do so here rather than staying FREE: a mock that kept reporting
+          // FREE would make a broken activation look like a working one.
+          activate_license: () => {
+            activeTier = "proEnforced";
+            return data.license.proEnforced;
+          },
           // The dashboard's own data. Mirrors the command names `ui-verify.mjs`
           // stubs, so the surface the gate hands off to is a real one rather
           // than one that only exists because half its calls failed.
@@ -319,6 +341,159 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
   );
   check("窄窗口 → 无横向溢出", !overflow);
   await page.screenshot({ path: join(outDir, "07-gate-narrow.png") });
+  await browser.close();
+}
+
+// ---------------------------------------------------------------------------
+// 9. The persistent upgrade entry
+//
+// This is the block that covers the reported defect directly. The gate is asked
+// once and remembered, so a customer who chose FREE had no route to activation
+// anywhere they look. These assertions are written against *both* surfaces,
+// because covering only one leaves the other free to regress silently.
+// ---------------------------------------------------------------------------
+
+// A returning FREE customer on the wizard's first screen.
+{
+  const { browser, page, consoleErrors } = await boot({
+    licenseMode: "freeEnforced",
+    entry: "free",
+  });
+
+  // Returning customers with a recorded choice go to the dashboard, so get back
+  // to the welcome screen the way a customer does — "回到首次设置".
+  await page.getByRole("button", { name: /回到首次设置/ }).click();
+  await page.waitForTimeout(500);
+
+  const entryVisible = await page
+    .locator('[data-testid="upgrade-entry"]')
+    .isVisible()
+    .catch(() => false);
+  check("FREE 复访 → 欢迎页可见「升级 PRO」入口", entryVisible);
+
+  // The entry must reveal the real card, not a lookalike. `#activation-key` is
+  // the id `ActivationCard` renders, so its presence proves the shared
+  // component is what opened.
+  if (entryVisible) {
+    await page.locator('[data-testid="upgrade-entry"]').click();
+    await page.waitForTimeout(400);
+    const cardVisible = await page.locator("#activation-key").isVisible().catch(() => false);
+    check("FREE 复访 → 点击后展开复用组件（#activation-key 出现）", cardVisible);
+    await page.screenshot({ path: join(outDir, "08-welcome-entry-open.png") });
+  }
+  check("欢迎页入口无 console 错误", consoleErrors.length === 0, consoleErrors.join(" | "));
+  await browser.close();
+}
+
+// ---- 9b. Dashboard: the entry is on every section but 版本与授权 ------------
+{
+  const { browser, page, consoleErrors } = await boot({
+    licenseMode: "freeEnforced",
+    entry: "free",
+  });
+
+  const dashEntry = page.locator('[data-testid="upgrade-entry"]');
+  check("FREE 复访 → Dashboard 可见「升级 PRO」入口", await dashEntry.isVisible().catch(() => false));
+
+  // Sidebar now reads 版本与授权 — the renamed label the gate already promised.
+  const licenceNav = page.locator('button:has-text("版本与授权")').first();
+  check("侧栏标签为「版本与授权」", (await licenceNav.count()) > 0);
+
+  // On the licence section the entry stands down, because the section already
+  // renders the full card; two copies of the same control is the defect this
+  // check exists to prevent.
+  await licenceNav.click();
+  await page.waitForTimeout(500);
+  const onLicence = await dashEntry.isVisible().catch(() => false);
+  check("版本与授权页 → 不重复显示入口（该页自带完整卡片）", !onLicence);
+  const cardThere = await page.locator("#activation-key").isVisible().catch(() => false);
+  check("版本与授权页 → 自带 ActivationCard", cardThere);
+
+  await page.screenshot({ path: join(outDir, "09-dashboard-license.png") });
+  check("Dashboard 入口无 console 错误", consoleErrors.length === 0, consoleErrors.join(" | "));
+  await browser.close();
+}
+
+// ---- 9c. FREE → PRO from the dashboard entry, with no restart ---------------
+{
+  const { browser, page, consoleErrors } = await boot({
+    licenseMode: "freeEnforced",
+    entry: "free",
+  });
+
+  const badgeBefore = await page.locator('[data-testid="version-badge"]').getAttribute("data-tier");
+  check("升级前 → 顶部徽标为 free", badgeBefore === "free", String(badgeBefore));
+
+  await page.locator('[data-testid="upgrade-entry"]').click();
+  await page.waitForTimeout(300);
+  await page.getByLabel("激活码").fill("SC-ABCDE-23456-FGHJK-3SKWP");
+  await page.getByRole("button", { name: /^激活( PRO)?$/ }).click();
+  await page.waitForTimeout(700);
+
+  // No reload happens between the click above and these reads: the page is the
+  // same document, so a passing result is genuinely "FREE became PRO live".
+  const badgeAfter = await page.locator('[data-testid="version-badge"]').getAttribute("data-tier");
+  check("输入激活码后 → 无需重启，徽标变为 pro", badgeAfter === "pro", String(badgeAfter));
+
+  // Activating from the dashboard entry lands on 版本与授权, which is where the
+  // full activated state lives. So the right question is not "is the entry
+  // visible" — that section deliberately does not render one — but "does the
+  // screen the customer lands on confirm the upgrade".
+  const landedOnLicence = await page
+    .locator('button:has-text("版本与授权")')
+    .first()
+    .getAttribute("aria-current");
+  check("升级后 → 落到「版本与授权」页", landedOnLicence === "page", String(landedOnLicence));
+
+  const proHeading = await page
+    .locator('[data-testid="license-heading"]')
+    .textContent()
+    .catch(() => "");
+  check(
+    "升级后 → 该页确认已为专业版",
+    (proHeading ?? "").includes("Professional"),
+    String(proHeading),
+  );
+
+  const proState = await page
+    .locator('[data-testid="license-pro-state"]')
+    .isVisible()
+    .catch(() => false);
+  check("升级后 → 显示已激活状态（设备绑定 / 激活时间）", proState);
+
+  const stillHasEntry = await page.locator('[data-testid="upgrade-entry"]').count();
+  check("升级后 → 不再显示「升级 PRO」按钮", stillHasEntry === 0, `count=${stillHasEntry}`);
+
+  await page.screenshot({ path: join(outDir, "10-dashboard-upgraded.png") });
+  check("就地升级无 console 错误", consoleErrors.length === 0, consoleErrors.join(" | "));
+  await browser.close();
+}
+
+// ---- 9d. A PRO machine never advertises an upgrade --------------------------
+{
+  const { browser, page } = await boot({ licenseMode: "proEnforced", entry: "free" });
+
+  const entryCount = await page.locator('[data-testid="upgrade-entry"]').count();
+  check("PRO 启动 → 不显示「升级 PRO」按钮", entryCount === 0, `count=${entryCount}`);
+
+  const proActive = await page
+    .locator('[data-testid="upgrade-pro-active"]')
+    .isVisible()
+    .catch(() => false);
+  check("PRO 启动 → 显示「PRO 已激活 ✓」", proActive);
+  await browser.close();
+}
+
+// ---- 9e. An unreadable licence must not advertise an upgrade ---------------
+//
+// The dangerous failure for this entry: the licence read fails, and the app
+// tells a *paying* customer to buy PRO. The entry must render nothing at all
+// when the tier is unknown, and must recover once the read succeeds.
+{
+  const { browser, page } = await boot({ licenseMode: "unreadable", entry: "free" });
+
+  const entryCount = await page.locator('[data-testid="upgrade-entry"]').count();
+  check("授权读取失败 → 不显示「升级 PRO」（不误报为 FREE）", entryCount === 0, `count=${entryCount}`);
   await browser.close();
 }
 

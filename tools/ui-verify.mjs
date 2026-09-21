@@ -1034,7 +1034,12 @@ await shot("13-dashboard-history");
 // enforced-free: installation is locked until a key is entered. Asserting this
 // state rather than a permissive one is the point — a licence screen is most
 // likely to mislead precisely when something is locked.
-await page.getByRole("button", { name: /^版本\s*\d*$/ }).click();
+// The sidebar item reads 版本与授权. The regex accepts both that and the older
+// bare 版本 so this assertion tracks the "which section holds the licence"
+// question rather than the exact label — the label changed to match what the
+// gate already promised the customer, and a hard-coded `^版本$` turned that
+// rename into a test failure instead of a UI fact.
+await page.getByRole("button", { name: /^版本(与授权)?\s*\d*$/ }).click();
 await page.waitForTimeout(600);
 await shot("13b-dashboard-license-free");
 
@@ -1089,7 +1094,12 @@ await page.evaluate(() => window.__setLicenseMode("freeMismatch"));
 await bootToWizard();
 await page.getByRole("button", { name: /检查这台电脑/ }).click();
 await page.waitForTimeout(2600);
-await page.getByRole("button", { name: /^版本\s*\d*$/ }).click();
+// The sidebar item reads 版本与授权. The regex accepts both that and the older
+// bare 版本 so this assertion tracks the "which section holds the licence"
+// question rather than the exact label — the label changed to match what the
+// gate already promised the customer, and a hard-coded `^版本$` turned that
+// rename into a test failure instead of a UI fact.
+await page.getByRole("button", { name: /^版本(与授权)?\s*\d*$/ }).click();
 await page.waitForTimeout(700);
 await shot("13e-dashboard-license-mismatch");
 

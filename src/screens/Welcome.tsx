@@ -29,6 +29,7 @@
  */
 
 import { Button } from "../components/ui";
+import { UpgradePrompt } from "../components/ActivationPanel";
 import { useApp } from "../lib/store";
 import { isTauri } from "../lib/ipc";
 
@@ -88,6 +89,24 @@ export function WelcomeScreen() {
           检查不会安装任何软件，也不会修改系统设置。所有安装与配置都可撤销，
           并在动手前逐一列出会改什么。
         </p>
+
+        {/* The activation entry, on the first-run screen as well as the
+            dashboard.
+
+            It has to be on both: a returning customer lands here ("回到首次设置"
+            and the app's cold start both reach this screen), while a customer
+            mid-wizard reaches the dashboard's bar. Putting it only on the
+            dashboard would leave this screen — the one a FREE customer actually
+            sees first — with no way to upgrade, which is how the entry ended up
+            effectively hidden in the first place.
+
+            Below the two doors and visually quiet, so it does not compete with
+            "检查这台电脑": activating is something a customer arrives already
+            wanting, and a third equally-weighted button here would make the
+            screen ask three questions at once. */}
+        <div className="mt-5 border-t border-[color:var(--line-subtle)] pt-4">
+          <UpgradePrompt align="start" className="items-start" />
+        </div>
       </div>
 
       {!isTauri() && <BrowserPreviewNotice />}

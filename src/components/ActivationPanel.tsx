@@ -35,6 +35,7 @@
  */
 
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import { Button, SectionLabel } from "./ui";
 import { CONTACT } from "./ProGate";
 import { useApp } from "../lib/store";
@@ -260,6 +261,138 @@ function ActivationDetailRow({
       <span className="selectable text-[color:var(--text-primary)] font-mono">
         {value}
       </span>
+    </div>
+  );
+}
+
+/**
+ * The persistent "升级 PRO" entry, for hosts that are not the licence section.
+ *
+ * ## Why this exists
+ *
+ * The gate is a *first-run* decision, and `App.tsx` records that it was answered
+ * so it is never asked twice. The consequence was unintended: a customer who
+ * chose FREE — or anyone re-opening the app months later — had no way to reach
+ * activation at all, because the only other copy of `ActivationCard` lives on
+ * the 版本与授权 section and nothing pointed at it. "随时可以在「版本与授权」中升级"
+ * was true and undiscoverable.
+ *
+ * This is the entry that makes it discoverable, and it is deliberately tiny: a
+ * button that reveals the *existing* card.
+ *
+ * ## What it does not do
+ *
+ * It does not own activation. It renders `ActivationCard`, which owns the input,
+ * the request and the activated state — so the gate, the licence section and
+ * this entry cannot disagree about how activation behaves, because there is
+ * still exactly one implementation.
+ *
+ * `onUpgraded` lets a host react (the dashboard scrolls the newly-PRO state into
+ * view); `onNavigate` lets a host that has a licence *section* offer a route to
+ * it as well, without this component knowing what a section is.
+ *
+ * ## Three states, and the one that must stay silent
+ *
+ * - PRO → a quiet confirmation. Shown rather than hidden so the customer who
+ *   just activated sees that it took, and so the row does not silently vanish.
+ * - FREE → the badge and the entry.
+ * - unknown (`entitlements === null` while the licence is still being read, or
+ *   after a read error) → nothing at all. Flashing "FREE" at a paying customer
+ *   mid-read is the same mistake `VersionBadge` documents avoiding; flashing an
+ *   *upgrade* button at them would be worse, because it asks them to buy
+ *   something they already own.
+ */
+export function UpgradePrompt({
+  className,
+  align = "end",
+  defaultOpen = false,
+  onUpgraded,
+  onNavigate,
+}: {
+  className?: string;
+  /** Which edge the revealed card hugs. The wizard is centred, the bar is not. */
+  align?: "start" | "end";
+  defaultOpen?: boolean;
+  onUpgraded?: () => void;
+  /** Optional "去版本与授权页" route, for hosts that have such a section. */
+  onNavigate?: () => void;
+}) {
+  const entitlements = useApp((s) => s.entitlements);
+  const [open, setOpen] = useState(defaultOpen);
+
+  // Still reading, or the read failed. Say nothing rather than something wrong.
+  if (!entitlements) return null;
+
+  const isPro = entitlements.state === "active";
+
+  if (isPro) {
+    return (
+      <div
+        data-testid="upgrade-pro-active"
+        className={clsx(
+          "flex items-center gap-2 text-[color:var(--text-secondary)] text-[12.5px]",
+          className,
+        )}
+      >
+        <span className="text-[color:var(--status-ok)]" aria-hidden>
+          ✓
+        </span>
+        <span data-testid="upgrade-pro-label">PRO 已激活</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={clsx("flex flex-col", className)}>
+      <div
+        className={clsx(
+          "flex items-center gap-2.5",
+          align === "end" ? "justify-end" : "justify-start",
+        )}
+      >
+        <span
+          data-testid="upgrade-free-label"
+          className="text-[color:var(--text-quiet)] text-[12.5px]"
+        >
+          FREE
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="upgrade-entry"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "收起" : "升级 PRO"}
+        </Button>
+      </div>
+
+      {/* The card in place, not in a modal. A modal would be the one interaction
+          this app has spent every previous round removing, and the card is small
+          enough to sit in the flow. */}
+      {open && (
+        <div
+          data-testid="upgrade-panel"
+          className="rise mt-3 w-full text-left"
+        >
+          <ActivationCard
+            autoFocus
+            onActivated={() => {
+              setOpen(false);
+              onUpgraded?.();
+            }}
+          />
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-2.5 text-[12px] transition-colors"
+            >
+              查看功能范围与设备绑定 →
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
