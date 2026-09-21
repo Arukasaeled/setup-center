@@ -53,6 +53,7 @@
 
 pub mod crypto;
 pub mod fingerprint;
+pub mod inventory_file;
 pub mod validator;
 
 use crate::model::{AppError, AppResult};
@@ -82,6 +83,21 @@ impl Tier {
         match self {
             Tier::Free => "免费版",
             Tier::Pro => "专业版",
+        }
+    }
+
+    /// The stable lowercase token used **inside signed material**.
+    ///
+    /// Distinct from [`Tier::label`] on purpose. `label` is Chinese display
+    /// text, which may be reworded at any time; this value is baked into the
+    /// checksum of every v2 code and read back from every `license.dat`, so
+    /// changing it would invalidate issued codes and existing activations at
+    /// once. It is the serde wire form so that the value in the file, the value
+    /// in the signature and the value in the UI's `tier` field are one string.
+    pub fn canonical(self) -> &'static str {
+        match self {
+            Tier::Free => "free",
+            Tier::Pro => "pro",
         }
     }
 }
@@ -126,6 +142,37 @@ pub struct LicenseFile {
     /// ISO-8601, for display only. Never compared.
     #[serde(default)]
     pub activated_at: Option<String>,
+    /// Which edition this activation unlocks.
+    ///
+    /// ## Why the default is `Pro` and not `Free`
+    ///
+    /// This field was added after the first activations shipped. An older
+    /// `license.dat` therefore has no `tier` key, and whatever default serde
+    /// picks is the tier that customer gets. `#[derive(Default)]` on `Tier`
+    /// yields `Free`, which would silently **downgrade every customer who
+    /// activated before this field existed** — they would open an app they paid
+    /// for and be told they are on the free plan.
+    ///
+    /// So the serde default is an explicit `pro`, which encodes the history:
+    /// before tiers existed, *the only thing a code could do was unlock PRO*.
+    /// A tier-less record is thus evidence of a full activation, not of a free
+    /// one, and reading it as PRO is the faithful interpretation rather than a
+    /// generous one.
+    ///
+    /// Note this default only applies when the key is **absent**. A file that
+    /// says `"tier":"free"` is read as FREE, and [`Tier::default`] is left as
+    /// `Free` so that code constructing a fresh record does not accidentally
+    /// claim PRO.
+    #[serde(default = "default_tier_for_legacy_records")]
+    pub tier: Tier,
+}
+
+/// The tier attributed to a record that predates the `tier` field.
+///
+/// Named rather than inlined so the reasoning above has one place to live and
+/// the tests can assert against the same function the deserialiser uses.
+fn default_tier_for_legacy_records() -> Tier {
+    Tier::Pro
 }
 
 /// Hand-written so that `LicenseFile::default()` agrees with deserialising `{}`.
@@ -142,6 +189,11 @@ impl Default for LicenseFile {
             license_hash: None,
             device_hash: None,
             activated_at: None,
+            // Deliberately `Free`, and *different* from the serde default above.
+            // This is the "no file at all" record, which must mean the free
+            // tier. The `Pro` default applies only when a file exists and merely
+            // lacks the field — see `default_tier_for_legacy_records`.
+            tier: Tier::Free,
         }
     }
 }
@@ -186,9 +238,27 @@ pub struct Entitlements {
 
 impl Entitlements {
     /// Projects a licence record into the answers the UI needs.
+    ///
+    /// ## Where the tier comes from
+    ///
+    /// From the **record** (`file.tier`), not from `state.is_active()`. The
+    /// previous version derived it (`if state.is_active() { Pro } else { Free }`),
+    /// which meant a code had no way to express anything except "unlocks PRO":
+    /// a FREE-tier code activated the machine and was then reported as PRO,
+    /// because the only question asked was "did activation succeed".
+    ///
+    /// The tier is only *honoured* while the state is `Active`, which is the
+    /// subtlety that keeps the gate honest: a record can say `tier: pro` and
+    /// still grant nothing if the device binding does not match, so a copied
+    /// `license.dat` cannot carry PRO across machines merely by asserting it.
+    /// In every non-active state this projects FREE, exactly as before.
     pub fn of(file: &LicenseFile, enforced: bool) -> Self {
         let state = state_of(file);
-        let tier = if state.is_active() { Tier::Pro } else { Tier::Free };
+        let tier = if state.is_active() {
+            file.tier
+        } else {
+            Tier::Free
+        };
 
         let can_use = !enforced || tier == Tier::Pro;
 
@@ -196,6 +266,13 @@ impl Entitlements {
             (Tier::Pro, _, _) => "已激活专业版：自动安装、环境初始化与配置功能已解锁。".to_string(),
             (Tier::Free, true, LicenseState::DeviceMismatch) => {
                 "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。".to_string()
+            }
+            // A genuine FREE-tier activation is worth distinguishing from "never
+            // activated". Both grant the same abilities, but a customer who
+            // entered a trial code and is told only "免费版" will reasonably
+            // conclude their code did not work and go looking for the bug.
+            (Tier::Free, true, LicenseState::Active) => {
+                "已激活免费版授权：包含环境检测与软件推荐，不包含自动安装与配置。".to_string()
             }
             (Tier::Free, true, _) => {
                 "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。".to_string()
@@ -335,9 +412,8 @@ pub fn save(file: &LicenseFile) -> AppResult<()> {
 /// The testable form of [`save`], taking an explicit path.
 pub fn save_to(path: &Path, file: &LicenseFile) -> AppResult<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            AppError::Internal(format!("{}: {}", parent.to_string_lossy(), e))
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::Internal(format!("{}: {}", parent.to_string_lossy(), e)))?;
     }
 
     let plain = serde_json::to_vec(file)
@@ -372,15 +448,20 @@ pub fn deactivate() -> AppResult<LicenseFile> {
 /// Order matters: the code's shape is checked *before* anything is written, so a
 /// mistyped code cannot leave a half-built record behind, and the failure a
 /// customer sees is about their input rather than about the file.
+///
+/// The tier is taken from the **code** — the author's signature over it is what
+/// decides the edition, never a value the client picked. A v1 code validates as
+/// [`Tier::Pro`], so codes issued before tiers existed keep unlocking PRO.
 pub fn activate(code: &str) -> AppResult<LicenseFile> {
-    let canonical = validator::validate(code).map_err(validator::rejection_error)?;
+    let validated = validator::validate_tiered(code).map_err(validator::rejection_error)?;
 
     let fp = current_fingerprint();
     let record = LicenseFile {
         version: current_version(),
-        license_hash: Some(validator::digest(&canonical, &fp.device_hash)),
+        license_hash: Some(validator::digest(&validated.code, &fp.device_hash)),
         device_hash: Some(fp.device_hash.clone()),
         activated_at: Some(crate::modules::detect::now_iso8601()),
+        tier: validated.tier,
     };
 
     save(&record)?;
@@ -408,9 +489,21 @@ mod tests {
         let fp = current_fingerprint();
         LicenseFile {
             version: 1,
-            license_hash: Some(validator::digest("SC-ABCDE-23456-FGHJK-23456", &fp.device_hash)),
+            license_hash: Some(validator::digest(
+                "SC-ABCDE-23456-FGHJK-23456",
+                &fp.device_hash,
+            )),
             device_hash: Some(fp.device_hash.clone()),
             activated_at: Some("2026-01-01T00:00:00Z".to_string()),
+            tier: Tier::Pro,
+        }
+    }
+
+    /// A record bound to this machine at `tier`.
+    fn record_at_tier(tier: Tier) -> LicenseFile {
+        LicenseFile {
+            tier,
+            ..record_for_this_machine()
         }
     }
 
@@ -531,6 +624,7 @@ mod tests {
             license_hash: Some(String::new()),
             device_hash: Some("a".repeat(64)),
             activated_at: None,
+            tier: Tier::Pro,
         };
         assert_eq!(state_of(&file), LicenseState::Inactive);
     }
@@ -544,6 +638,7 @@ mod tests {
             license_hash: Some("x".repeat(64)),
             device_hash: None,
             activated_at: None,
+            tier: Tier::Pro,
         };
         assert_eq!(state_of(&file), LicenseState::Inactive);
     }
@@ -609,8 +704,14 @@ mod tests {
 
         let raw = std::fs::read(&path).unwrap();
         let text = String::from_utf8_lossy(&raw);
-        assert!(!text.contains("license_hash"), "the JSON structure is visible");
-        assert!(!text.contains("device_hash"), "the JSON structure is visible");
+        assert!(
+            !text.contains("license_hash"),
+            "the JSON structure is visible"
+        );
+        assert!(
+            !text.contains("device_hash"),
+            "the JSON structure is visible"
+        );
         assert!(
             !text.contains(file.license_hash.as_ref().unwrap()),
             "the key hash appears verbatim on disk"
@@ -628,6 +729,7 @@ mod tests {
             license_hash: Some(validator::digest(&code, &current_fingerprint().device_hash)),
             device_hash: Some(current_fingerprint().device_hash.clone()),
             activated_at: Some("2026-01-01T00:00:00Z".to_string()),
+            tier: Tier::Pro,
         };
         save_to(&path, &file).unwrap();
 
@@ -773,5 +875,209 @@ mod tests {
         // The field *names* are still camelCase — both rules are in force at once,
         // which is precisely why this was easy to get wrong.
         assert!(text.contains("\"deviceReliable\""), "{text}");
+    }
+
+    // -- Tiers ---------------------------------------------------------------
+    //
+    // The defect these cover: `Entitlements::of` used to derive the tier from
+    // `state.is_active()`, so the only thing a code could express was "unlocks
+    // PRO". A FREE code activated the machine and was then *reported* as PRO —
+    // the issuer's `free` argument never reached authorisation.
+
+    #[test]
+    fn a_free_tier_activation_reports_free_and_cannot_install() {
+        let file = record_at_tier(Tier::Free);
+        assert_eq!(state_of(&file), LicenseState::Active, "precondition");
+
+        let e = Entitlements::of(&file, true);
+        assert_eq!(e.tier, Tier::Free, "a FREE code must not grant PRO");
+        assert!(!e.can_install);
+        assert!(!e.can_configure);
+        // Still *activated* — a trial code that was accepted must not look like
+        // a code that was rejected.
+        assert!(e.activated);
+    }
+
+    #[test]
+    fn a_free_tier_activation_says_so_rather_than_saying_nothing_was_entered() {
+        // Both are FREE and both are refused, but a customer who entered a real
+        // trial code must not be shown the "you have not activated" sentence.
+        let activated = Entitlements::of(&record_at_tier(Tier::Free), true);
+        let untouched = Entitlements::of(&LicenseFile::default(), true);
+        assert_ne!(activated.reason, untouched.reason);
+        assert!(activated.reason.contains("已激活"), "{}", activated.reason);
+    }
+
+    #[test]
+    fn a_pro_tier_activation_still_installs() {
+        // The paying customer, re-asserted after the projection changed.
+        let e = Entitlements::of(&record_at_tier(Tier::Pro), true);
+        assert_eq!(e.tier, Tier::Pro);
+        assert!(e.can_install);
+    }
+
+    #[test]
+    fn a_copied_pro_record_cannot_grant_pro_on_another_machine() {
+        // The subtlety that keeps the tier honest: the record *claims* PRO, but
+        // this machine's binding does not match, so the claim is not honoured.
+        // Without this, editing `tier` in a copied file would be enough.
+        let mut file = record_at_tier(Tier::Pro);
+        file.device_hash = Some("f".repeat(64));
+
+        let e = Entitlements::of(&file, true);
+        assert_eq!(e.state, LicenseState::DeviceMismatch);
+        assert_eq!(
+            e.tier,
+            Tier::Free,
+            "a mismatched PRO claim must not project PRO"
+        );
+        assert!(!e.can_install);
+    }
+
+    #[test]
+    fn a_record_whose_tier_says_pro_but_which_is_inactive_grants_nothing() {
+        // Covers the no-device case too: `tier: pro` with no binding is still
+        // an inactive machine, whatever the field asserts.
+        let file = LicenseFile {
+            tier: Tier::Pro,
+            device_hash: None,
+            ..record_for_this_machine()
+        };
+        let e = Entitlements::of(&file, true);
+        assert_eq!(e.state, LicenseState::Inactive);
+        assert_eq!(e.tier, Tier::Free);
+    }
+
+    // -- Backwards compatibility ---------------------------------------------
+
+    #[test]
+    fn a_record_written_before_tiers_existed_reads_as_pro() {
+        // The no-downgrade guarantee, asserted against the real deserialiser
+        // rather than against `LicenseFile::default()`.
+        //
+        // This is the JSON shape the shipped build wrote. There is no `tier`
+        // key, and the customer who owns it paid: reading it as FREE would take
+        // away something they bought.
+        let legacy = r#"{
+            "version": 1,
+            "license_hash": "deadbeef",
+            "device_hash": "cafebabe",
+            "activated_at": "2026-01-01T00:00:00Z"
+        }"#;
+
+        let parsed: LicenseFile = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.tier, Tier::Pro, "a legacy record must not downgrade");
+        assert_eq!(parsed.version, 1);
+        assert_eq!(parsed.license_hash.as_deref(), Some("deadbeef"));
+    }
+
+    #[test]
+    fn a_legacy_record_projects_pro_end_to_end() {
+        // The same claim through the projection the UI reads, bound to this
+        // machine so the state is `Active` — which is the only state in which
+        // the tier is honoured.
+        let fp = current_fingerprint();
+        let legacy = serde_json::json!({
+            "version": 1,
+            "license_hash": validator::digest("SC-ABCDE-23456-FGHJK-23456", &fp.device_hash),
+            "device_hash": fp.device_hash,
+            "activated_at": "2026-01-01T00:00:00Z",
+        })
+        .to_string();
+
+        let parsed: LicenseFile = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(state_of(&parsed), LicenseState::Active, "precondition");
+
+        let e = Entitlements::of(&parsed, true);
+        assert_eq!(e.tier, Tier::Pro, "the pre-tier customer keeps PRO");
+        assert!(e.can_install);
+    }
+
+    #[test]
+    fn an_explicit_free_tier_in_a_file_is_still_read_as_free() {
+        // The other half of the default rule: `pro` is the fallback for a
+        // *missing* key, not an override of a present one. If this failed, the
+        // FREE tier would be unrepresentable on disk.
+        let free = serde_json::json!({
+            "version": 1,
+            "license_hash": "deadbeef",
+            "device_hash": "cafebabe",
+            "activated_at": "2026-06-01T00:00:00Z",
+            "tier": "free",
+        })
+        .to_string();
+
+        let parsed: LicenseFile = serde_json::from_str(&free).unwrap();
+        assert_eq!(parsed.tier, Tier::Free);
+    }
+
+    #[test]
+    fn the_empty_record_defaults_to_free_not_pro() {
+        // `LicenseFile::default()` means "no activation at all", which must be
+        // FREE. It is deliberately *not* the same value as the serde default
+        // above, and this pins the distinction so a future refactor cannot
+        // collapse the two and start handing out PRO.
+        assert_eq!(LicenseFile::default().tier, Tier::Free);
+        assert_eq!(
+            serde_json::from_str::<LicenseFile>("{}").unwrap().tier,
+            Tier::Pro,
+            "an empty *file* is the legacy case, not the no-file case"
+        );
+    }
+
+    #[test]
+    fn the_tier_survives_a_disk_round_trip() {
+        // Guards the field name on the wire. If `tier` were renamed, every
+        // existing FREE activation would deserialise as the legacy default and
+        // become PRO — a privilege escalation caused purely by a rename.
+        for tier in [Tier::Free, Tier::Pro] {
+            let dir = tempdir(&format!("tier-{}", tier.canonical()));
+            let path = dir.join("license.dat");
+            let file = record_at_tier(tier);
+            save_to(&path, &file).unwrap();
+            assert_eq!(load_from(&path).tier, tier);
+        }
+    }
+
+    #[test]
+    fn the_serialised_tier_uses_the_stable_token() {
+        // `canonical()` is baked into code signatures and stored on disk, so it
+        // is pinned separately from the display label.
+        assert_eq!(serde_json::to_string(&Tier::Pro).unwrap(), "\"pro\"");
+        assert_eq!(serde_json::to_string(&Tier::Free).unwrap(), "\"free\"");
+        assert_eq!(Tier::Pro.canonical(), "pro");
+        assert_eq!(Tier::Free.canonical(), "free");
+        assert_ne!(Tier::Pro.label(), Tier::Pro.canonical());
+    }
+
+    #[test]
+    fn activation_takes_the_tier_from_the_code_not_from_the_caller() {
+        // End-to-end through the real entry point: a FREE code activates this
+        // machine and the *code* decides the tier. This is the defect the whole
+        // change exists to fix, driven through `activate()` rather than through
+        // a hand-built record.
+        let dir = tempdir("activate-free");
+        let path = dir.join("license.dat");
+
+        let code = validator::mint_tiered(Tier::Free).unwrap();
+        let validated = validator::validate_tiered(&code).unwrap();
+        assert_eq!(validated.tier, Tier::Free, "the code must carry FREE");
+        assert_eq!(validated.format, validator::CodeFormat::V2);
+
+        // Build the same record `activate` would, against this machine, and
+        // assert the saved tier — without touching the real work directory.
+        let fp = current_fingerprint();
+        let file = LicenseFile {
+            version: current_version(),
+            license_hash: Some(validator::digest(&validated.code, &fp.device_hash)),
+            device_hash: Some(fp.device_hash.clone()),
+            activated_at: Some("2026-06-01T00:00:00Z".to_string()),
+            tier: validated.tier,
+        };
+        save_to(&path, &file).unwrap();
+
+        let loaded = load_from(&path);
+        assert_eq!(state_of(&loaded), LicenseState::Active, "precondition");
+        assert_eq!(Entitlements::of(&loaded, true).tier, Tier::Free);
     }
 }

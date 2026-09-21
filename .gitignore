@@ -26,6 +26,22 @@ src-tauri/gen/
 !.env.example
 
 # ---------------------------------------------------------------------------
+# Issuance material — must never reach history
+# ---------------------------------------------------------------------------
+# `codes_export_*.txt` holds the plaintext of every activation code in a batch.
+# Committing it would put 500 working licence keys into the repository and into
+# every clone and fork of it, where they could not be recalled — the same class
+# of mistake as committing a private key. `issue.rs` writes it beside the
+# ledger, which is inside the repo, so this rule is the only thing standing
+# between a routine `git add -A` and a shipped-secret incident.
+src-tauri/codes_export_*.txt
+
+# The ledger itself is deliberately NOT ignored: it stores only hashes, so it is
+# safe to version and useful to — it records which codes exist, which are spent,
+# and on which device. Only `mark`'s transient backup is excluded.
+src-tauri/license_inventory.csv.bak
+
+# ---------------------------------------------------------------------------
 # Verification scratch space
 # ---------------------------------------------------------------------------
 # `_tmp/` is the harness's output directory: 30 screenshots per run, plus the
