@@ -318,10 +318,17 @@ pub enum SoftwareId {
     Windsurf,
     /// LM Studio, the local-model runner a student uses to try models offline.
     LmStudio,
+    /// Windows Terminal — the modern console host.
+    ///
+    /// Distinct from [`SoftwareId::Wsl`]: WSL provides the Linux environment,
+    /// this provides the tabbed terminal most tutorials screenshot. A student
+    /// following a WSL guide sees "open Windows Terminal", and on a machine that
+    /// only has the legacy `conhost` window that instruction has no equivalent.
+    WindowsTerminal,
 }
 
 impl SoftwareId {
-    pub const ALL: [SoftwareId; 24] = [
+    pub const ALL: [SoftwareId; 25] = [
         SoftwareId::Vscode,
         SoftwareId::Git,
         SoftwareId::Python,
@@ -346,6 +353,7 @@ impl SoftwareId {
         SoftwareId::Continue,
         SoftwareId::LmStudio,
         SoftwareId::Jetbrains,
+        SoftwareId::WindowsTerminal,
     ];
 
     /// Stable key used in JSON profiles and in the report.
@@ -361,6 +369,7 @@ impl SoftwareId {
             SoftwareId::Docker => "docker",
             SoftwareId::Cursor => "cursor",
             SoftwareId::Wsl => "wsl",
+            SoftwareId::WindowsTerminal => "windows_terminal",
             SoftwareId::MsvcBuildTools => "msvc_build_tools",
             SoftwareId::Cmake => "cmake",
             SoftwareId::Npm => "npm",
@@ -391,6 +400,7 @@ impl SoftwareId {
             SoftwareId::Docker => "Docker",
             SoftwareId::Cursor => "Cursor",
             SoftwareId::Wsl => "WSL",
+            SoftwareId::WindowsTerminal => "Windows Terminal",
             SoftwareId::MsvcBuildTools => "MSVC 编译工具",
             SoftwareId::Cmake => "CMake",
             SoftwareId::Npm => "npm",
@@ -425,6 +435,7 @@ impl SoftwareId {
             SoftwareId::Docker => "打包与运行服务，换台电脑也能跑",
             SoftwareId::Cursor => "内置 AI 的代码编辑器",
             SoftwareId::Wsl => "在 Windows 里直接用 Linux",
+            SoftwareId::WindowsTerminal => "更好用的终端，支持多标签与分屏",
             SoftwareId::MsvcBuildTools => "编译 C/C++ 程序",
             SoftwareId::Cmake => "管理 C/C++ 项目的构建",
             SoftwareId::Npm => "安装与运行 JavaScript 工具",
@@ -460,7 +471,9 @@ impl SoftwareId {
             | SoftwareId::Gemini
             | SoftwareId::OpenCode
             | SoftwareId::LmStudio => SoftwareCategory::AiTool,
-            SoftwareId::Docker | SoftwareId::Wsl => SoftwareCategory::Runtime,
+            SoftwareId::Docker | SoftwareId::Wsl | SoftwareId::WindowsTerminal => {
+                SoftwareCategory::Runtime
+            }
             SoftwareId::Python
             | SoftwareId::Node
             | SoftwareId::Git
@@ -498,6 +511,10 @@ impl SoftwareId {
                 | SoftwareId::Codex
                 | SoftwareId::ChatgptDesktop
                 | SoftwareId::Windsurf
+                // Ships as an MSIX/Store package with a stable winget id and
+                // installs silently, so it meets the same bar as the rest of
+                // this list rather than the "detect only" bar.
+                | SoftwareId::WindowsTerminal
         )
     }
 
@@ -1212,6 +1229,16 @@ pub enum AppError {
     WingetUnavailable { reason: String },
     #[error("installation failed for {id}: {reason}")]
     InstallFailed { id: String, reason: String },
+    /// The action is reserved for the paid tier and this machine is not
+    /// activated for it.
+    ///
+    /// A first-class variant rather than an [`AppError::Internal`] string
+    /// because the UI has to *recognise* it: a refusal must open the activation
+    /// screen, not render as a red error. Encoding that decision in the error's
+    /// `kind` means the frontend's job is a switch, not a string match against
+    /// Chinese prose that could be reworded at any time.
+    #[error("专业版功能：{reason}")]
+    LicenseRequired { reason: String },
     #[error("internal error: {0}")]
     Internal(String),
 }

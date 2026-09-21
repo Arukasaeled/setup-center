@@ -92,8 +92,9 @@ pub fn run() {
             commands::advisor_report_text,
             commands::concept_notes,
             commands::knowledge_status,
-            // Stage 5: licensing seam (open by default)
+            // Stage 5: licensing (Free = detect, Pro = install + configure)
             commands::license_status,
+            commands::license_device,
             commands::activate_license,
             commands::deactivate_license,
         ])

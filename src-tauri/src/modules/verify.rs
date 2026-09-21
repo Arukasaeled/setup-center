@@ -56,7 +56,11 @@ fn minimum_version(id: SoftwareId) -> Option<&'static str> {
         | SoftwareId::Gemini
         | SoftwareId::OpenCode
         | SoftwareId::Continue
-        | SoftwareId::Jetbrains => None,
+        | SoftwareId::Jetbrains
+        // Installable, but no version floor worth enforcing: every supported
+        // Windows 10/11 build ships a Terminal whose new features arrive by
+        // Store update, so "too old" would never be actionable.
+        | SoftwareId::WindowsTerminal => None,
     }
 }
 

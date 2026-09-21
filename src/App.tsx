@@ -28,11 +28,12 @@
  * without either bloating every row or hiding it behind a modal.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { TitleBar } from "./components/TitleBar";
 import { Notice } from "./components/ui";
 import { Dashboard } from "./screens/Dashboard";
+import { ActivationGate } from "./components/ActivationGate";
 import { BootstrapScreen } from "./screens/Bootstrap";
 import { ChooseScreen } from "./screens/Choose";
 import { DetectScreen } from "./screens/Detect";
@@ -42,6 +43,7 @@ import { InstallScreen } from "./screens/Install";
 import { SoftwareScreen } from "./screens/Software";
 import { WelcomeScreen } from "./screens/Welcome";
 import { useApp, type Screen } from "./lib/store";
+import { readEntryChoice } from "./lib/entry";
 
 /**
  * The wizard's steps.
@@ -77,6 +79,22 @@ export default function App() {
   const loadResumable = useApp((s) => s.loadResumable);
   const dashboardOpen = useApp((s) => s.dashboardOpen);
   const theme = useApp((s) => s.theme);
+  const entitlements = useApp((s) => s.entitlements);
+  const loadEntitlements = useApp((s) => s.loadEntitlements);
+  const openDashboard = useApp((s) => s.openDashboard);
+
+  /**
+   * Whether the first-run activation gate is showing.
+   *
+   * Read once into state rather than derived on every render: the flag lives in
+   * `localStorage` and the licence lives in the store, and the gate's whole job
+   * is to be *replaced* by the app once answered. Re-deriving it would re-open
+   * the gate the moment a REST call raced it.
+   *
+   * `null` means "not decided yet, we have not read the licence", which is why
+   * the gate is not shown while the licence is still loading.
+   */
+  const [gateOpen, setGateOpen] = useState<boolean | null>(null);
 
   useEffect(() => {
     void loadStatus();
@@ -85,7 +103,36 @@ export default function App() {
     // student whose machine rebooted mid-install is offered "继续安装" rather
     // than having to work out which programs landed.
     void loadResumable();
-  }, [loadStatus, loadResumable]);
+    if (useApp.getState().entitlementsPhase === "idle") void loadEntitlements();
+  }, [loadStatus, loadResumable, loadEntitlements]);
+
+  // Decide the gate once the licence question has an answer.
+  //
+  // The order here is the whole rule: a licence beats the flag. Someone who
+  // chose FREE months ago and has since activated a key is PRO, and must not be
+  // sent back to the gate by a stale flag.
+  //
+  // A returning customer — licence or answered flag — goes to the *dashboard*,
+  // not the wizard. The wizard is the first-run path from nothing to a working
+  // environment; someone who already answered the gate has either walked it or
+  // declined to, and re-offering it would make the gate look like it did not
+  // take. "重新规划" on the dashboard is how they re-enter the wizard on purpose.
+  useEffect(() => {
+    if (gateOpen !== null) return;
+    const answered = readEntryChoice() !== null;
+    if (entitlements) {
+      const active = entitlements.state === "active";
+      setGateOpen(!active && !answered);
+      if (active || answered) openDashboard();
+    } else if (useApp.getState().entitlementsPhase === "error") {
+      // The licence could not be read. The gate shows, but the gate itself
+      // renders the "unreadable" state rather than pretending there is no
+      // licence — asking a paying customer to activate again on a read error is
+      // the one outcome worth avoiding.
+      setGateOpen(!answered);
+      if (answered) openDashboard();
+    }
+  }, [gateOpen, entitlements, openDashboard]);
 
   // Theme lives on `<html>` rather than in a React context because the webview
   // paints its own background before React mounts, and `tauri.conf.json` sets
@@ -111,7 +158,21 @@ export default function App() {
       <TitleBar />
 
       <main className="relative flex-1 overflow-hidden">
-        {dashboardOpen ? (
+        {gateOpen === true ? (
+          // The gate replaces both surfaces, not just the wizard. A customer who
+          // reaches a working machine through the wizard still has to answer the
+          // licence question, and answering it twice in two different places is
+          // how the two answers drift apart.
+          <ActivationGate
+            onDone={() => {
+              setGateOpen(false);
+              // Choosing FREE lands on the dashboard rather than the wizard: the
+              // dashboard is the surface a student returns to, and the wizard is
+              // the first-run path they have just declined to walk.
+              openDashboard();
+            }}
+          />
+        ) : dashboardOpen ? (
           // No `key` here on purpose: the dashboard keeps its scroll position and
           // selection while a student moves between sections, which is the whole
           // difference between a surface and a flow.
@@ -135,8 +196,11 @@ export default function App() {
 
       {/* The rail belongs to the wizard only. Showing it beside the dashboard
           would claim the student is on a step, which is the linear framing the
-          dashboard exists to replace. */}
-      {!dashboardOpen && screen !== "welcome" && <ProgressRail current={screen} />}
+          dashboard exists to replace. Suppressed while the gate is up, since the
+          gate is a decision rather than a step. */}
+      {gateOpen !== true && !dashboardOpen && screen !== "welcome" && (
+        <ProgressRail current={screen} />
+      )}
 
       {notice && <Notice message={notice} onDismiss={dismissNotice} />}
     </div>

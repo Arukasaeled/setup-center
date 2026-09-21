@@ -21,6 +21,31 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tauri::State;
 
+/// Refuses an action that the current tier does not permit.
+///
+/// Called at the *start* of the commands that change the machine — never inside
+/// `install`, `executor` or `bootstrap`. Two reasons, and the second is the
+/// important one:
+///
+/// 1. The engines stay tier-agnostic, so they remain testable without a licence
+///    and a licensing bug cannot alter an installation's behaviour partway
+///    through.
+/// 2. An installer that *starts* and then aborts has left the machine in a
+///    half-configured state the customer must clean up by hand. Refusing before
+///    any work begins is the only failure mode that is fully recoverable.
+///
+/// The check reads the live licence rather than a cached one, so deactivating in
+/// the licence screen takes effect on the very next attempt.
+fn require_install_rights() -> AppResult<()> {
+    let entitlements = license::Entitlements::of(&license::load(), license::enforcement_enabled());
+    if entitlements.can_install {
+        return Ok(());
+    }
+    Err(AppError::LicenseRequired {
+        reason: entitlements.reason,
+    })
+}
+
 /// Full environment detection. Runs every probe; takes a few seconds because of
 /// the network round-trips.
 ///
@@ -304,6 +329,8 @@ pub async fn run_install(
     plan: InstallPlan,
     state: State<'_, AppState>,
 ) -> AppResult<ExecutionSession> {
+    // Before the session is opened and before a single byte is downloaded.
+    require_install_rights()?;
     run_install_blocking(plan, state).await
 }
 
@@ -353,6 +380,10 @@ async fn run_install_blocking(
 /// the UI cannot accidentally re-run a finished plan by pressing "继续".
 #[tauri::command]
 pub async fn resume_install(state: State<'_, AppState>) -> AppResult<ExecutionSession> {
+    // Gated like a fresh run. A resumed install downloads and executes exactly
+    // the same steps, so leaving this open would make the licence a formality:
+    // interrupt once, then press 继续.
+    require_install_rights()?;
     let Some(previous) = state.resumable_session() else {
         return state.last_session().ok_or_else(|| AppError::InstallFailed {
             id: "session".into(),
@@ -573,6 +604,10 @@ pub async fn run_bootstrap(
     profile_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<BootstrapSessionView> {
+    // The configuration stage is the other half of the paid tier: it writes
+    // editor settings, git config and MCP files. Gated before the plan is built
+    // so a refused run costs nothing but the refusal.
+    require_install_rights()?;
     let profile = state.profiles.get(&profile_id)?;
     let catalog = catalog::Catalog::builtin();
     let scan = scan_for(&state, &profile.software);
@@ -1404,6 +1439,49 @@ pub fn deactivate_license() -> AppResult<license::Entitlements> {
     ))
 }
 
+/// What the licence screen may show about this machine's binding.
+///
+/// Deliberately a *summary*, not the fingerprint's inputs. The screen needs to
+/// say "设备绑定：当前设备" and, when something looks wrong, whether the hardware
+/// probes were even readable — it has no use for the raw `MachineGuid`, and
+/// handing it over would put a stable machine identifier one screenshot away
+/// from being pasted somewhere public.
+///
+/// There is no command for reading the activation code back, and that is a
+/// design decision rather than an omission: see the brief's "用户不可查看". A
+/// `get_license_key` command would be the single most obvious thing to add here,
+/// and it is exactly what must not exist.
+#[tauri::command]
+pub fn license_device() -> LicenseDeviceView {
+    let (hash, components) = license::device_summary();
+    let entitlements = license::Entitlements::of(&license::load(), license::enforcement_enabled());
+
+    LicenseDeviceView {
+        // First 8 hex characters only. Enough that two machines are visibly
+        // different in a support conversation, not enough to correlate.
+        short_id: hash.chars().take(8).collect(),
+        components_readable: components,
+        reliable: entitlements.device_reliable,
+        bound_here: entitlements.state == license::LicenseState::Active,
+        state: entitlements.state,
+    }
+}
+
+/// What the licence screen may show about the machine binding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LicenseDeviceView {
+    /// Abbreviated device digest, for display only.
+    pub short_id: String,
+    /// How many hardware probes produced a value (0-4).
+    pub components_readable: usize,
+    /// Whether that count is high enough for a mismatch to be meaningful.
+    pub reliable: bool,
+    /// Whether the stored activation belongs to this machine.
+    pub bound_here: bool,
+    pub state: license::LicenseState,
+}
+
 impl From<&knowledge::ConceptKnowledge> for ConceptView {
     fn from(c: &knowledge::ConceptKnowledge) -> Self {
         Self {
@@ -1484,6 +1562,98 @@ pub struct KnowledgeStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // The enforcement boundary
+    //
+    // `modules::license` proves the *decision* is right, and `tools/ui-verify.mjs`
+    // proves the screen *reports* it. Neither proves the decision is consulted
+    // on the path that actually changes the machine — a perfect gate that the
+    // installer never calls would pass both.
+    //
+    // These assertions cover that gap. They drive `require_install_rights`
+    // directly, which is the function all three mutating commands call, so the
+    // wiring asserted here is the wiring that ships (see the call sites in
+    // `run_install`, `resume_install` and `run_bootstrap`).
+    // -----------------------------------------------------------------------
+
+    /// Swaps the global enforcement switch for the duration of `body`.
+    ///
+    /// The flag is read from the environment, so it is process-wide; tests run
+    /// in threads. `cargo test` would otherwise make these two assertions flaky
+    /// by interleaving with each other.
+    fn with_enforcement<T>(on: bool, body: impl FnOnce() -> T) -> T {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = std::env::var("AISSETUP_ENFORCE_TIERS").ok();
+        std::env::set_var("AISSETUP_ENFORCE_TIERS", if on { "1" } else { "0" });
+        let out = body();
+        match previous {
+            Some(v) => std::env::set_var("AISSETUP_ENFORCE_TIERS", v),
+            None => std::env::remove_var("AISSETUP_ENFORCE_TIERS"),
+        }
+        out
+    }
+
+    #[test]
+    fn the_install_gate_refuses_an_unactivated_machine() {
+        // The commercial boundary. If this ever returns `Ok`, installation runs
+        // for free and the product has no paid tier whatever the UI says.
+        with_enforcement(true, || {
+            let _ = license::deactivate();
+
+            // Asserted rather than assumed. An earlier draft wrapped the check
+            // in `if !can_install`, which made the test pass vacuously on an
+            // activated machine — a green result that had measured nothing.
+            assert!(
+                !license::Entitlements::of(&license::load(), true).can_install,
+                "precondition: a deactivated machine with enforcement on must not be entitled"
+            );
+
+            let refused = require_install_rights();
+            assert!(
+                refused.is_err(),
+                "an unactivated machine was allowed to install"
+            );
+            assert!(
+                matches!(refused, Err(AppError::LicenseRequired { .. })),
+                "the refusal must be a distinguishable kind, not a generic error"
+            );
+        });
+    }
+
+    #[test]
+    fn the_install_gate_opens_when_enforcement_is_off() {
+        // The development escape hatch must reach the boundary too, not merely
+        // the projection the UI reads.
+        with_enforcement(false, || {
+            assert!(
+                require_install_rights().is_ok(),
+                "with enforcement off the gate must not refuse"
+            );
+        });
+    }
+
+    #[test]
+    fn the_refusal_carries_the_sentence_the_ui_shows() {
+        // `refusalOrError` in the store puts this string in front of the
+        // customer. An empty or boilerplate reason would render a lock with
+        // nothing explaining it.
+        with_enforcement(true, || {
+            let _ = license::deactivate();
+            // Non-vacuous: this must actually be a refusal for the assertion
+            // below to have observed anything.
+            let refused = require_install_rights();
+            let Err(AppError::LicenseRequired { reason }) = refused else {
+                panic!("expected a licence refusal, got {refused:?}");
+            };
+            assert!(!reason.is_empty());
+            assert!(
+                reason.contains("免费版") || reason.contains("专业版"),
+                "the refusal must name the tiers: {reason}"
+            );
+        });
+    }
 
     /// State with the compiled-in resources, which is what `cargo test` always
     /// has. `None` makes the stores fall back exactly as the shipped binary does

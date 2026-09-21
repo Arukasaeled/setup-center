@@ -16,16 +16,37 @@
  * What this screen must never do is claim progress it cannot observe. Every
  * number here comes from the session the engine returned; the only thing the
  * frontend adds is an elapsed-time readout while waiting.
+ *
+ * ## Phase 7: the flow no longer starts itself
+ *
+ * This screen used to run the whole plan the moment it mounted, which made the
+ * install a corridor rather than a decision: a student who wanted Git but not
+ * Docker had no way to say so and no way to find out until something failed.
+ *
+ * It now opens in a **choose** phase — every step listed with a checkbox and its
+ * real current state — and only becomes the running view once the student commits.
+ * Two consequences worth stating:
+ *
+ * * Unchecking a program is a *frontend* narrowing of the plan, not a new engine
+ *   feature. `install::execute_steps` iterates `plan.steps` and takes `total`
+ *   from it, so the run, its session and its report all describe exactly what was
+ *   asked for. See `startInstall` in the store.
+ * * A step that is already satisfied is shown as 已安装 and cannot be selected —
+ *   re-installing something present is the one action that could damage a working
+ *   machine.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Button, SectionLabel } from "../components/ui";
+import { StatusBadge } from "../components/StatusBadge";
 import { SoftwareIcon } from "../components/SoftwareIcon";
+import { ProHint } from "../components/ProGate";
 import { describeSoftware } from "../lib/software";
 import { selectedProfile, useApp } from "../lib/store";
 import type {
   AttemptOutcome,
+  InstallPlan,
   SoftwareDescriptor,
   SoftwareId,
   StepProgress,
@@ -41,6 +62,8 @@ export function InstallScreen() {
   const installing = useApp((s) => s.installing);
   const executionError = useApp((s) => s.executionError);
   const canResume = useApp((s) => s.canResume);
+  const chosenSteps = useApp((s) => s.chosenSteps);
+  const setChosenSteps = useApp((s) => s.setChosenSteps);
   const goTo = useApp((s) => s.goTo);
   const startInstall = useApp((s) => s.startInstall);
   const resumeInstall = useApp((s) => s.resumeInstall);
@@ -62,28 +85,55 @@ export function InstallScreen() {
     return () => window.clearInterval(id);
   }, [installing]);
 
-  // Start the engine once per mount, unless a run for this same plan has
-  // already happened or is happening.
-  //
-  // The guard is on the *profile*, not merely on "a session exists": returning
-  // to this screen after switching profiles must start the engine for the new
-  // plan. Keying on the profile id is what makes that distinction, and it is the
-  // bug that made a re-entered screen display the previous profile's result
-  // beside the new profile's step list.
-  useEffect(() => {
-    if (!plan || installing) return;
-    if (startedRef.current === plan.profileId) return;
-    startedRef.current = plan.profileId;
-    void startInstall();
-  }, [plan, installing, startInstall]);
-
   const runnable = useMemo(
     () => plan?.steps.filter((s) => !s.satisfied) ?? [],
     [plan],
   );
 
+  // The choose phase holds until the student commits *in this mount*.
+  //
+  // Gating on `committed` alone rather than on `session === null` is deliberate.
+  // A previous run leaves a session in the store, and treating that as "already
+  // decided" meant a student who went back to change their mind landed on the old
+  // run's result with no way to start another one — the corridor this phase
+  // exists to remove. Re-entering re-asks, which is what going back means.
+  //
+  // `installing` still wins: a run in flight is not a decision to re-open.
+  const [committed, setCommitted] = useState(false);
+  const choosing = !committed && !installing;
+
+  // The engine is started by the student's click, not by mount. `startedRef`
+  // still guards against React's development double-invoke firing two runs —
+  // for an installer that means two winget processes over one package.
+  const begin = () => {
+    if (!plan || installing) return;
+    if (startedRef.current === plan.profileId) return;
+    startedRef.current = plan.profileId;
+    setCommitted(true);
+    void startInstall();
+  };
+
   if (!plan || !profile) {
     return <EmptyState onBack={() => goTo("choose")} />;
+  }
+
+  // Phase 7: the screen opens on a decision rather than on a running engine.
+  // Rendered before any of the progress machinery below, because none of it
+  // means anything until a run exists.
+  if (choosing) {
+    return (
+      <ChoosePhase
+        plan={plan}
+        profileName={profile.name}
+        catalogue={catalogue}
+        chosen={chosenSteps}
+        onChoose={setChosenSteps}
+        blockers={readiness && !readiness.canStart ? readiness.blockers : null}
+        onBack={() => goTo("choose")}
+        onStart={begin}
+        onSkip={() => goTo("bootstrap")}
+      />
+    );
   }
 
   const steps = session?.steps ?? [];
@@ -248,6 +298,193 @@ function lastActionFor(session: ReturnType<typeof useApp.getState>["session"], i
     if (session.actions[i].id === id) return session.actions[i];
   }
   return null;
+}
+
+/**
+ * The choose phase: what will be installed, before anything runs.
+ *
+ * ## The three states a row can be in, and why they are not two
+ *
+ * * **已安装** — the pre-run scan found it. Not selectable, and it is not a
+ *   checkbox at all: re-installing something present is the one action here that
+ *   could damage a working machine, so it must not look like an option.
+ * * **选中的** — will run.
+ * * **未选中的** — will not run, and the reason is shown as the student's own
+ *   choice rather than as an omission.
+ *
+ * ## Why the totals are stated as a sentence
+ *
+ * "已选 3 项 · 预计 2 分钟" is the information a student needs to decide whether
+ * to uncheck more. A bare count of checkboxes does not answer "how long will this
+ * take me", which is the actual cost of saying yes.
+ */
+function ChoosePhase({
+  plan,
+  profileName,
+  catalogue,
+  chosen,
+  onChoose,
+  blockers,
+  onBack,
+  onStart,
+  onSkip,
+}: {
+  plan: InstallPlan;
+  profileName: string;
+  catalogue: SoftwareDescriptor[];
+  /** `null` means "everything runnable", which is also the initial state. */
+  chosen: Set<SoftwareId> | null;
+  onChoose: (ids: SoftwareId[] | null) => void;
+  blockers: string[] | null;
+  onBack: () => void;
+  onStart: () => void;
+  /** Advances when there is genuinely nothing to install. */
+  onSkip: () => void;
+}) {
+  const runnable = plan.steps.filter((s) => !s.satisfied);
+  const satisfied = plan.steps.filter((s) => s.satisfied);
+
+  // `null` is presented as "all runnable steps selected" rather than as a third
+  // visual state, because "no opinion" and "I want all of them" produce the same
+  // run and the checkbox must show the truth about what will happen.
+  const selected = new Set(runnable.filter((s) => chosen === null || chosen.has(s.id)).map((s) => s.id));
+
+  const toggle = (id: SoftwareId) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    // Collapsing back to `null` when every runnable step is selected keeps the
+    // store's invariant: `null` always means "the whole plan", so a later plan
+    // rebuild cannot leave the selection describing a set that no longer matches.
+    onChoose(next.size === runnable.length ? null : [...next]);
+  };
+
+  return (
+    <div className="flex h-full flex-col px-10 py-8">
+      <header className="fade shrink-0">
+        <h2 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
+          {runnable.length === 0 ? "这次没有需要安装的" : "这次要装哪些"}
+        </h2>
+        <p className="text-[color:var(--text-quiet)] mt-1 text-[13px]">
+          {runnable.length === 0 ? (
+            `${profileName} 需要的程序都已经在这台电脑上了。`
+          ) : (
+            <>
+              {profileName} · 已选 {selected.size} 项
+              {plan.estimatedMinutes > 0 && ` · 预计 ${plan.estimatedMinutes} 分钟`}
+              。不想装的可以取消勾选，之后随时可以再来装。
+            </>
+          )}
+        </p>
+      </header>
+
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+        {blockers && blockers.length > 0 && <BlockerNotice blockers={blockers} />}
+
+        {/* A profile whose programs are all present must not present an empty
+            checklist with a disabled button — that reads as a broken screen.
+            The honest state is "nothing to do here", which is what it says. */}
+        {runnable.length === 0 && (
+          <div className="glass-soft rounded-[12px] px-4 py-3">
+            <p className="text-[color:var(--text-tertiary)] text-[12.5px] leading-relaxed">
+              可以直接进入下一步，本工具会检查并配置这些程序的设置。
+            </p>
+          </div>
+        )}
+
+        <div className="stagger flex flex-col gap-1.5">
+          {runnable.map((step) => {
+            const on = selected.has(step.id);
+            const meta = describeSoftware(step.id, catalogue);
+            return (
+              <label
+                key={step.id}
+                className={clsx(
+                  "flex cursor-pointer items-center gap-3.5 rounded-[10px] border px-3.5 py-2.5 transition-colors duration-150",
+                  on
+                    ? "border-[color:var(--line-default)] bg-[color:var(--surface-inset)]"
+                    : "border-[color:var(--line-subtle)]/70",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => toggle(step.id)}
+                  className="accent-[color:var(--accent)] h-4 w-4 shrink-0"
+                  aria-label={`安装 ${meta.name}`}
+                />
+                <SoftwareIcon id={step.id} size={28} />
+                <span className="min-w-0 flex-1">
+                  <span className="text-[color:var(--text-primary)] block text-[13.5px]">
+                    {meta.name}
+                  </span>
+                  <span className="text-[color:var(--text-quiet)] block truncate text-[12px]">
+                    {meta.purpose}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        {satisfied.length > 0 && (
+          <div className="mt-6">
+            <SectionLabel>已经装好 · {satisfied.length}</SectionLabel>
+            <div className="flex flex-col gap-1.5">
+              {satisfied.map((step) => (
+                <div
+                  key={step.id}
+                  className="border-[color:var(--line-subtle)]/50 flex items-center gap-3.5 rounded-[10px] border border-dashed px-3.5 py-2.5"
+                >
+                  <SoftwareIcon id={step.id} size={28} />
+                  <span className="min-w-0 flex-1">
+                    <span className="text-[color:var(--text-secondary)] block text-[13.5px]">
+                      {describeSoftware(step.id, catalogue).name}
+                    </span>
+                    <span className="text-[color:var(--text-quiet)] block text-[12px]">
+                      不需要再装一次
+                    </span>
+                  </span>
+                  <StatusBadge confidence="ok" size="sm" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
+        <Button variant="quiet" onClick={onBack}>
+          返回
+        </Button>
+        {runnable.length === 0 ? (
+          // Skipping the run is not the same as faking one: no session is
+          // created, so nothing later can report an install that never happened.
+          <Button onClick={onSkip}>下一步</Button>
+        ) : (
+          <div className="flex items-center gap-3">
+            {selected.size === 0 && (
+              <span className="text-[color:var(--text-quiet)] text-[12px]">
+                至少选一项才能开始
+              </span>
+            )}
+            <Button disabled={selected.size === 0} onClick={onStart}>
+              {selected.size === runnable.length
+                ? `开始安装（${selected.size} 项）`
+                : `安装选中的 ${selected.size} 项`}
+            </Button>
+          </div>
+        )}
+      </footer>
+
+      {/* The brief's weak hint: "需要自动安装功能？联系作者获取专业版". Placed
+          *below* the button rather than above it, and below the fold of the
+          decision — the customer reads it only after looking at what they were
+          about to click. It renders nothing once activated, so it needs no
+          conditional at this call site. */}
+      <ProHint className="mt-2.5 shrink-0 text-right" />
+    </div>
+  );
 }
 
 function CurrentStep({

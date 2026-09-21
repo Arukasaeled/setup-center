@@ -30,6 +30,7 @@ import type {
   InstallPlan,
   InstallStrategy,
   KnowledgeStatus,
+  LicenseDeviceView,
   LocalizationTargetView,
   MachineFacts,
   Profile,
@@ -64,9 +65,9 @@ export type Section =
   | "overview"
   | "software"
   | "config"
-  | "aiTools"
   | "history"
-  | "license";
+  | "license"
+  | "about";
 
 /** The ambient theme. `system` follows the OS and is the default. */
 export type ThemePreference = "light" | "dark" | "system";
@@ -169,6 +170,21 @@ interface AppStore {
   entitlementsError: string | null;
   /** `true` while an activation call is in flight. */
   activatingLicense: boolean;
+  /**
+   * This machine's binding summary, for the licence screen. `null` until read.
+   */
+  licenseDevice: LicenseDeviceView | null;
+  /**
+   * Set when a gated action was refused, so a screen can open the activation
+   * panel instead of rendering a red error.
+   *
+   * Held in the store rather than returned from the action because the refusal
+   * is not the concern of the caller that triggered it: `Install` would have to
+   * know that a `licenseRequired` means "navigate to 版本", which is policy the
+   * store already owns.
+   */
+  gateBlocked: string | null;
+  clearGateBlock: () => void;
   loadEntitlements: () => Promise<void>;
   /** Activates a key. Resolves `true` on success so the form can clear itself. */
   activateLicense: (key: string) => Promise<boolean>;
@@ -217,6 +233,19 @@ interface AppStore {
   executionError: string | null;
   /** Whether there is an interrupted run worth offering to continue. */
   canResume: boolean;
+  /**
+   * The programs the student has asked to install, when they have made a choice.
+   *
+   * `null` means "no opinion" and installs the whole plan — which is what the
+   * wizard's straight-through path wants. A set means the student unchecked
+   * something and only that set should run. It is deliberately *not* a list of
+   * programmes excluded, because a plan can be rebuilt between renders (a
+   * rescan, a profile change) and an exclusion list would then silently apply to
+   * steps it was never computed against.
+   */
+  chosenSteps: Set<SoftwareId> | null;
+  /** Replaces the selection. `null` restores "install everything in the plan". */
+  setChosenSteps: (ids: SoftwareId[] | null) => void;
   /** Begin executing the current plan. */
   startInstall: () => Promise<void>;
   /** Continue an interrupted run. */
@@ -266,6 +295,33 @@ interface AppStore {
   /** Last non-fatal error, shown as a dismissible strip. */
   notice: string | null;
   dismissNotice: () => void;
+}
+
+/**
+ * Turns a thrown refusal into store state, keeping a genuine failure a failure.
+ *
+ * A `licenseRequired` rejection is not an error the customer should see in red:
+ * it is the paid tier working as intended, and the right response is to show the
+ * activation panel. Everything else stays on the error field it already had.
+ *
+ * Returning a partial state object rather than branching at each call site means
+ * the three gated actions share one definition of "this was a refusal", so they
+ * cannot drift into treating it three different ways.
+ */
+function refusalOrError(
+  err: unknown,
+  errorField: "executionError" | "bootstrapError" = "executionError",
+): Record<string, unknown> {
+  const e = err as { kind?: string; detail?: { reason?: string } } | null;
+  if (e && typeof e === "object" && e.kind === "licenseRequired") {
+    // `gateBlocked` carries the sentence Rust produced, so the UI never has to
+    // write a second explanation for the same state.
+    return {
+      gateBlocked: e.detail?.reason ?? "此功能需要激活专业版。",
+      [errorField]: null,
+    };
+  }
+  return { [errorField]: describeError(err) };
 }
 
 export const useApp = create<AppStore>((set, get) => ({
@@ -331,19 +387,33 @@ export const useApp = create<AppStore>((set, get) => ({
   // a licence read is a local file, not a probe, so if it errors the rest of
   // the dashboard is still fine and only this section degrades.
   //
-  // Note that nothing here gates the install flow. `canInstall` is reported,
-  // not enforced — see `modules/license.rs` for why the gate ships open.
+  // The tier *is* enforced, but not here: `run_install`, `resume_install` and
+  // `run_bootstrap` refuse in Rust before doing any work, because that is the
+  // only place a refusal is guaranteed to happen before the machine is touched.
+  // This store's job is to *recognise* that refusal (`gateBlocked`) and to look
+  // ahead of it so the customer is told before they press the button, rather
+  // than being surprised after.
   // -------------------------------------------------------------------------
   entitlements: null,
   entitlementsPhase: "idle",
   entitlementsError: null,
   activatingLicense: false,
+  licenseDevice: null,
+  gateBlocked: null,
+
+  clearGateBlock: () => set({ gateBlocked: null }),
 
   loadEntitlements: async () => {
     set({ entitlementsPhase: "loading", entitlementsError: null });
     try {
-      const entitlements = await ipc.licenseStatus();
-      set({ entitlements, entitlementsPhase: "done" });
+      const [entitlements, licenseDevice] = await Promise.all([
+        ipc.licenseStatus(),
+        // The device summary is part of the same decision, so it is read at the
+        // same time. Fetching it per-render would put a command call inside the
+        // licence screen's first paint.
+        ipc.licenseDevice(),
+      ]);
+      set({ entitlements, licenseDevice, entitlementsPhase: "done" });
     } catch (err) {
       set({
         entitlementsPhase: "error",
@@ -528,6 +598,12 @@ export const useApp = create<AppStore>((set, get) => ({
       // here is what keeps the dashboard from showing hardware it measured a
       // minute ago beside an environment score that just changed.
       void get().loadCapabilities();
+      // The advisor is a *view* over this report, so it is stale the moment the
+      // report changes. It used to be fetched once on mount (`if (!advisor)`),
+      // which on a cold start computed it before this detection had landed and
+      // then never recomputed it: the overview announced "没有一项检测完成" above
+      // capability lists that had just been read from the finished report.
+      void get().loadAdvisor();
     } catch (err) {
       set({
         detect: { kind: "error", message: describeError(err) },
@@ -560,6 +636,10 @@ export const useApp = create<AppStore>((set, get) => ({
       // dashboard that updates when a program appears and one that only tells
       // the truth at launch.
       void get().loadCapabilities();
+      // Same reasoning: the advisor's strengths and gaps are read off the
+      // inventory, so a scan that changes it must not leave a stale summary on
+      // screen.
+      void get().loadAdvisor();
     } catch (err) {
       set({ inventoryPhase: "error", inventoryError: describeError(err) });
     }
@@ -598,6 +678,11 @@ export const useApp = create<AppStore>((set, get) => ({
       session: null,
       readiness: null,
       executionError: null,
+      // The selection is a set of programme ids drawn from *this* profile's plan.
+      // Keeping it across a profile change would let a narrowed set silently
+      // filter a plan it was never computed against — installing a subset the
+      // student never chose.
+      chosenSteps: null,
       bootstrapPlan: null,
       bootstrapSession: null,
       bootstrapError: null,
@@ -671,6 +756,11 @@ export const useApp = create<AppStore>((set, get) => ({
   installing: false,
   executionError: null,
   canResume: false,
+  chosenSteps: null,
+
+  setChosenSteps: (ids) => {
+    set({ chosenSteps: ids === null ? null : new Set(ids) });
+  },
 
   checkReadiness: async () => {
     const plan = get().plan;
@@ -688,9 +778,34 @@ export const useApp = create<AppStore>((set, get) => ({
     const plan = get().plan;
     if (!plan || get().installing) return;
 
+    // Selective install (brief phase 7): the engine runs exactly the steps in
+    // the plan it is handed, and `install::execute_steps` derives both its loop
+    // and its `total` from `plan.steps`. So narrowing the plan *here* is the
+    // whole mechanism — no Rust change, no second execution path, and the
+    // session that comes back describes only what was actually requested.
+    //
+    // Steps the student unchecked are removed rather than marked skipped. A
+    // `skipped` step would appear in the report as "已检测到，无需安装", which
+    // is a different claim from "the student chose not to"; removing them keeps
+    // the report honest about what was and was not attempted.
+    const chosen = get().chosenSteps;
+    const effective =
+      chosen === null
+        ? plan
+        : { ...plan, steps: plan.steps.filter((s) => chosen.has(s.id)) };
+
+    // Everything the student wanted was already installed. Starting a run with
+    // no steps would produce an empty session that reads like a silent failure;
+    // refreshing the scan and leaving the existing session alone is the truthful
+    // outcome.
+    if (effective.steps.length === 0) {
+      await get().scanInstalled(plan.steps.map((s) => s.id));
+      return;
+    }
+
     set({ installing: true, executionError: null });
     try {
-      const session = await ipc.runInstall(plan);
+      const session = await ipc.runInstall(effective);
       set({
         session,
         installing: false,
@@ -703,7 +818,7 @@ export const useApp = create<AppStore>((set, get) => ({
       });
       await get().scanInstalled(plan.steps.map((s) => s.id));
     } catch (err) {
-      set({ installing: false, executionError: describeError(err) });
+      set({ installing: false, ...refusalOrError(err) });
     }
   },
 
@@ -720,7 +835,7 @@ export const useApp = create<AppStore>((set, get) => ({
       const plan = get().plan;
       if (plan) await get().scanInstalled(plan.steps.map((s) => s.id));
     } catch (err) {
-      set({ installing: false, executionError: describeError(err) });
+      set({ installing: false, ...refusalOrError(err) });
     }
   },
 
@@ -796,7 +911,7 @@ export const useApp = create<AppStore>((set, get) => ({
       // answer beside a post-run report.
       await get().scanInstalled();
     } catch (err) {
-      set({ bootstrapping: false, bootstrapError: describeError(err) });
+      set({ bootstrapping: false, ...refusalOrError(err, "bootstrapError") });
     }
   },
 

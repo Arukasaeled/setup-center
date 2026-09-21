@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "../lib/ipc";
 import { useApp, type Section } from "../lib/store";
+import { VersionBadge } from "./VersionBadge";
 
 /**
  * What the centre cell of the title bar says.
@@ -55,9 +56,9 @@ const SECTION_TITLES: Record<Section, string> = {
   overview: "概览",
   software: "软件",
   config: "配置",
-  aiTools: "AI 工具",
   history: "历史",
   license: "版本",
+  about: "关于",
 };
 
 export function TitleBar() {
@@ -125,6 +126,11 @@ export function TitleBar() {
         <span className="text-[color:var(--text-secondary)] text-[12.5px] font-medium tracking-[-0.005em]">
           Setup Center
         </span>
+        {/* The version state, per the brief's "顶部增加：版本状态 FREE / PRO".
+            Placed beside the product name rather than in the right-hand control
+            cluster: every control on that side is an action, and a tier badge is
+            not something to click. */}
+        <VersionBadge />
       </div>
 
       {/* Centre: the current page's title. Kept in the bar rather than repeated

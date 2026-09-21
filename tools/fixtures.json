@@ -5097,97 +5097,97 @@
       "wingetReachable": true
     },
     "score": 90,
-    "scoreMax": 135.0,
+    "scoreMax": 135,
     "signals": [
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.cpu",
         "label": "处理器",
-        "score": 10.0,
+        "score": 10,
         "severity": "info",
         "value": "Intel(R) Core(TM) Ultra 7 251HX（18 线程）",
-        "weight": 10.0
+        "weight": 10
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.memory",
         "label": "内存",
-        "score": 15.0,
+        "score": 15,
         "severity": "info",
         "value": "15.5 GB",
-        "weight": 15.0
+        "weight": 15
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.gpu",
         "label": "显卡",
-        "score": 5.0,
+        "score": 5,
         "severity": "info",
         "value": "NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存",
-        "weight": 5.0
+        "weight": 5
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.virtualization",
         "label": "虚拟化支持",
-        "score": 5.0,
+        "score": 5,
         "severity": "info",
         "value": "已启用（WSL2 / Docker 可用）",
-        "weight": 5.0
+        "weight": 5
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "windows.version",
         "label": "Windows 版本",
-        "score": 25.0,
+        "score": 25,
         "severity": "info",
         "value": "Windows 11 25H2 (10.0.26200)",
-        "weight": 25.0
+        "weight": 25
       },
       {
         "confidence": "unknown",
         "hint": "部分软件需要提权。安装失败时可右键以管理员身份重新运行。",
         "key": "admin.rights",
         "label": "管理员权限",
-        "score": 7.0,
+        "score": 7,
         "severity": "warning",
         "value": "未提权（当前账户属于管理员组）",
-        "weight": 10.0
+        "weight": 10
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "disk.space",
         "label": "磁盘空间",
-        "score": 20.0,
+        "score": 20,
         "severity": "info",
         "value": "103.0 GB 可用",
-        "weight": 20.0
+        "weight": 20
       },
       {
         "confidence": "unknown",
         "hint": "网络可用但速度较慢，安装可能需要更长时间。",
         "key": "network.connectivity",
         "label": "网络连接",
-        "score": 15.0,
+        "score": 15,
         "severity": "warning",
         "value": "较慢（125 ms，1 个探测点失败）",
-        "weight": 25.0
+        "weight": 25
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "network.winget",
         "label": "winget 组件源",
-        "score": 20.0,
+        "score": 20,
         "severity": "info",
         "value": "可达",
-        "weight": 20.0
+        "weight": 20
       }
     ],
     "warningCount": 2,
@@ -6581,28 +6581,52 @@
   },
   "license": {
     "freeEnforced": {
-      "activated": false,
-      "canInstall": false,
-      "enforced": true,
-      "reason": "免费版仅提供环境检测。激活专业版后可执行安装与配置。",
       "tier": "free",
-      "tierLabel": "免费版"
+      "tierLabel": "免费版",
+      "canInstall": false,
+      "canConfigure": false,
+      "activated": false,
+      "enforced": true,
+      "state": "inactive",
+      "activatedAt": null,
+      "deviceReliable": true,
+      "reason": "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。"
     },
     "freeUnenforced": {
-      "activated": false,
-      "canInstall": true,
-      "enforced": false,
-      "reason": "当前为免费版，本版本不限制安装与配置功能，全部可用。",
       "tier": "free",
-      "tierLabel": "免费版"
+      "tierLabel": "免费版",
+      "canInstall": true,
+      "canConfigure": true,
+      "activated": false,
+      "enforced": false,
+      "state": "inactive",
+      "activatedAt": null,
+      "deviceReliable": true,
+      "reason": "当前版本：免费版（本构建未启用限制，全部功能可用）。"
     },
     "proEnforced": {
-      "activated": true,
-      "canInstall": true,
-      "enforced": true,
-      "reason": "已激活专业版：检测、安装与配置全部可用。",
       "tier": "pro",
-      "tierLabel": "专业版"
+      "tierLabel": "专业版",
+      "canInstall": true,
+      "canConfigure": true,
+      "activated": true,
+      "enforced": true,
+      "state": "active",
+      "activatedAt": "2026-01-15T10:30:00Z",
+      "deviceReliable": true,
+      "reason": "已激活专业版：自动安装、环境初始化与配置功能已解锁。"
+    },
+    "freeMismatch": {
+      "tier": "free",
+      "tierLabel": "免费版",
+      "canInstall": false,
+      "canConfigure": false,
+      "activated": false,
+      "enforced": true,
+      "state": "deviceMismatch",
+      "activatedAt": null,
+      "deviceReliable": true,
+      "reason": "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。"
     }
   },
   "localizationTargets": [
@@ -6811,6 +6835,14 @@
       "installable": false,
       "name": "JetBrains 系列",
       "purpose": "PyCharm / IDEA 等专业 IDE"
+    },
+    {
+      "id": "windows_terminal",
+      "name": "Windows Terminal",
+      "purpose": "更好用的终端，支持多标签与分屏",
+      "category": "runtime",
+      "categoryName": "运行环境",
+      "installable": true
     }
   ],
   "plans": {
@@ -8082,97 +8114,97 @@
         "wingetReachable": true
       },
       "score": 90,
-      "scoreMax": 135.0,
+      "scoreMax": 135,
       "signals": [
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.cpu",
           "label": "处理器",
-          "score": 10.0,
+          "score": 10,
           "severity": "info",
           "value": "Intel(R) Core(TM) Ultra 7 251HX（18 线程）",
-          "weight": 10.0
+          "weight": 10
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.memory",
           "label": "内存",
-          "score": 15.0,
+          "score": 15,
           "severity": "info",
           "value": "15.5 GB",
-          "weight": 15.0
+          "weight": 15
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.gpu",
           "label": "显卡",
-          "score": 5.0,
+          "score": 5,
           "severity": "info",
           "value": "NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存",
-          "weight": 5.0
+          "weight": 5
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.virtualization",
           "label": "虚拟化支持",
-          "score": 5.0,
+          "score": 5,
           "severity": "info",
           "value": "已启用（WSL2 / Docker 可用）",
-          "weight": 5.0
+          "weight": 5
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "windows.version",
           "label": "Windows 版本",
-          "score": 25.0,
+          "score": 25,
           "severity": "info",
           "value": "Windows 11 25H2 (10.0.26200)",
-          "weight": 25.0
+          "weight": 25
         },
         {
           "confidence": "unknown",
           "hint": "部分软件需要提权。安装失败时可右键以管理员身份重新运行。",
           "key": "admin.rights",
           "label": "管理员权限",
-          "score": 7.0,
+          "score": 7,
           "severity": "warning",
           "value": "未提权（当前账户属于管理员组）",
-          "weight": 10.0
+          "weight": 10
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "disk.space",
           "label": "磁盘空间",
-          "score": 20.0,
+          "score": 20,
           "severity": "info",
           "value": "103.0 GB 可用",
-          "weight": 20.0
+          "weight": 20
         },
         {
           "confidence": "unknown",
           "hint": "网络可用但速度较慢，安装可能需要更长时间。",
           "key": "network.connectivity",
           "label": "网络连接",
-          "score": 15.0,
+          "score": 15,
           "severity": "warning",
           "value": "较慢（125 ms，1 个探测点失败）",
-          "weight": 25.0
+          "weight": 25
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "network.winget",
           "label": "winget 组件源",
-          "score": 20.0,
+          "score": 20,
           "severity": "info",
           "value": "可达",
-          "weight": 20.0
+          "weight": 20
         }
       ],
       "warningCount": 2,
@@ -9268,6 +9300,38 @@
           "path": null,
           "sources": [],
           "version": null
+        },
+        {
+          "confidence": "fail",
+          "evidence": [
+            {
+              "detail": "2.7.13.0",
+              "outcome": "present",
+              "source": "registry"
+            },
+            {
+              "detail": "C:\\Program Files\\WindowsApps\\MicrosoftCorporationII.WindowsSubsystemForLinux_2.7.13.0_x64__8wekyb3d8bbwe\\wsl.exe · unknown",
+              "outcome": "present",
+              "source": "path"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "winget"
+            }
+          ],
+          "hints": [],
+          "id": "windows_terminal",
+          "installed": false,
+          "name": "WSL",
+          "onPath": false,
+          "packageId": null,
+          "path": null,
+          "sources": [
+            "registry",
+            "path"
+          ],
+          "version": null
         }
       ],
       "providers": [
@@ -9332,7 +9396,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -9342,7 +9406,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -9352,7 +9416,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -9362,7 +9426,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "ChatGPT",
             "stage": "安装完成",
@@ -10192,7 +10256,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -10202,7 +10266,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -10212,7 +10276,7 @@
           },
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -10222,7 +10286,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "ChatGPT",
             "stage": "等待继续安装",
@@ -11069,7 +11133,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -11079,7 +11143,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -11089,7 +11153,7 @@
           },
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -11099,7 +11163,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "ChatGPT",
             "stage": "安装完成",
@@ -11908,7 +11972,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -11918,7 +11982,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -11928,7 +11992,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -11938,7 +12002,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -11948,7 +12012,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -11958,7 +12022,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -12788,7 +12852,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -12798,7 +12862,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -12808,7 +12872,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -12818,7 +12882,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -12828,7 +12892,7 @@
           },
           {
             "detail": "Claude Code 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Code",
             "stage": "需要管理员权限",
@@ -12838,7 +12902,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -13667,7 +13731,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -13677,7 +13741,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -13687,7 +13751,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -13697,7 +13761,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -13707,7 +13771,7 @@
           },
           {
             "detail": "Claude Code：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Code",
             "stage": "安装未能完成",
@@ -13717,7 +13781,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -14544,7 +14608,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -14554,7 +14618,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -14564,7 +14628,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -14574,7 +14638,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -14584,7 +14648,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -14594,7 +14658,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -14604,7 +14668,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -15435,7 +15499,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -15445,7 +15509,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -15455,7 +15519,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -15465,7 +15529,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -15475,7 +15539,7 @@
           },
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -15485,7 +15549,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Claude Code",
             "stage": "等待继续安装",
@@ -15495,7 +15559,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -16342,7 +16406,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -16352,7 +16416,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -16362,7 +16426,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -16372,7 +16436,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -16382,7 +16446,7 @@
           },
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -16392,7 +16456,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 5,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -16402,7 +16466,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -17211,7 +17275,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -18040,7 +18104,7 @@
         "steps": [
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -18869,7 +18933,7 @@
         "steps": [
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -19678,7 +19742,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -19688,7 +19752,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -19698,7 +19762,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -19708,7 +19772,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -20537,7 +20601,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -20547,7 +20611,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -20557,7 +20621,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -20567,7 +20631,7 @@
           },
           {
             "detail": "Claude Code 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Claude Code",
             "stage": "需要管理员权限",
@@ -21396,7 +21460,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -21406,7 +21470,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -21416,7 +21480,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -21426,7 +21490,7 @@
           },
           {
             "detail": "Claude Code：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "Claude Code",
             "stage": "安装未能完成",
@@ -22249,7 +22313,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -22259,7 +22323,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -22269,7 +22333,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -22279,7 +22343,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "安装完成",
@@ -22289,7 +22353,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "CMake",
             "stage": "安装完成",
@@ -23119,7 +23183,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -23129,7 +23193,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -23139,7 +23203,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -23149,7 +23213,7 @@
           },
           {
             "detail": "MSVC 编译工具 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "需要管理员权限",
@@ -23159,7 +23223,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "CMake",
             "stage": "等待继续安装",
@@ -24002,7 +24066,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -24012,7 +24076,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -24022,7 +24086,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -24032,7 +24096,7 @@
           },
           {
             "detail": "MSVC 编译工具：软件源中没有找到对应的包",
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "安装未能完成",
@@ -24042,7 +24106,7 @@
           },
           {
             "detail": null,
-            "fraction": 1.0,
+            "fraction": 1,
             "index": 4,
             "name": "CMake",
             "stage": "安装完成",
@@ -25902,6 +25966,36 @@
         }
       ],
       "passedCount": 3
+    }
+  },
+  "licenseDevice": {
+    "freeEnforced": {
+      "shortId": "3f9a2c41",
+      "componentsReadable": 4,
+      "reliable": true,
+      "boundHere": false,
+      "state": "inactive"
+    },
+    "freeUnenforced": {
+      "shortId": "3f9a2c41",
+      "componentsReadable": 4,
+      "reliable": true,
+      "boundHere": false,
+      "state": "inactive"
+    },
+    "proEnforced": {
+      "shortId": "3f9a2c41",
+      "componentsReadable": 4,
+      "reliable": true,
+      "boundHere": true,
+      "state": "active"
+    },
+    "freeMismatch": {
+      "shortId": "3f9a2c41",
+      "componentsReadable": 4,
+      "reliable": true,
+      "boundHere": false,
+      "state": "deviceMismatch"
     }
   }
 }

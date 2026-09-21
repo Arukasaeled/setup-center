@@ -96,21 +96,49 @@ export function Button({
 
 export function StatusMark({
   confidence,
+  size = "md",
+  decorative = false,
   className,
 }: {
   confidence: Confidence;
+  /**
+   * The glyph's box, as a *replacement* rather than an addition.
+   *
+   * Sized by prop instead of by appending a class at the call site, because
+   * `h-3` passed alongside the base `h-4` is resolved by Tailwind's stylesheet
+   * order rather than by the caller's class order — which silently ignores the
+   * override. The mark inside each branch is drawn relative to this box
+   * (`h-[13px] w-[13px]`), so the box is the only thing that needs the variant.
+   */
+  size?: "sm" | "md";
+  /**
+   * Suppresses the glyph's own `aria-label`, for callers that already render the
+   * state as text.
+   *
+   * Without this a `StatusBadge` announces the state twice in two vocabularies
+   * ("通过 已安装"), which is noise for a screen-reader user rather than
+   * emphasis. There the word *is* the accessible content and the glyph is not.
+   */
+  decorative?: boolean;
   className?: string;
 }) {
-  const base = "inline-flex h-4 w-4 shrink-0 items-center justify-center";
+  const box = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+  const glyph = size === "sm" ? "h-[11px] w-[11px]" : "h-[13px] w-[13px]";
+  const base = clsx("inline-flex shrink-0 items-center justify-center", box);
+  // One object spread over four branches, so the a11y contract cannot be
+  // satisfied in three of them and forgotten in the fourth.
+  const semantics = decorative
+    ? ({ "aria-hidden": true } as const)
+    : ({ role: "img" } as const);
 
   if (confidence === "ok") {
     return (
       <span
+        {...semantics}
         className={clsx(base, "text-[color:var(--status-ok)]", className)}
-        role="img"
-        aria-label="通过"
+        aria-label={decorative ? undefined : "通过"}
       >
-        <svg viewBox="0 0 16 16" className="h-[13px] w-[13px]" fill="none">
+        <svg viewBox="0 0 16 16" className={glyph} fill="none">
           <path
             d="M3 8.5l3.2 3.2L13 4.8"
             stroke="currentColor"
@@ -126,11 +154,11 @@ export function StatusMark({
   if (confidence === "fail") {
     return (
       <span
+        {...semantics}
         className={clsx(base, "text-[color:var(--status-bad)]", className)}
-        role="img"
-        aria-label="未通过"
+        aria-label={decorative ? undefined : "未通过"}
       >
-        <svg viewBox="0 0 16 16" className="h-[13px] w-[13px]" fill="none">
+        <svg viewBox="0 0 16 16" className={glyph} fill="none">
           <path
             d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"
             stroke="currentColor"
@@ -145,11 +173,11 @@ export function StatusMark({
   if (confidence === "unknown") {
     return (
       <span
+        {...semantics}
         className={clsx(base, "text-[color:var(--status-warn)]", className)}
-        role="img"
-        aria-label="无法确认"
+        aria-label={decorative ? undefined : "无法确认"}
       >
-        <svg viewBox="0 0 16 16" className="h-[13px] w-[13px]" fill="none">
+        <svg viewBox="0 0 16 16" className={glyph} fill="none">
           <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
           <path d="M8 5.4v3.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
           <circle cx="8" cy="11" r="0.9" fill="currentColor" />
@@ -162,11 +190,11 @@ export function StatusMark({
   // an error, which a cross would imply.
   return (
     <span
+      {...semantics}
       className={clsx(base, "text-[color:var(--text-quiet)]", className)}
-      role="img"
-      aria-label="已跳过"
+      aria-label={decorative ? undefined : "已跳过"}
     >
-      <svg viewBox="0 0 16 16" className="h-[13px] w-[13px]" fill="none">
+      <svg viewBox="0 0 16 16" className={glyph} fill="none">
         <path d="M4 8h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     </span>

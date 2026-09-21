@@ -437,10 +437,23 @@ fn main() {
         "license": {
             "freeUnenforced": license::Entitlements::of(&license::LicenseFile::default(), false),
             "freeEnforced": license::Entitlements::of(&license::LicenseFile::default(), true),
+            // `LicenseFile` no longer carries the tier or the code: the stored
+            // record is only `{version, license_hash, device_hash, activated_at}`
+            // (see `license/mod.rs`). A PRO projection is therefore built from a
+            // record that *has* a hash and a binding, not from a `tier` field.
+            //
+            // `device_hash` is this machine's real fingerprint on purpose: the
+            // harness renders the activated screen from this entry, so a
+            // placeholder hash would render the *failure* screen under a name
+            // that promises the success one.
             "proEnforced": license::Entitlements::of(
                 &license::LicenseFile {
-                    tier: license::Tier::Pro,
-                    key: Some("AISS-DEMO-0000".to_string()),
+                    license_hash: Some(
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                    ),
+                    device_hash: Some(license::device_summary().0),
+                    ..Default::default()
                 },
                 true,
             ),

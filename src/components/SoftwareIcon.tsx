@@ -141,14 +141,21 @@ const MARKS: Partial<Record<SoftwareId, Mark>> = {
 /**
  * Ids that intentionally have no bundled asset.
  *
- * Exactly one: the MSVC build tools are a Microsoft component with no
- * distributable product mark, and inventing one would be the v1 mistake again.
+ * Two, and both are Microsoft components whose mark this repository has no
+ * distributable copy of — `msvc_build_tools` since the beginning, and
+ * `windows_terminal` when it was added to the catalog. Inventing artwork for
+ * them would be the v1 mistake again, and fetching one at runtime is ruled out
+ * by the "never fetched" rule above.
+ *
  * Listed explicitly so "missing icon" is a decision on the record rather than an
  * oversight — `tools/ui-verify.mjs` asserts this list and `MARKS` are disjoint
  * and together cover every id, so adding a software entry without an icon fails
  * loudly instead of rendering an invisible row.
  */
-export const NO_BRAND_ASSET: SoftwareId[] = ["msvc_build_tools"];
+export const NO_BRAND_ASSET: SoftwareId[] = [
+  "msvc_build_tools",
+  "windows_terminal",
+];
 
 /**
  * Fallback tile.

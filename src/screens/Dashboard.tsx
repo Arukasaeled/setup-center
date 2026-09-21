@@ -35,10 +35,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Button, ScoreReadout, SectionLabel, StatusMark } from "../components/ui";
-import { SoftwareIcon } from "../components/SoftwareIcon";
-import { describeSoftware } from "../lib/software";
+import { Button, SectionLabel, StatusMark } from "../components/ui";
+import { StatusBadge } from "../components/StatusBadge";
+import { CategoryTabs, type CategoryTab } from "../components/CategoryTabs";
+import {
+  SoftwareCard,
+  recommendationMap,
+  type RecommendationTier,
+} from "../components/SoftwareCard";
+import { EnvironmentScore } from "../components/EnvironmentScore";
+import { QuickAction } from "../components/QuickAction";
+import { ProNotice } from "../components/ProGate";
 import { useApp, type Section } from "../lib/store";
+import {
+  ContactRows,
+  LicenseSection,
+} from "../components/ActivationPanel";
 import type {
   CapabilityStatus,
   Confidence,
@@ -48,6 +60,7 @@ import type {
   Recommendation,
   RequirementOutcome,
   SoftwareDescriptor,
+  SoftwareId,
   SoftwareInfo,
 } from "../lib/types";
 
@@ -61,8 +74,8 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "config", label: "配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
   { id: "license", label: "版本", hint: "当前权益与激活" },
+  { id: "about", label: "关于", hint: "购买与联系作者" },
 ];
-
 export function Dashboard() {
   const section = useApp((s) => s.section);
   const setSection = useApp((s) => s.setSection);
@@ -120,6 +133,11 @@ export function Dashboard() {
 
       <div className="flex min-w-0 flex-1">
         <section className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
+          {/* A refused gated action surfaces here rather than inside whichever
+              section triggered it: the refusal can come from install, resume or
+              bootstrap, and the customer should see the same explanation and the
+              same route to activation regardless of which one it was. */}
+          <ProNotice />
           {section === "overview" && (
             <OverviewSection
               loading={loading}
@@ -133,6 +151,7 @@ export function Dashboard() {
           {section === "config" && <ConfigSection />}
           {section === "history" && <HistorySection />}
           {section === "license" && <LicenseSection />}
+          {section === "about" && <AboutSection />}
         </section>
 
         <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
@@ -164,20 +183,16 @@ function DashboardNav({
   theme: "light" | "dark" | "system";
   onTheme: (t: "light" | "dark" | "system") => void;
 }) {
-  // Counts are shown beside two sections only. A badge on every item would turn
-  // navigation into a scoreboard, which reads as pressure rather than
-  // information; these two are the ones a student acts on.
-  const capabilities = useApp((s) => s.capabilities);
+  // One badge, on the section a student acts on. A badge on every item would
+  // turn navigation into a scoreboard, which reads as pressure rather than as
+  // information.
   const softwareGaps = useApp((s) => {
     const items = s.inventory?.items ?? [];
     return items.filter((i) => !i.installed && i.confidence !== "unknown").length;
   });
 
-  const capabilityGaps = capabilities.filter((c) => c.status !== "available").length;
-
   const badges: Partial<Record<Section, number>> = {
     software: softwareGaps,
-    aiTools: capabilityGaps,
   };
 
   return (
@@ -349,48 +364,64 @@ function OverviewSection({
   }
 
   const available = capabilities.filter((c) => c.status === "available").length;
-  const gaps = capabilities.filter((c) => c.status !== "available");
   const selectedGoal = goals?.goals.find((g) => g.id === selectedGoalId) ?? null;
+
+  // An advisor summary is only meaningful once a detection has run behind it.
+  //
+  // `advisor?.summary.score ?? environment.score` looked like a safe fallback but
+  // was not: `??` only falls through on null/undefined, and an advisor built
+  // against an un-detected machine reports a *defined* 0. On a cold start that
+  // put "0% · 没有一项检测完成" at the top of a screen whose own capability lists
+  // read "已准备 Python 开发 · C/C++ 学习 · Git 协作…" — the app contradicting
+  // itself in its largest type. `detected` exists on the view precisely to
+  // distinguish "measured, and it is zero" from "not measured yet", so the
+  // fallback is guarded by it.
+  const advisorScore = advisor?.detected ? advisor.summary.score : null;
+  const advisorHeadline = advisor?.detected ? advisor.summary.headline : null;
+  const overallScore = advisorScore ?? environment.score;
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="rise">
-        <div className="flex items-baseline justify-between">
-          <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
-            环境概览
-          </h1>
+      <header>
+        {/* The status centre. Phase 6 of the brief asked for 个人状态中心 in place
+            of 检测报告, and this is that: a greeting, one number scoped to the
+            whole machine, and the two lists a student actually reads — what is
+            ready and what is not.
+
+            It is rendered *above* the goal readout rather than instead of it.
+            The two answer different questions ("总的来说怎么样" versus "我选的这个
+            方向离目标还差多少") and the existing assertion that the goal figure
+            names its own scope is what keeps them from reading as a
+            contradiction. */}
+        <div className="flex items-start justify-between gap-4">
+          <EnvironmentScore
+            score={overallScore}
+            capabilities={capabilities}
+            greeting={greeting()}
+          />
           <button
             type="button"
             onClick={onRecheck}
-            className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] text-[12px] transition-colors"
+            className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-1 shrink-0 text-[12px] transition-colors"
           >
             重新检测
           </button>
         </div>
 
-        {/* The goal frame. When a direction is chosen, its completion is the
-            headline number; the generic score becomes a secondary line. When
-            none is chosen — a dashboard opened cold — the generic score stands
-            alone rather than showing a goal the student never picked. */}
-        {goalPlan && selectedGoal ? (
-          <div className="mt-5">
+        {/* The goal frame. When a direction is chosen, its completion becomes a
+            second, narrower reading of the same machine. When none is chosen — a
+            dashboard opened cold — this is absent rather than showing a goal the
+            student never picked. */}
+        {goalPlan && selectedGoal && (
+          <div className="mt-6">
             <GoalReadout plan={goalPlan} goalName={selectedGoal.name} />
             <div className="text-[color:var(--text-quiet)] mt-3 flex items-baseline gap-2 text-[12px]">
               <span className="tnum">
-                整体评分 {advisor?.summary.score ?? environment.score} / 100
+                整体评分 {overallScore} / 100
               </span>
               <span>·</span>
-              <span>{advisor?.summary.headline ?? `已经可以做 ${available} 件事`}</span>
+              <span>{advisorHeadline ?? `已经可以做 ${available} 件事`}</span>
             </div>
-          </div>
-        ) : (
-          <div className="mt-5">
-            <ScoreReadout score={environment.score} max={environment.scoreMax} />
-            <p className="text-[color:var(--text-tertiary)] mt-4 text-[13px] leading-relaxed">
-              {gaps.length === 0
-                ? "这台电脑已经具备全部条件，可以直接开始开发。"
-                : `已经可以做 ${available} 件事，还有 ${gaps.length} 件需要补一下就绪。`}
-            </p>
           </div>
         )}
       </header>
@@ -402,7 +433,11 @@ function OverviewSection({
           Hardware limits are filtered out and shown separately. The distinction
           is the whole reason `kind` carries four values: a memory upgrade is
           correct information but not a next step, and placing it at the top of a
-          to-do list asks the student to do something they cannot. */}
+          to-do list asks the student to do something they cannot.
+
+          The first item is promoted out of the list and given the QuickAction
+          treatment, because "推荐下一步：安装 Node.js" is the brief's single
+          most-wanted line and a five-item list buries it. */}
       {advisor && advisor.summary.recommendations.some((r) => r.kind !== "hardware") && (
         <section className="rise">
           <SectionLabel>建议的下一步</SectionLabel>
@@ -600,40 +635,25 @@ function GoalReadout({ plan, goalName }: { plan: EnvironmentPlan; goalName: stri
 }
 
 function RecommendationRow({ recommendation }: { recommendation: Recommendation }) {
+  // Delegates to `QuickAction` rather than re-drawing the same card. The two
+  // used to be separate renderers for one concept — "a recommended step and who
+  // performs it" — which is how the overview and the goal readout ended up
+  // describing the same action with different vocabulary.
+  //
+  // `onRun` is deliberately not passed: the advisor's recommendations are
+  // *pointers*, and turning them into buttons here would promise this app will
+  // carry them out. A student who wants to act clicks the capability or the
+  // program, which is where a real, verified action lives.
   return (
-    <div className="bg-[color:var(--surface-inset)] flex items-start gap-3 rounded-[10px] px-3 py-2.5">
-      <span className="text-[color:var(--text-quiet)] tnum mt-[1px] shrink-0 text-[12px]">
+    <div className="flex items-start gap-2.5">
+      <span className="text-[color:var(--text-quiet)] tnum mt-3 shrink-0 text-[12px]">
         {recommendation.order}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[color:var(--text-primary)] text-[13px]">{recommendation.title}</div>
-        <div className="text-[color:var(--text-quiet)] mt-0.5 text-[12px] leading-relaxed">
-          {recommendation.reason}
-        </div>
+        <QuickAction step={recommendation} />
       </div>
-      {/* The kind is shown, not just implied: an action only the student can
-          perform must not look like a button they are waiting for. */}
-      <span className="text-[color:var(--text-quiet)] shrink-0 text-[11px]">
-        {recommendationKindLabel(recommendation.kind)}
-      </span>
     </div>
   );
-}
-
-function recommendationKindLabel(kind: Recommendation["kind"]): string {
-  switch (kind) {
-    case "install":
-      return "可自动安装";
-    case "configure":
-      return "需配置";
-    case "manual":
-      return "需你操作";
-    // Hardware is called out separately because it is the one kind nobody can
-    // act on from inside this app. Sitting beside "可自动安装" without a label,
-    // a memory upgrade reads as a task the student is expected to complete.
-    case "hardware":
-      return "受硬件限制";
-  }
 }
 
 function CapabilityRow({
@@ -812,6 +832,9 @@ function SoftwareSection() {
   const explained = useApp((s) => s.explained);
   const explainedPhase = useApp((s) => s.explainedPhase);
   const loadExplained = useApp((s) => s.loadExplained);
+  // Read here rather than inside the grid so the recommendation tiers come from
+  // the same capability resolution the overview renders beside them.
+  const capabilities = useApp((s) => s.capabilities);
 
   useEffect(() => {
     if (explainedPhase === "idle") void loadExplained();
@@ -832,26 +855,20 @@ function SoftwareSection() {
     return <LoadingBlock label="正在通过注册表、PATH 与 winget 检查…" />;
   }
 
-  // Grouped by the category Rust assigns, in the catalog's own order. Grouping
-  // rather than one flat list because "which of these 21 programs do I have"
-  // is a different question per kind of tool.
-  const byCategory = new Map<string, SoftwareInfo[]>();
-  for (const item of items) {
-    const descriptor = catalogue.find((c) => c.id === item.id);
-    const key = descriptor?.category ?? "development";
-    const list = byCategory.get(key) ?? [];
-    list.push(item);
-    byCategory.set(key, list);
-  }
-
-  const order = ["development", "editor", "aiTool", "runtime"];
-
-  // Knowledge is looked up per row rather than fetched per row. The map is built
-  // once so a 21-row list does not do 21 linear scans.
+  // Knowledge is looked up per card rather than fetched per card. The map is
+  // built once so a 24-card grid does not do 24 linear scans.
   const knowledgeById = new Map(explained.map((e) => [e.knowledge.id as string, e]));
 
+  // The catalog's own category for each item, used for both the tabs and the
+  // grid's grouping. Resolved once here rather than per card.
+  const categoryOf = new Map<SoftwareId, SoftwareDescriptor>();
+  for (const item of items) {
+    const descriptor = catalogue.find((c) => c.id === item.id);
+    if (descriptor) categoryOf.set(item.id, descriptor);
+  }
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <header className="rise">
         <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
           这台电脑装了什么
@@ -864,7 +881,7 @@ function SoftwareSection() {
         </p>
       </header>
 
-      {/* Only rendered when something is actually missing, so a healthy install
+      {/* Only rendered when something is actually wrong, so a healthy install
           does not carry a permanent notice students learn to skip. */}
       {explainedPhase === "error" && (
         <div className="glass-soft rounded-[12px] px-4 py-3">
@@ -874,132 +891,106 @@ function SoftwareSection() {
         </div>
       )}
 
-      {order.map((key) => {
-        const list = byCategory.get(key);
-        if (!list || list.length === 0) return null;
-        const name = catalogue.find((c) => c.category === key)?.categoryName ?? key;
-        return (
-          <section key={key} className="rise">
-            <SectionLabel>
-              {name} · {list.length}
-            </SectionLabel>
-            <div className="stagger flex flex-col gap-1">
-              {list.map((item) => {
-                const id = softwareKey(item.id);
-                return (
-                  <SoftwareRow
-                    key={item.id}
-                    item={item}
-                    catalogue={catalogue}
-                    knowledge={knowledgeById.get(item.id) ?? null}
-                    selected={selectedItemId === id}
-                    onClick={() => selectItem(id)}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
+      <SoftwareGrid
+        items={items}
+        categoryOf={categoryOf}
+        catalogue={catalogue}
+        knowledgeById={knowledgeById}
+        recommendations={recommendationMap(capabilities)}
+        selectedItemId={selectedItemId}
+        onSelect={selectItem}
+      />
     </div>
   );
 }
 
-function SoftwareRow({
-  item,
+/**
+ * The grid, its category tabs, and the filter they share.
+ *
+ * Splitting this out of `SoftwareSection` is what lets the tab state exist at
+ * all: the section above also owns the loading and error branches, and holding
+ * a `useState` there would put a hook next to early returns.
+ */
+function SoftwareGrid({
+  items,
+  categoryOf,
   catalogue,
-  knowledge,
-  selected,
-  onClick,
+  knowledgeById,
+  recommendations,
+  selectedItemId,
+  onSelect,
 }: {
-  item: SoftwareInfo;
+  items: SoftwareInfo[];
+  categoryOf: Map<SoftwareId, SoftwareDescriptor>;
   catalogue: SoftwareDescriptor[];
-  /**
-   * The explanation for this program, or `null` when the knowledge layer has no
-   * entry for it.
-   *
-   * `null` is not an error state. The row falls back to the catalog's own
-   * `purpose`, which is what the app showed before this layer existed — so a
-   * missing knowledge file degrades to the previous behaviour rather than to a
-   * blank row.
-   */
-  knowledge: ExplainedSoftware | null;
-  selected: boolean;
-  onClick: () => void;
+  knowledgeById: Map<string, ExplainedSoftware>;
+  recommendations: Map<string, RecommendationTier>;
+  selectedItemId: string | null;
+  onSelect: (id: string | null) => void;
 }) {
-  const meta = describeSoftware(item.id, catalogue);
-  const descriptor = catalogue.find((c) => c.id === item.id);
-  const detectOnly = descriptor ? !descriptor.installable : false;
+  const [category, setCategory] = useState("");
 
-  // The knowledge file's own purpose wins when it has one: it is written for a
-  // student and is editable without a rebuild.
-  const purpose =
-    knowledge && knowledge.knowledge.purposes.length > 0
-      ? knowledge.knowledge.purposes[0]
-      : meta.purpose;
-
-  const detail = item.installed
-    ? [item.version && `版本 ${item.version}`, item.onPath && "命令行可用"]
-        .filter(Boolean)
-        .join(" · ") || purpose
-    : item.confidence === "unknown"
-      ? "检测未完成，无法判断"
-      : // The purpose line is the point of the row. "未安装" alone tells a
-        // student nothing they could act on; knowing it is "代码版本管理与下载"
-        // is what lets them decide.
-        purpose;
-
-  // The mark distinguishes three situations that a single `confidence` cannot.
+  // Tabs are built from the *rendered* items, in the catalog's declared order.
   //
-  // A program this tool *manages* and that is absent is a real, actionable gap —
-  // a red cross is right. A program it only *detects* being absent is not a
-  // defect at all: the tool never offered to install it, so drawing the same red
-  // cross reports a failure the student never agreed to. That case gets a hollow
-  // mark, which reads as "not present, nothing is wrong" rather than as an error.
-  //
-  // This was a real complaint on the rendered screen: CMake showed a red ✗ beside
-  // "管理 C/C++ 项目的构建", which reads as though the tool had tried and failed.
-  const mark: Confidence =
-    !item.installed && item.confidence === "fail" && detectOnly
-      ? "skipped"
-      : item.confidence;
+  // Built from the data rather than hard-coded so a renamed or added category
+  // in Rust appears here automatically. A hard-coded list would let a tab select
+  // a group that no longer exists and silently show an empty grid.
+  const order = ["development", "editor", "aiTool", "runtime"];
+  const tabs: CategoryTab[] = [
+    { key: "", label: "全部", count: items.length },
+    ...order
+      .map((key) => {
+        const list = items.filter((i) => categoryOf.get(i.id)?.category === key);
+        return {
+          key,
+          // The display name comes from the same descriptor the card reads, so
+          // the tab and the card's own category label cannot disagree.
+          label: categoryOf.get(list[0]?.id)?.categoryName ?? key,
+          count: list.length,
+        };
+      })
+      .filter((t) => t.count > 0),
+  ];
+
+  // A rescan can empty the selected category (a program can disappear). Falling
+  // back to 全部 rather than rendering nothing is what stops the grid from
+  // looking broken right after a recheck.
+  const visible =
+    category === ""
+      ? items
+      : items.filter((i) => categoryOf.get(i.id)?.category === category);
+  const shown = visible.length > 0 ? visible : items;
+  const activeTab = visible.length > 0 ? category : "";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-left transition-colors duration-150",
-        selected
-          ? "bg-[color:var(--surface-active)]"
-          : "hover:bg-[color:var(--surface-hover)]",
-      )}
-    >
-      <SoftwareIcon id={item.id} size={28} />
+    <>
+      <CategoryTabs tabs={tabs} active={activeTab} onSelect={setCategory} />
 
-      <StatusMark confidence={mark} />
-
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className="text-[color:var(--text-primary)] truncate text-[13.5px]">
-            {knowledge?.knowledge.name ?? item.name}
-          </span>
-          {detectOnly && (
-            <span
-              className="text-[color:var(--text-quiet)] shrink-0 text-[10.5px]"
-              title="本工具只检测，不会替你安装"
-            >
-              仅检测
-            </span>
-          )}
-        </span>
-        <span className="text-[color:var(--text-quiet)] block truncate text-[12px]">
-          {detail}
-        </span>
-      </span>
-
-      <Chevron />
-    </button>
+      <div className="stagger grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-2.5">
+        {shown.map((item) => {
+          const id = softwareKey(item.id);
+          const descriptor = categoryOf.get(item.id);
+          return (
+            <SoftwareCard
+              key={item.id}
+              item={item}
+              catalogue={catalogue}
+              knowledge={knowledgeById.get(item.id) ?? null}
+              installed={item.installed}
+              // A program this tool cannot install is never "可选": offering it
+              // as a recommendation would promise an action that does not exist.
+              recommendation={
+                descriptor && !descriptor.installable
+                  ? "detectOnly"
+                  : (recommendations.get(item.id) ?? "optional")
+              }
+              selected={selectedItemId === id}
+              onClick={() => onSelect(id)}
+            />
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1472,6 +1463,13 @@ function SoftwareDetail({
       onClear={onClear}
     >
       <div className="flex flex-col gap-1.5 text-[12.5px]">
+        {/* The status as a badge rather than only as a `DetailRow` mark. The row
+            shape puts the glyph and the word at opposite ends of the pane, so a
+            student had to join them up themselves; the badge states the bare
+            fact once, and the rows below add the detail that qualifies it. */}
+        <div className="mb-1">
+          <StatusBadge confidence={status} />
+        </div>
         <DetailRow
           label="状态"
           value={
@@ -1859,6 +1857,26 @@ function formatStamp(iso: string): string {
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : iso;
 }
 
+/**
+ * The status centre's opening word.
+ *
+ * The brief asks the dashboard to greet a student rather than to report at
+ * them. This is the only string on the overview that is not derived from a
+ * measurement, so it is kept trivial on purpose: it says nothing about the
+ * machine, which means it cannot be wrong about it.
+ *
+ * Buckets rather than an exact hour, because "凌晨好" at 03:00 is technically
+ * accurate and socially odd.
+ */
+function greeting(now: Date = new Date()): string {
+  const h = now.getHours();
+  if (h < 5) return "夜深了";
+  if (h < 11) return "早上好";
+  if (h < 14) return "中午好";
+  if (h < 18) return "下午好";
+  return "晚上好";
+}
+
 function groupCapabilities(capabilities: CapabilityStatus[]) {
   const order = ["development", "aiTooling", "systems"];
   return order
@@ -1901,198 +1919,107 @@ function LoadingBlock({ label }: { label: string }) {
 /**
  * The licensing section.
  *
- * ## What this screen has to avoid saying
+ * ## The two states the brief specifies
  *
- * A tier badge next to a working button is the most confusing thing a licence
- * screen can show, and it is exactly what this build produces: the gate ships
- * open, so a "免费版" label sits above a fully enabled install button. The
- * `reason` line returned by Rust is what dissolves that — it says, in the
- * student's own language, that this build does not restrict installation.
+ * ```text
+ * 免费版  →  当前版本：免费版 / 可检测环境，不包含自动安装 / [输入激活码]
+ * 专业版  →  已激活专业版 / 自动安装与配置功能已解锁 / 设备绑定 + 激活时间
+ * ```
  *
- * So the order of the page matters: state what you have, then whether anything
- * is limited, then the activation form. Leading with activation would frame a
- * tool that already works as a tool that is withholding something.
+ * Both are rendered from `entitlements` rather than from a frontend tier check,
+ * so the wording of a lock and the reason for it are one decision made in Rust.
+ *
+ * ## What this screen deliberately does not offer
+ *
+ * No export, no "view full key", no copy button, and no way to see the
+ * activation code — the brief's "用户不可查看". This is enforced upstream as
+ * well as here: `license_status` returns only an abbreviated device digest, and
+ * there is no command that returns the code at all. So this is not a promise the
+ * screen is keeping; it is a screen that has nothing to leak.
+ *
+ * ## The device-mismatch state
+ *
+ * A third rendering, not a variant of "free". A customer who copied `license.dat`
+ * to a second PC holds a real code and needs to be told that, rather than told
+ * their key is invalid. It also reports whether the hardware probes were
+ * *reliable*, because a mismatch on a machine where they were not is not
+ * evidence of anything and must not read as an accusation.
  */
-function LicenseSection() {
-  const entitlements = useApp((s) => s.entitlements);
-  const phase = useApp((s) => s.entitlementsPhase);
-  const error = useApp((s) => s.entitlementsError);
-  const activating = useApp((s) => s.activatingLicense);
-  const loadEntitlements = useApp((s) => s.loadEntitlements);
-  const activateLicense = useApp((s) => s.activateLicense);
-  const deactivateLicense = useApp((s) => s.deactivateLicense);
 
-  const [key, setKey] = useState("");
+/** The 关于 section: version facts, and what the tool does not do. */
+function AboutSection() {
+  const entitlements = useApp((s) => s.entitlements);
+  const status = useApp((s) => s.status);
+  const loadStatus = useApp((s) => s.loadStatus);
 
   useEffect(() => {
-    if (phase === "idle") void loadEntitlements();
-  }, [phase, loadEntitlements]);
+    if (!status) void loadStatus();
+  }, [status, loadStatus]);
 
-  if (phase === "loading" && !entitlements) {
-    return (
-      <div className="flex flex-col gap-6">
-        <SectionLabel>版本与授权</SectionLabel>
-        <div className="text-[color:var(--text-tertiary)] text-[13px]">
-          正在读取…
-        </div>
-      </div>
-    );
-  }
-
-  if (!entitlements) {
-    return (
-      <div className="flex flex-col gap-6">
-        <SectionLabel>版本与授权</SectionLabel>
-        <EmptyBlock
-          title="无法读取授权状态"
-          body={
-            error ??
-            "读取本机授权信息时出错。这不影响检测、安装与配置功能。"
-          }
-          action={{ label: "重试", onClick: () => void loadEntitlements() }}
-        />
-      </div>
-    );
-  }
-
-  const isPro = entitlements.tier === "pro";
+  const isPro = entitlements?.state === "active";
 
   return (
     <div className="flex flex-col gap-8">
       <header className="rise">
         <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
-          你当前使用的是{entitlements.tierLabel}
+          Setup Center
         </h1>
         <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed">
-          {entitlements.reason}
+          Windows 环境初始化助手。检测系统环境、说明缺什么，并（专业版）自动装好。
         </p>
+        {status && (
+          <p className="text-[color:var(--text-quiet)] mt-1.5 text-[12px]">
+            版本 {status.appVersion}
+          </p>
+        )}
       </header>
 
-      {/* What the tier actually permits, in capability terms rather than
-          marketing ones. The second row is the one that matters in this build:
-          it spells out that installation is not being withheld. */}
       <section className="glass rose rise rounded-[12px] p-5">
         <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
-          功能范围
+          {isPro ? "你已拥有专业版" : "购买专业版"}
         </div>
-        <div className="mt-3 flex flex-col gap-2.5">
-          <EntitlementRow
-            label="环境检测"
-            detail="读取系统信息、扫描已装软件、分析缺口"
-            allowed
-          />
-          <EntitlementRow
-            label="安装与配置"
-            detail={
-              entitlements.canInstall
-                ? entitlements.enforced
-                  ? "已授权，可执行安装与初始化"
-                  : "本版本不限制此功能"
-                : "当前版本未授权，激活后可用"
-            }
-            allowed={entitlements.canInstall}
-          />
-        </div>
+        <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
+          {isPro
+            ? "自动安装与配置功能已解锁，无需重复购买。"
+            : "解锁自动安装、环境初始化与配置功能。激活码与本机绑定，一对一只需购买一次。"}
+        </p>
+        {!isPro && (
+          <div className="mt-3.5">
+            <ContactRows />
+          </div>
+        )}
       </section>
 
-      {/* The activation form. Present even when the gate is open, because a
-          student who has a key should be able to enter it, and because the
-          absence of a visible activation path is what makes software feel
-          crippled. */}
       <section className="rise">
-        <SectionLabel>激活</SectionLabel>
-        {isPro ? (
-          <div className="glass-soft mt-3 rounded-[12px] p-5">
-            <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
-              已激活
-            </div>
-            <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
-              本机已保存激活信息。卸载或更换电脑后需要重新激活。
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-3.5"
-              disabled={activating}
-              onClick={() => void deactivateLicense()}
-            >
-              {activating ? "处理中…" : "取消激活"}
-            </Button>
-          </div>
-        ) : (
-          <div className="glass-soft mt-3 rounded-[12px] p-5">
-            <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
-              输入激活码
-            </div>
-            <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
-              没有激活码也可以正常使用本工具。
-            </p>
-            <div className="mt-3.5 flex gap-2">
-              <input
-                type="text"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="AISS-XXXX-XXXX"
-                aria-label="激活码"
-                className="glass-soft text-[color:var(--text-primary)] placeholder:text-[color:var(--text-quiet)] min-w-0 flex-1 rounded-[8px] px-3 py-2 text-[13px] outline-none"
-              />
-              <Button
-                size="sm"
-                disabled={activating || key.trim().length === 0}
-                onClick={async () => {
-                  // Cleared only on success, so a rejected key stays on screen
-                  // for the student to correct rather than vanishing.
-                  if (await activateLicense(key)) setKey("");
-                }}
-              >
-                {activating ? "激活中…" : "激活"}
-              </Button>
-            </div>
-            {error && (
-              <p className="text-[color:var(--text-tertiary)] mt-2.5 text-[12px] leading-relaxed">
-                {error}
-              </p>
-            )}
-          </div>
-        )}
+        <SectionLabel>当前版本</SectionLabel>
+        <div className="mt-3 flex flex-col gap-1.5 text-[12.5px]">
+          <DetailRow
+            label="授权状态"
+            value={entitlements ? entitlements.tierLabel : "读取中…"}
+            confidence={isPro ? "ok" : undefined}
+          />
+          <DetailRow
+            label="环境检测"
+            value="可用"
+            confidence="ok"
+          />
+          <DetailRow
+            label="软件推荐"
+            value="可用"
+            confidence="ok"
+          />
+          <DetailRow
+            label="自动安装"
+            value={entitlements?.canInstall ? "可用" : "需专业版"}
+            confidence={entitlements?.canInstall ? "ok" : "skipped"}
+          />
+        </div>
       </section>
 
-      {/* Honesty about what activation does not do. This build has no account
-          and no server, and saying so is better than letting a student assume
-          an activation they entered is protecting a purchase it is not. */}
       <p className="text-[color:var(--text-quiet)] rise text-[12px] leading-relaxed">
-        本版本不联网校验授权，不收集账号信息，激活信息仅保存在本机。
+        本工具完全离线运行，不联网校验授权、不收集账号信息、
+        不上传任何检测结果。所有授权信息仅保存在本机。
       </p>
-    </div>
-  );
-}
-
-function EntitlementRow({
-  label,
-  detail,
-  allowed,
-}: {
-  label: string;
-  detail: string;
-  allowed: boolean;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <span
-        className={clsx(
-          "mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full",
-          allowed ? "bg-[color:var(--accent)]" : "bg-[color:var(--text-quiet)]",
-        )}
-        aria-hidden
-      />
-      <span className="min-w-0 flex-1">
-        <span className="text-[color:var(--text-primary)] block text-[13px]">
-          {label}
-        </span>
-        <span className="text-[color:var(--text-tertiary)] mt-0.5 block text-[12px] leading-relaxed">
-          {detail}
-        </span>
-      </span>
     </div>
   );
 }
@@ -2119,24 +2046,5 @@ function EmptyBlock({
         </Button>
       )}
     </div>
-  );
-}
-
-function Chevron() {
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      className="text-[color:var(--text-quiet)] h-3 w-3 shrink-0"
-      fill="none"
-      aria-hidden
-    >
-      <path
-        d="M4 2.5L7.5 6L4 9.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

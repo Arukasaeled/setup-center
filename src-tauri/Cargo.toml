@@ -26,6 +26,12 @@ windows-sys = { version = "0.60", features = [
     "Win32_System_Com",
     "Win32_System_Registry",
     "Win32_UI_Shell",
+    # DPAPI (`CryptProtectData` / `CryptUnprotectData`) and `BCryptGenRandom`,
+    # used by `modules/license` to encrypt the activation file and mint codes.
+    # Added rather than pulling in `aes` + `sha2` + `rand`: the OS already
+    # provides a stronger primitive than a machine-derived key we would have to
+    # ship inside the binary.
+    "Win32_Security_Cryptography",
 ] }
 
 [profile.release]

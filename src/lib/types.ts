@@ -206,7 +206,8 @@ export type SoftwareId =
   // first half is `SoftwareId` in `model.rs`; the two must list the same ids.
   | "chatgpt_desktop"
   | "windsurf"
-  | "lm_studio";
+  | "lm_studio"
+  | "windows_terminal";
 
 export type DetectionMethod =
   | "path"
@@ -656,6 +657,14 @@ export type AppError =
   | { kind: "probeFailed"; detail: { probe: string; reason: string } }
   | { kind: "wingetUnavailable"; detail: { reason: string } }
   | { kind: "installFailed"; detail: { id: string; reason: string } }
+  /**
+   * The action belongs to the paid tier and this machine is not activated.
+   *
+   * A distinct kind rather than a message to pattern-match: the UI has to
+   * *recognise* this refusal and open the activation screen, and matching on
+   * Chinese prose would break the moment the wording is improved.
+   */
+  | { kind: "licenseRequired"; detail: { reason: string } }
   | { kind: "internal"; detail: string };
 
 /**
@@ -919,7 +928,44 @@ export interface Entitlements {
   tier: "free" | "pro";
   tierLabel: string;
   canInstall: boolean;
+  /** Whether the configuration/bootstrap stage may run. Separate command. */
+  canConfigure: boolean;
   activated: boolean;
   enforced: boolean;
+  /**
+   * The machine-check outcome.
+   *
+   * `deviceMismatch` is distinct from `inactive` because the two need different
+   * sentences: a customer who copied `license.dat` to a second PC has a valid
+   * code and must be told that, not told their code is wrong.
+   */
+  state: "inactive" | "active" | "deviceMismatch";
+  /** ISO-8601 activation time, for display. `null` when inactive. */
+  activatedAt: string | null;
+  /**
+   * Whether enough hardware probes succeeded for a mismatch to be meaningful.
+   *
+   * A mismatch on a machine where most probes failed is not evidence of
+   * copying, and the licence screen says so rather than accusing the customer.
+   */
+  deviceReliable: boolean;
   reason: string;
+}
+
+/**
+ * What the licence screen may show about this machine.
+ *
+ * There is no field for the activation code, and no command that returns one.
+ * That is the brief's "用户不可查看" enforced at the type level: a component
+ * cannot render a key it was never given, so no amount of frontend work can
+ * accidentally add a copy button.
+ */
+export interface LicenseDeviceView {
+  /** Abbreviated device digest, for display in support conversations. */
+  shortId: string;
+  /** How many hardware probes produced a value (0-4). */
+  componentsReadable: number;
+  reliable: boolean;
+  boundHere: boolean;
+  state: "inactive" | "active" | "deviceMismatch";
 }

@@ -45,6 +45,15 @@ await page.addInitScript((data) => {
   const noop = () => ({ unlisten: () => Promise.resolve() });
   let maximised = false;
 
+  // This harness verifies the *wizard*, which since the commercial revision sits
+  // behind the first-run activation gate. It does NOT seed the gate's flag: it
+  // walks the gate the way a real customer does, because the gate is now part of
+  // the first-run path this file exists to verify. Seeding the flag would skip
+  // that path and leave the harness testing a route no customer takes.
+  //
+  // The gate itself is covered in depth by `gate-verify.mjs` /
+  // `gate-interact.mjs`; this file only needs to get past it.
+
   // Which demo session the install screen should receive. The harness flips
   // this before the run, so the same page exercises the success, partial-failure
   // and permission-halt branches without three separate browser launches.
@@ -55,8 +64,27 @@ await page.addInitScript((data) => {
     bootstrapSession: "completed",
     bootstrapStarted: 0,
     // Which licence answer the next `license_status` returns. Starts at the
-    // shipping default so the section is verified in its real configuration.
-    licenseMode: "freeUnenforced",
+    // shipping default — which since the commercial revision is the *enforced
+    // free* tier, so the section is verified in its real configuration rather
+    // than in a permissive one that no customer will see.
+    //
+    // Read back from `sessionStorage` so a staged mode survives the reload used
+    // to apply it; `__setLicenseMode` writes both.
+    licenseMode: window.sessionStorage.getItem("__licenseMode") ?? "freeEnforced",
+    // Models "has a detection landed in the Rust cache yet". The advisor is a
+    // *view over* the detection report, so before this flips the Rust side
+    // genuinely answers with the pre-detection summary (`detected: false`,
+    // score 0, the "没有一项检测完成" headline). `detect_environment` flips it.
+    //
+    // That is the whole cold-start race: the advisor was fetched once on mount —
+    // before detection landed — and never refreshed, so the overview announced
+    // "nothing was detected" above capability lists read from a finished report.
+    //
+    // Seeded from `sessionStorage` rather than from a plain variable because this
+    // init script re-runs on every `page.reload()`, which would otherwise reset
+    // the switch before the reload that stages the race.
+    advisorStale: window.sessionStorage.getItem("__advisorStale") === "1",
+    detectionRan: false,
   };
 
   // Sessions are per profile, and the chosen profile is whatever the last
@@ -68,7 +96,24 @@ await page.addInitScript((data) => {
   };
 
   const handlers = {
-    detect_environment: () => data.environment,
+    detect_environment: () => {
+      // On the real machine detection is network-bound and takes seconds, which
+      // is what creates the cold-start race: the dashboard mounts and asks for
+      // the advisor *while* detection is still in flight.
+      //
+      // The delay is applied only while the race is being staged. Returning
+      // instantly here made the race unstageable — the advisor was always
+      // fetched after `detectionRan` had flipped, so the regression could not be
+      // reproduced and the guard was untestable. Keeping it conditional leaves
+      // the other assertions on their existing, deterministic timing.
+      const settle = (resolve) => {
+        mode.detectionRan = true;
+        resolve(data.environment);
+      };
+      return new Promise((resolve) =>
+        mode.advisorStale ? setTimeout(() => settle(resolve), 1500) : settle(resolve),
+      );
+    },
     windows_info: () => data.environment.windows,
     scan_software: () => data.scan.inventory,
     last_software_scan: () => data.scan.inventory,
@@ -152,7 +197,19 @@ await page.addInitScript((data) => {
     environment_plan: (a) =>
       (data.goalPlans ?? []).find((p) => p.goalId === a.goalId) ?? null,
     environment_plans: () => data.goalPlans ?? [],
-    advisor_summary: () => data.advisor ?? null,
+    advisor_summary: () =>
+      mode.advisorStale && !mode.detectionRan
+        ? {
+            ...data.advisor,
+            detected: false,
+            summary: {
+              ...data.advisor.summary,
+              score: 0,
+              grade: "unknown",
+              headline: `共 ${data.advisor.summary.capabilitiesChecked} 项能力，但没有一项检测完成，暂时无法给出评估。`,
+            },
+          }
+        : (data.advisor ?? null),
     advisor_report_text: () => data.advisorText ?? "",
     concept_notes: (a) =>
       a.capabilityId
@@ -170,18 +227,24 @@ await page.addInitScript((data) => {
       },
 
     // --- Licensing (stage 5) ------------------------------------------------
-    // Served from the real `Entitlements::of` projection in three combinations,
-    // so the section is exercised against the same answers the binary produces.
-    // `licenseMode` selects which one; the default is the shipping config.
-    license_status: () => data.license[mode.licenseMode] ?? data.license.freeUnenforced,
+    // Served from the real `Entitlements::of` projection, so the section is
+    // exercised against the same answers the binary produces. `licenseMode`
+    // selects which one; the default is the shipping config, which since the
+    // commercial revision is `freeEnforced` — the free tier really does refuse
+    // to install now.
+    license_status: () => data.license[mode.licenseMode] ?? data.license.freeEnforced,
     activate_license: () => {
       mode.licenseMode = "proEnforced";
       return data.license.proEnforced;
     },
     deactivate_license: () => {
-      mode.licenseMode = "freeUnenforced";
-      return data.license.freeUnenforced;
+      mode.licenseMode = "freeEnforced";
+      return data.license.freeEnforced;
     },
+    // The device summary the licence screen reads alongside the tier. Derived
+    // from the same `mode`, so the badge and the section can never disagree
+    // about which machine this is.
+    license_device: () => data.licenseDevice[mode.licenseMode] ?? data.licenseDevice.freeEnforced,
   };
 
   window.__TAURI_INTERNALS__ = {
@@ -205,6 +268,27 @@ await page.addInitScript((data) => {
     mode.bootstrapSession = name;
   };
   window.__bootstrapStarted = () => mode.bootstrapStarted;
+  // Selects which licence answer the section reads. Written through to
+  // `sessionStorage` for the same reason as `advisorStale` below: this init
+  // script re-runs on `page.reload()`, so an in-memory switch would be reset by
+  // the very reload used to stage the state.
+  window.__setLicenseMode = (name) => {
+    mode.licenseMode = name;
+    window.sessionStorage.setItem("__licenseMode", name);
+  };
+  // Lets the harness reproduce the cold-start race from outside: the advisor
+  // answers as a pre-detection summary while the capability layer is already
+  // fully populated.
+  //
+  // Written to `sessionStorage` as well as to `mode`, because this init script
+  // re-runs on the `page.reload()` that stages the race — an in-memory flag is
+  // wiped by that reload, and the switch silently reads back as `false`, which
+  // is exactly how this probe managed to pass while the bug was present.
+  window.__setAdvisorStale = (on) => {
+    mode.advisorStale = on;
+    if (on) window.sessionStorage.setItem("__advisorStale", "1");
+    else window.sessionStorage.removeItem("__advisorStale");
+  };
 
   // Minimal window API used by TitleBar.
   window.__TAURI_INTERNALS__.invoke = ((original) => async (cmd, args) => {
@@ -225,9 +309,18 @@ await page.waitForTimeout(900);
 
 const shots = [];
 const seen = [];
+// `NO_SHOT=1` runs every assertion while writing no PNGs.
+//
+// The text captured here is what the assertions read; the image is only ever a
+// human artifact. Keeping the two separable means the suite can be run on a
+// request of "verify it, but do not screenshot" without quietly skipping the
+// checks that happen to be interleaved with `shot()` calls.
+const noShot = process.env.NO_SHOT === "1";
 async function shot(name) {
-  const file = join(outDir, `${name}.png`);
-  await page.screenshot({ path: file });
+  if (!noShot) {
+    const file = join(outDir, `${name}.png`);
+    await page.screenshot({ path: file });
+  }
   shots.push(name);
   // Capture the visible text at each step. Asserting only against the *final*
   // DOM would silently miss everything that appeared earlier, which is exactly
@@ -236,6 +329,42 @@ async function shot(name) {
 }
 
 const textAt = (name) => seen.find((s) => s.name === name)?.text ?? "";
+
+/**
+ * Reloads the app and lands on the wizard's welcome screen.
+ *
+ * Since the commercial revision a clean first launch shows the activation gate,
+ * and a machine that has answered it lands on the dashboard rather than the
+ * wizard. Both are correct product behaviour, so the harness has to walk them
+ * instead of assuming the wizard is what a cold load produces.
+ *
+ * The gate answer is only clicked when the gate is actually on screen — after
+ * the first pass the flag is set and the gate does not reappear, so this stays
+ * idempotent across the several reloads in this file.
+ */
+async function bootToWizard() {
+  await page.goto("http://localhost:1420", { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+
+  // First launch only: answer the gate by declining the paid tier.
+  if (await page.locator('[data-testid="gate-heading"]').isVisible().catch(() => false)) {
+    await page.locator('[data-testid="gate-free"]').click();
+    await page.waitForTimeout(700);
+  }
+
+  // A returning customer lands on the dashboard; the wizard is one click away.
+  const back = page.getByRole("button", { name: /回到首次设置/ });
+  if (await back.isVisible().catch(() => false)) {
+    await back.click();
+    await page.waitForTimeout(700);
+  }
+}
+
+// --- 0. Reach the wizard -----------------------------------------------------
+// On a clean machine this walks the activation gate (declining the paid tier)
+// and then the dashboard's 回到首次设置, which is exactly the path a customer
+// takes to the wizard now that the gate exists.
+await bootToWizard();
 
 // --- 1. Welcome --------------------------------------------------------------
 await shot("01-welcome");
@@ -352,12 +481,35 @@ const chooserReach = await page.evaluate(() => {
 
 // --- 5. Install (real execution flow) ----------------------------------------
 await page.getByRole("button", { name: /下一步/ }).click();
+await page.waitForTimeout(1200);
+await shot("05-install-choose");
+
+// Phase 7: the screen opens on a decision, not on a running engine. Asserted
+// here rather than further down because "did it start by itself" is the one
+// behaviour this phase removed, and a screenshot taken after the click could
+// not tell the two designs apart.
+const startedBeforeCommit =
+  (await page.evaluate(() => window.__installStarted())) === 0;
+
+// Structure of the choose phase on whatever plan the flow reached.
+//
+// This profile has only one program left to install on this machine, so the
+// *mechanism* ("unchecking changes the run") is verified on a profile that
+// really offers a choice — see section 5d below. What is asserted here is the
+// part that must hold on any machine: the work is listed and selectable before
+// anything runs.
+const chooseReport = await page.evaluate(() => {
+  const boxes = [...document.querySelectorAll("input[type=checkbox]")];
+  return { boxes: boxes.length };
+});
+
+await page.getByRole("button", { name: /开始安装/ }).click();
 await page.waitForTimeout(1600);
 await shot("05-install");
 
-// The install screen starts the engine on mount. Assert it started exactly
-// once: React's double-invoke in development would otherwise launch two runs,
-// which for an installer means two winget processes over one package.
+// The install screen starts the engine on the student's click. Assert it started
+// exactly once: React's double-invoke in development would otherwise launch two
+// runs, which for an installer means two winget processes over one package.
 const startedOnce = (await page.evaluate(() => window.__installStarted())) === 1;
 
 // Advanced mode: the raw action trace.
@@ -376,6 +528,10 @@ await page.waitForTimeout(500);
 await page.getByRole("button", { name: /AI 开发/ }).first().click();
 await page.waitForTimeout(600);
 await page.getByRole("button", { name: /下一步/ }).click();
+await page.waitForTimeout(1200);
+// Phase 7: the run is committed by this screen's own button now, not by the
+// navigation that reached it.
+await page.getByRole("button", { name: /开始安装/ }).click();
 await page.waitForTimeout(1600);
 await shot("06b-install-failed");
 
@@ -384,8 +540,65 @@ await page.evaluate(() => window.__setSessionMode("halted"));
 await page.getByRole("button", { name: /返回/ }).click();
 await page.waitForTimeout(500);
 await page.getByRole("button", { name: /下一步/ }).click();
+await page.waitForTimeout(1200);
+await page.getByRole("button", { name: /开始安装/ }).click();
 await page.waitForTimeout(1600);
 await shot("06c-install-halted");
+
+// --- 5d. Selective install: declining a program changes what runs ------------
+//
+// Driven on "程序员版" because it is the profile with **two** programs this
+// machine still needs. The first attempt at this probe used "AI 编程" and failed
+// — not because the feature was broken, but because that profile has exactly one
+// program left to install here, so there was no second checkbox to uncheck. The
+// check would have been asserting a property of this machine rather than of the
+// product, which is the failure mode the harness's own comments warn about.
+//
+// What is verified is the mechanism end to end: the count the button promises
+// moves when a program is declined, and the narrowed selection is what the engine
+// is actually handed.
+await bootToWizard();
+await page.getByRole("button", { name: /直接开始配置/ }).click();
+await page.waitForTimeout(700);
+await page.getByRole("button", { name: /开始检测/ }).click();
+await page.waitForTimeout(2600);
+await page.getByRole("button", { name: /^继续|^仍然继续$/ }).click();
+await page.waitForTimeout(900);
+await page.getByRole("button", { name: /^继续$/ }).last().click();
+await page.waitForTimeout(600);
+await page.getByRole("button", { name: /^程序员版/ }).first().click();
+await page.waitForTimeout(700);
+await page.getByRole("button", { name: /下一步/ }).click();
+await page.waitForTimeout(1200);
+await shot("06d-install-choose-multi");
+
+const selective = await page.evaluate(() => {
+  const countOf = () => {
+    const m = document.body.innerText.match(/已选 (\d+) 项/);
+    return m ? Number(m[1]) : null;
+  };
+  const boxes = [...document.querySelectorAll("input[type=checkbox]")];
+  const before = countOf();
+  const buttonBefore = [...document.querySelectorAll("button")]
+    .map((b) => b.innerText)
+    .find((t) => /安装/.test(t));
+  if (boxes.length >= 2) boxes[1].click();
+  return { boxes: boxes.length, before, buttonBefore };
+});
+await page.waitForTimeout(400);
+const selectiveAfter = await page.evaluate(() => {
+  const m = document.body.innerText.match(/已选 (\d+) 项/);
+  const button = [...document.querySelectorAll("button")]
+    .map((b) => b.innerText)
+    .find((t) => /安装/.test(t));
+  return { after: m ? Number(m[1]) : null, button };
+});
+await shot("06e-install-unchecked");
+
+// Commit the narrowed run so the screen is left in a normal, non-error state for
+// the sections that follow (which expect an install screen they can go 返回 from).
+await page.getByRole("button", { name: /安装选中的|开始安装/ }).first().click();
+await page.waitForTimeout(1600);
 
 // Back to the successful session, on the profile the report screens use.
 await page.evaluate(() => window.__setSessionMode("completed"));
@@ -394,6 +607,18 @@ await page.waitForTimeout(500);
 await page.getByRole("button", { name: /AI 编程/ }).first().click();
 await page.waitForTimeout(600);
 await page.getByRole("button", { name: /下一步/ }).click();
+await page.waitForTimeout(1200);
+// "AI 编程" has every step already satisfied on this machine, so there is no run
+// to commit — the screen offers 下一步 instead, which is the empty case the
+// choose phase has to handle without showing a dead button.
+const installWasEmpty = await page.evaluate(() =>
+  document.body.innerText.includes("这次没有需要安装的"),
+);
+if (installWasEmpty) {
+  await page.getByRole("button", { name: /^下一步$/ }).click();
+} else {
+  await page.getByRole("button", { name: /开始安装/ }).click();
+}
 await page.waitForTimeout(1600);
 
 // --- 6. Bootstrap (the Bootstrap Layer's screen) -----------------------------
@@ -412,8 +637,7 @@ await page.waitForTimeout(1600);
  * and the branch would render the default success case.
  */
 async function walkToBootstrap(profileName, setMode) {
-  await page.goto("http://localhost:1420", { waitUntil: "networkidle" });
-  await page.waitForTimeout(900);
+  await bootToWizard();
   await page.getByRole("button", { name: /直接开始配置/ }).click();
   // The goal screen sits between the welcome screen and detection. Skipped
   // through with the default direction, since this helper is about reaching the
@@ -433,6 +657,10 @@ async function walkToBootstrap(profileName, setMode) {
   await page.getByRole("button", { name: exact }).first().click();
   await page.waitForTimeout(700);
   await page.getByRole("button", { name: /下一步/ }).click();
+  await page.waitForTimeout(1200);
+  // Phase 7 moved the engine start from the install screen's mount to its own
+  // commit button, so reaching bootstrap means passing through it.
+  await page.getByRole("button", { name: /开始安装|^下一步$/ }).first().click();
   await page.waitForTimeout(1600);
   // Set the branch immediately before entering the bootstrap screen, which is
   // the moment its `run_bootstrap` call happens.
@@ -503,14 +731,112 @@ await shot("09-report");
 // --- 8. Dashboard (stage 5) --------------------------------------------------
 //
 // Driven from a fresh page load so the dashboard is exercised on its *own*
-// entry path — the welcome screen's "检查这台电脑" — rather than as a state left
-// behind by the wizard. That is the path a returning student takes, and it is
-// the one the capabilities have to load correctly from cold.
-await page.goto("http://localhost:1420", { waitUntil: "networkidle" });
-await page.waitForTimeout(700);
+// entry path rather than as a state left behind by the wizard. That is the path
+// a returning student takes, and it is the one the capabilities have to load
+// correctly from cold.
+//
+// Since the gate exists, a cold load on a machine that has answered it lands on
+// the dashboard *directly* — which is the improvement, and is what this block
+// now verifies. `bootToWizard` still walks the gate on the very first call, so
+// on this later call the flag is set and the load resolves straight to the
+// dashboard; the 回到首次设置 click below puts us back on the welcome screen so
+// the rest of this block keeps exercising its original entry route.
+await bootToWizard();
 await page.getByRole("button", { name: /检查这台电脑/ }).click();
 await page.waitForTimeout(2600);
 await shot("10-dashboard-overview");
+
+// The status centre (brief phase 6). Asserted on its four required parts
+// separately, because each answers a different part of the brief and three of
+// them could be present while the fourth silently regressed:
+//
+//   greeting   — "晚上好" rather than a bare report
+//   score      — the one number, scoped to the whole machine
+//   have/lack  — 已准备 beside the gap list, which is what makes a score actionable
+//   next step  — 建议的下一步, already required by the phase-5 assertions
+//
+// The greeting is matched as one of the five buckets rather than by equality, so
+// the assertion does not depend on what time the harness happens to run.
+//
+// ## Why the "have/lack" check counts groups instead of demanding 还差
+//
+// This machine has 8 capabilities fully available and 3 partial — **zero**
+// unavailable. An earlier version of this probe required both 已准备 and 还差 to
+// be on screen and failed, which was the probe asserting a property of this
+// machine rather than of the product: 还差 correctly renders nothing when nothing
+// is outright missing.
+//
+// What must hold on *any* machine is the pairing itself — that what is ready is
+// shown alongside what is not, rather than a bare gap list. So the probe counts
+// how many of the three group labels are present and requires at least two, which
+// is satisfied here by 已准备 + 缺一部分 and would be satisfied on a weaker machine
+// by 已准备 + 还差.
+const statusCentre = await page.evaluate(() => {
+  const text = document.body.innerText;
+  const groups = ["已准备", "缺一部分", "还差", "无法确认"].filter((l) =>
+    text.includes(l),
+  );
+  // The specific contradiction this guard exists for.
+  //
+  // The advisor summary is a view over the detection report. When it was fetched
+  // once on mount, a cold start computed it *before* detection landed and then
+  // never recomputed it, so the headline read "共 11 项能力，但没有一项检测完成"
+  // directly above capability lists that had just been read from the finished
+  // report. `advisor?.summary.score ?? environment.score` did not save it: the
+  // stale advisor reports a *defined* 0, and `??` only falls through on
+  // null/undefined.
+  //
+  // Stated as an invariant rather than as a number, because the number is a
+  // property of the machine and the contradiction is a property of the code:
+  // "nothing was detected" and "here is what is ready" cannot both be true.
+  const claimsNotDetected = text.includes("没有一项检测完成") || text.includes("尚未检测");
+  const listsReady = /已准备[\s\S]{0,240}?[^\s]/.test(text) && groups.includes("已准备");
+  return {
+    greeting: /早上好|中午好|下午好|晚上好|夜深了/.test(text),
+    score: /你的开发环境/.test(text) && /\d{1,3}\s*%/.test(text),
+    groups,
+    nextStep: text.includes("建议的下一步"),
+    contradiction: claimsNotDetected && listsReady,
+  };
+});
+
+// --- The cold-start race, reproduced on purpose ------------------------------
+//
+// The invariant above is only worth asserting if it can fail. On the real
+// fixture the advisor is always `detected: true`, so the contradiction branch is
+// unreachable and the assertion would pass even with the bug present — a test
+// that cannot fail is worse than no test, because it certifies a lie.
+//
+// So the race is staged explicitly: `advisor_summary` is made to answer as it
+// does *before* detection lands (score 0, "没有一项检测完成") while the capability
+// layer keeps returning the real, fully-populated report. That is precisely the
+// state the shipped build entered. The guard added to the dashboard
+// (`advisor?.detected ? … : null`) is what must keep the headline off the screen.
+await page.evaluate(() => window.__setAdvisorStale(true));
+// `bootToWizard` rather than a bare reload: after the gate, a cold load lands on
+// the dashboard, so the welcome screen this block clicks through has to be
+// reached the same way as everywhere else in this file. The stale advisor mode
+// is read live, so it survives the navigation.
+await bootToWizard();
+await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.waitForTimeout(2600);
+
+const staleRace = await page.evaluate(() => {
+  const text = document.body.innerText;
+  return {
+    saysNotDetected:
+      text.includes("没有一项检测完成") || text.includes("尚未检测"),
+    listsReady: text.includes("已准备"),
+    shownScore: (text.match(/整体评分\s*(\d+)\s*\/\s*100/) ?? [])[1] ?? null,
+    zeroPercent: /你的开发环境\s*0\s*%/.test(text),
+  };
+});
+await page.evaluate(() => window.__setAdvisorStale(false));
+// Same reason as above: reload without the gate walk lands on the dashboard, so
+// the welcome screen this clicks through has to be reached via `bootToWizard`.
+await bootToWizard();
+await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.waitForTimeout(2600);
 
 // Selecting a capability must populate the right-hand explanation pane. The
 // pane is the entire answer to "it only shows status", so its content is
@@ -533,6 +859,120 @@ await shot("11-dashboard-software");
 // elements and reported "no bundled icon found" — a `false` failure about the
 // probe's timing, not about the product.
 const iconReport = await collectIconReport();
+
+// --- 8a. The software grid (brief phase 3) and its category tabs (phase 4) ----
+//
+// Asserted on *structure*, not on appearance: the count of cards, whether the
+// cards carry the four things the brief asks for, and whether selecting a
+// category actually changes what is rendered. "It looks like a grid" is not
+// something a DOM probe can answer, and pretending otherwise would be a check
+// that passes on a broken layout.
+const gridReport = await page.evaluate(() => {
+  // The cards are the buttons inside the grid container. `grid-cols-[repeat(
+  // auto-fill,minmax(168px,1fr))]` compiles to a `grid-template-columns` that
+  // resolves to more than one column at this viewport, which is what makes it a
+  // grid rather than a wrapped list.
+  const all = [...document.querySelectorAll("button")];
+  const cards = all.filter((b) => b.querySelector("img, svg") && /必备|推荐|可选|仅检测/.test(b.innerText));
+  const container = cards[0]?.parentElement ?? null;
+  const columns = container
+    ? getComputedStyle(container).gridTemplateColumns.split(" ").filter(Boolean).length
+    : 0;
+  const sample = cards[0]?.innerText ?? "";
+  return {
+    count: cards.length,
+    columns,
+    // The four required contents, sampled on the first card.
+    hasStatus: /已安装|未安装|无法确认|需自行安装/.test(sample),
+    hasRecommendation: /必备|推荐|可选|仅检测/.test(sample),
+    hasPurpose: sample.split("\n").length >= 3,
+  };
+});
+
+// The tabs: every category the catalog can produce, plus 全部.
+const tabsReport = await page.evaluate(() => {
+  const tablist = document.querySelector("[role=tablist]");
+  if (!tablist) return { tabs: [], labels: [] };
+  const tabs = [...tablist.querySelectorAll("[role=tab]")];
+  return {
+    tabs: tabs.length,
+    labels: tabs.map((t) => t.innerText.replace(/\s+/g, " ").trim()),
+  };
+});
+await shot("11-tabs");
+
+// Switching category must change the set of cards, not merely the selected tab.
+// Without this the "filter" is a highlight and the grid never narrows.
+const beforeFilter = gridReport.count;
+let afterFilter = beforeFilter;
+const secondTab = page.locator("[role=tab]").nth(1);
+if (await secondTab.count()) {
+  await secondTab.click();
+  await page.waitForTimeout(500);
+  afterFilter = await page.evaluate(() => {
+    const all = [...document.querySelectorAll("button")];
+    return all.filter((b) => b.querySelector("img, svg") && /必备|推荐|可选|仅检测/.test(b.innerText)).length;
+  });
+  await shot("11b-software-filtered");
+  // Back to 全部 for the screenshots and the detail-pane check below.
+  await page.locator("[role=tab]").first().click();
+  await page.waitForTimeout(500);
+}
+
+// --- 8b. Accessibility of the new components (brief phase 10) ----------------
+//
+// The brief lists 无障碍 as a verification target. What is checked is the part
+// that can be measured objectively and the part most likely to regress when a
+// component is redrawn:
+//
+//   * every interactive element is reachable by keyboard and has an accessible
+//     name — a card grid full of icon-only buttons is the classic failure here
+//   * the status pills do not announce their state twice, which is what happens
+//     when a glyph's own `aria-label` is left on beside the word
+//   * the tab strip exposes selection state to assistive tech, not only visually
+const a11yReport = await page.evaluate(() => {
+  const named = (el) =>
+    (el.getAttribute("aria-label") ||
+      el.innerText ||
+      el.textContent ||
+      "").trim().length > 0;
+
+  const buttons = [...document.querySelectorAll("button")];
+  const unnamed = buttons.filter((b) => !named(b)).length;
+
+  // Focusability: an element that is `tabindex="-1"` or `disabled` cannot be
+  // reached, and a grid of cards that skips every item would pass a DOM-presence
+  // check while being unusable without a mouse.
+  const focusable = buttons.filter((b) => !b.disabled && b.tabIndex >= 0).length;
+
+  // Double announcement: a status pill must carry the state exactly once as
+  // text. Counting the glyph's label and the word together is how
+  // "通过 已安装" reaches a screen reader.
+  const pills = [...document.querySelectorAll("span[title]")].filter((s) =>
+    /已确认存在|已检查|没能检查|只检测/.test(s.getAttribute("title") || ""),
+  );
+  const doubled = pills.filter((p) => {
+    const labels = p.querySelectorAll("[aria-label]");
+    return labels.length > 0;
+  }).length;
+
+  const tablist = document.querySelector("[role=tablist]");
+  const tabs = tablist ? [...tablist.querySelectorAll("[role=tab]")] : [];
+  const tabsWithState = tabs.filter(
+    (t) => t.hasAttribute("aria-selected"),
+  ).length;
+
+  return {
+    buttonCount: buttons.length,
+    unnamed,
+    focusable,
+    pills: pills.length,
+    doubled,
+    tabs: tabs.length,
+    tabsWithState,
+  };
+});
+
 // Selecting a program shows its purpose, its install state, and the per-source
 // evidence — the same audit trail the wizard's software screen renders, now
 // available without walking a flow.
@@ -568,24 +1008,68 @@ await page.waitForTimeout(500);
 await shot("13-dashboard-history");
 
 // --- 8b. Licence section -----------------------------------------------------
-// The section that has to explain a combination that looks contradictory: the
-// shipping build is `免费版` with installation *not* restricted. Driving it in
-// the default state is the point — a licence screen is most likely to mislead
-// precisely when nothing is locked.
+// Driven in the *shipping* state, which since the commercial revision is
+// enforced-free: installation is locked until a key is entered. Asserting this
+// state rather than a permissive one is the point — a licence screen is most
+// likely to mislead precisely when something is locked.
 await page.getByRole("button", { name: /^版本\s*\d*$/ }).click();
 await page.waitForTimeout(600);
 await shot("13b-dashboard-license-free");
 
 // Activating must move the screen to the activated state without a reload.
-await page.getByLabel("激活码").fill("AISS-DEMO-1234");
-await page.getByRole("button", { name: /^激活$/ }).click();
+// The button reads 激活 PRO rather than a bare 激活, which is the gate's
+// requirement that the primary action name what it grants; the regex accepts
+// either so the assertion survives the wording without silently skipping.
+await page.getByLabel("激活码").fill("SC-ABCDE-23456-FGHJK-3SKWP");
+await page.getByRole("button", { name: /^激活( PRO)?$/ }).click();
 await page.waitForTimeout(700);
 await shot("13c-dashboard-license-activated");
+
+// Captured here, while the activated licence screen is mounted, because the
+// brief's "用户不可查看/复制" is a claim about *controls that do not exist*.
+//
+// An earlier version of this assertion searched the screen's text for
+// "复制"/"导出" and was defeated by the screen's own honest disclosure that the
+// activation cannot be exported — it was testing prose rather than the UI, and
+// a real copy button would have been caught only by accident. This probe looks
+// for capability: clickable affordances, and any input holding a value.
+const licenseSurface = await page.evaluate(() => {
+  const forbidden = /复制|导出|查看激活|显示激活|激活码.*(复制|导出)/;
+  const controls = [...document.querySelectorAll("button, a, [role=button]")];
+  return {
+    offendingControls: controls
+      .map((n) => (n.getAttribute("aria-label") || n.textContent || "").trim())
+      .filter((label) => label && forbidden.test(label)),
+    // A revealed key would have to live in an input's value.
+    preFilledInputs: [...document.querySelectorAll("input")]
+      .map((i) => i.value)
+      .filter((v) => v.trim().length > 0),
+  };
+});
 
 // Deactivating returns to the default, and must say so.
 await page.getByRole("button", { name: /取消激活/ }).click();
 await page.waitForTimeout(700);
 await shot("13d-dashboard-license-deactivated");
+
+// The third state: a valid code bound to different hardware. Staged by asking
+// the mock for the mismatch entitlement, which is what a copied `license.dat`
+// produces. Without this the screen could render a mismatch as "never
+// activated" and every assertion above would still pass.
+//
+// The reload is needed for the *store*, not the mock: `license_status` reads
+// `mode.licenseMode` live, but the section only fetches entitlements once per
+// mount (`phase === "idle"`), so an already-loaded page would keep showing the
+// previous tier. `bootToWizard` performs that reload and then walks back to the
+// welcome screen, which is why the same two clicks as the advisor-race block
+// above are repeated here.
+await page.evaluate(() => window.__setLicenseMode("freeMismatch"));
+await bootToWizard();
+await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.waitForTimeout(2600);
+await page.getByRole("button", { name: /^版本\s*\d*$/ }).click();
+await page.waitForTimeout(700);
+await shot("13e-dashboard-license-mismatch");
 
 // --- 9. Theme ----------------------------------------------------------------
 // Both themes are asserted because only one of them can be the default, and the
@@ -885,6 +1369,15 @@ function isLight(rgb) {
 }
 
 // --- Assertions --------------------------------------------------------------
+// The purchase contacts, duplicated from `src/components/ProGate.tsx` on
+// purpose. A test that imported them would assert nothing: it would pass even if
+// the component rendered no contacts at all, because both sides would move
+// together. Pinning the literal values is what catches a changed or dropped
+// QQ/WeChat number, which is a silent commercial failure — the customer simply
+// has no way to buy.
+const CONTACT_QQ = "1700142491";
+const CONTACT_WECHAT = "Arukas_0623";
+
 // Checked per screen, against the text that was actually on screen at the time.
 const welcome = textAt("01-welcome");
 const goalScreen = textAt("01b-goal");
@@ -912,6 +1405,7 @@ const dashboardHistory = textAt("13-dashboard-history");
 const licenseFree = textAt("13b-dashboard-license-free");
 const licenseActivated = textAt("13c-dashboard-license-activated");
 const licenseDeactivated = textAt("13d-dashboard-license-deactivated");
+const licenseMismatch = textAt("13e-dashboard-license-mismatch");
 
 const checks = [
   ["welcome headline", welcome.includes("配置这台电脑")],
@@ -1005,6 +1499,44 @@ const checks = [
 
   // --- The Execution Engine's screen ----------------------------------------
   ["install: the engine is started by the screen", install.includes("安装完成") || install.includes("正在安装")],
+
+  // --- Install flow freedom (brief phase 7) ---------------------------------
+  //
+  // The brief's requirement is that the flow no longer locks the student into
+  // "选择 → 安装 → 完成". Three things follow, and each is asserted:
+  //
+  //   * the engine does not start until the student says so
+  //   * the student can decline individual programs
+  //   * declining one changes what the button promises to do
+  [
+    "install: nothing is installed until the student commits",
+    startedBeforeCommit,
+  ],
+  [
+    "install: every program to be installed is listed before the run",
+    chooseReport.boxes >= 1,
+    `${chooseReport.boxes} selectable rows`,
+  ],
+  [
+    // Verified on 程序员版, the profile with two programs still missing here. Saying
+    // *which* profile it ran against is part of the evidence: the same check on a
+    // single-program profile would pass vacuously or fail for a reason that has
+    // nothing to do with the product.
+    "install: unchecking a program narrows what will be installed",
+    selective.before !== null &&
+      selectiveAfter.after !== null &&
+      selectiveAfter.after === selective.before - 1,
+    `${selective.before} → ${selectiveAfter.after} selected of ${selective.boxes}`,
+  ],
+  [
+    // The visible half of the same thing: the button must stop promising the
+    // whole plan once the student has declined part of it. A count that changed
+    // while the label still said "开始安装（2 项）" would be a lying button.
+    "install: the commit button states how many will actually run",
+    typeof selectiveAfter.button === "string" &&
+      /安装选中的 1 项|开始安装（1 项）/.test(selectiveAfter.button),
+    selectiveAfter.button ?? "",
+  ],
   ["install: steps are marked from the real session", /完成|跳过|失败/.test(install)],
   ["install: a completed run reports its outcome", install.includes("安装完成")],
   ["install: elapsed time is shown from the session", /用时|已用时/.test(install)],
@@ -1115,6 +1647,57 @@ const checks = [
     "dashboard: shows the environment score",
     /\d{1,3}\s*%|满分/.test(dashboardOverview),
   ],
+
+  // --- The status centre (brief phase 6) ------------------------------------
+  //
+  // Four separate assertions rather than one, because the brief asks for four
+  // distinct things and three of them can hold while the fourth regresses. The
+  // failure this guards against is specific: the overview drifting back into a
+  // "检测报告" — a bare score with a gap list and no greeting, no framing.
+  [
+    "status centre: opens with a greeting, not a report header",
+    statusCentre.greeting,
+  ],
+  [
+    "status centre: the score is scoped to the whole machine",
+    statusCentre.score,
+  ],
+  [
+    // The load-bearing one. A screen that lists only what is missing reads as a
+    // scolding and gets closed; showing what is ready *beside* what is not is
+    // what makes the score something a student is willing to look at.
+    //
+    // At least two groups, because which second group is present depends on the
+    // machine: this one has partial capabilities and nothing outright missing.
+    "status centre: what is ready is shown beside what is not",
+    statusCentre.groups.length >= 2,
+    statusCentre.groups.join(" + ") || "no groups rendered",
+  ],
+  [
+    // The cold-start regression, pinned.
+    //
+    // The app must never say "nothing was detected" on a screen that is
+    // simultaneously listing what is ready. That is not a wording preference: it
+    // is the app contradicting itself in its largest type, and it shipped once
+    // because the stale advisor value was a defined 0 rather than a null.
+    "status centre: never claims nothing was detected while listing what is ready",
+    !statusCentre.contradiction,
+    statusCentre.contradiction
+      ? "the overview said nothing was detected while showing ready capabilities"
+      : "consistent",
+  ],
+  [
+    // The teeth. Same invariant, but staged against a genuinely stale advisor —
+    // without this the assertion above cannot fail on this fixture, because the
+    // recorded advisor is always `detected: true`.
+    "status centre: a stale pre-detection advisor cannot hijack the headline",
+    !staleRace.saysNotDetected && !staleRace.zeroPercent,
+    `saidNotDetected=${staleRace.saysNotDetected} zeroPercent=${staleRace.zeroPercent} shownScore=${staleRace.shownScore} listsReady=${staleRace.listsReady}`,
+  ],
+  [
+    "status centre: a next step is named on the overview",
+    statusCentre.nextStep,
+  ],
   [
     // Two percentages sit within a few pixels of each other and mean different
     // things: the chosen goal's completion and the machine's overall score.
@@ -1161,6 +1744,79 @@ const checks = [
     "dashboard: an unmanaged program is not rendered as a failure",
     dashboardSoftware.includes("仅检测") || dashboardSoftware.includes("需自行"),
   ],
+
+  // --- The software grid (brief phase 3) -------------------------------------
+  //
+  // The brief asks for a grid whose cards carry 图标 · 名称 · 说明 · 状态 · 推荐 ·
+  // 展开详情. Each of those is asserted separately: a card grid that renders but
+  // drops the recommendation, or the status word, is the failure mode, and a
+  // single "a grid exists" check would pass on all of them.
+  [
+    "grid: programs render as cards, not as rows",
+    gridReport.count >= 8,
+    `${gridReport.count} cards`,
+  ],
+  [
+    "grid: the layout is genuinely multi-column",
+    // One column means the "grid" is a list with extra padding, which is exactly
+    // the shape the brief asked to replace.
+    gridReport.columns >= 2,
+    `${gridReport.columns} columns`,
+  ],
+  [
+    "grid: each card states its install status in words",
+    gridReport.hasStatus,
+  ],
+  [
+    "grid: each card states whether it is recommended, from the capability table",
+    gridReport.hasRecommendation,
+  ],
+  [
+    "grid: each card carries a purpose line, not only a name",
+    gridReport.hasPurpose,
+  ],
+
+  // --- Category tabs (brief phase 4) -----------------------------------------
+  [
+    "tabs: every category is offered, plus 全部",
+    tabsReport.tabs >= 2 && tabsReport.labels.some((l) => l.startsWith("全部")),
+    tabsReport.labels.join(" | "),
+  ],
+  [
+    // The check that makes the tabs real rather than decorative: selecting a
+    // category must change how many cards are on screen. A tab strip that only
+    // moved a highlight would pass every content assertion above.
+    "tabs: selecting a category narrows the grid",
+    afterFilter < beforeFilter,
+    `${beforeFilter} → ${afterFilter}`,
+  ],
+
+  // --- Accessibility of the new components (brief phase 10) ------------------
+  [
+    "a11y: every control on the grid has an accessible name",
+    a11yReport.unnamed === 0,
+    `${a11yReport.unnamed} of ${a11yReport.buttonCount} unnamed`,
+  ],
+  [
+    // A card grid whose items cannot be reached by Tab is unusable without a
+    // mouse, and a DOM-presence assertion would never notice.
+    "a11y: the cards are keyboard reachable",
+    a11yReport.focusable >= a11yReport.buttonCount * 0.9,
+    `${a11yReport.focusable}/${a11yReport.buttonCount} focusable`,
+  ],
+  [
+    // The regression this guards: a status pill that announces "通过 已安装" —
+    // the same state twice, in two vocabularies. The word is the accessible
+    // content; the glyph must be decorative inside a pill.
+    "a11y: a status pill states its state once, not twice",
+    a11yReport.doubled === 0,
+    `${a11yReport.doubled} of ${a11yReport.pills} pills double-announce`,
+  ],
+  [
+    "a11y: the category tabs expose their selection state",
+    a11yReport.tabs > 0 && a11yReport.tabsWithState === a11yReport.tabs,
+    `${a11yReport.tabsWithState}/${a11yReport.tabs}`,
+  ],
   [
     "dashboard: the detail pane explains the selection",
     dashboardCapabilityDetail.length > 80 &&
@@ -1182,16 +1838,44 @@ const checks = [
       dashboardHistory.includes("未完成"),
   ],
   [
-    // The single most important licensing assertion. This build is 免费版 and
-    // does not gate installation, which reads as a contradiction unless the
-    // screen says why. Asserting the *reason* rather than the badge is what
-    // stops that explanation being dropped in a later edit.
-    "license: the free tier says installation is not restricted",
-    licenseFree.includes("免费版") && licenseFree.includes("不限制"),
+    // The single most important licensing assertion, and it was *inverted* by
+    // the commercial revision. The old build shipped the gate open, so this
+    // assertion required the screen to say installation was "不限制". Now the
+    // free tier genuinely refuses.
+    //
+    // Both halves read the entitlement: the fixture must actually be locked
+    // (otherwise this tests the fixture, not the product), and the screen must
+    // say so. The contradiction case — a screen promising a lock while the gate
+    // is open, or vice versa — is what the teeth check exposed, so it is now
+    // asserted directly rather than left to chance.
+    "license: the free tier states that installation is locked",
+    fixtures.license.freeEnforced.canInstall === false &&
+      licenseFree.includes("免费版") &&
+      licenseFree.includes("不包含自动安装"),
+  ],
+  [
+    // The reverse direction of the same claim. A build with the gate open must
+    // NOT tell the customer installation is locked. This is the assertion that
+    // would have caught the hard-coded subtitle.
+    "license: the screen never claims a lock the entitlement does not apply",
+    (fixtures.license.freeEnforced.canInstall === true) ===
+      !licenseFree.includes("不包含自动安装"),
   ],
   [
     "license: every capability row states its own scope",
-    licenseFree.includes("环境检测") && licenseFree.includes("安装与配置"),
+    licenseFree.includes("环境检测") &&
+      licenseFree.includes("软件推荐") &&
+      licenseFree.includes("自动安装") &&
+      licenseFree.includes("自动配置"),
+  ],
+  [
+    // Reads the fixture rather than a string, so this fails when the *gate*
+    // changes and not merely when the copy does. Written this way after the
+    // teeth check showed the previous version passed on a hard-coded sentence
+    // that contradicted the entitlement it was supposed to describe.
+    "license: the free tier marks the paid capabilities as locked",
+    fixtures.license.freeEnforced.canInstall === false &&
+      licenseFree.includes("激活专业版后可用"),
   ],
   [
     // The failure this guards against: a locked button with no explanation of
@@ -1200,8 +1884,39 @@ const checks = [
     licenseFree.includes("输入激活码"),
   ],
   [
+    "license: the free tier offers a way to buy",
+    licenseFree.includes(CONTACT_QQ) && licenseFree.includes(CONTACT_WECHAT),
+  ],
+  [
     "license: activating switches the screen to the pro state",
-    licenseActivated.includes("专业版") && licenseActivated.includes("已激活"),
+    licenseActivated.includes("Professional") &&
+      licenseActivated.includes("已激活") &&
+      licenseActivated.includes("已解锁"),
+  ],
+  [
+    // The brief's pro-state fields: device binding and activation time.
+    "license: the pro state shows the device binding and activation time",
+    licenseActivated.includes("设备绑定") && licenseActivated.includes("激活时间"),
+  ],
+  [
+    // The brief's "用户不可查看/复制/导出", asserted against *affordances* rather
+    // than against the wording. A text search was the wrong instrument: the
+    // screen legitimately says the activation cannot be exported, so a
+    // word-match both false-failed on that sentence and would have missed a
+    // copy button labelled "复制". What matters is that no control offers it and
+    // no input is holding a key.
+    "license: no control offers to reveal, copy or export the activation",
+    licenseSurface.offendingControls.length === 0,
+  ],
+  [
+    "license: no input on the activated screen holds a pre-filled code",
+    licenseSurface.preFilledInputs.length === 0,
+  ],
+  [
+    // The stored activation file is DPAPI-encrypted; the screen must never
+    // claim to show the key it cannot decrypt into view.
+    "license: the pro state does not print a code-shaped string",
+    !/SC-[0-9A-Z]{5}-[0-9A-Z]{5}/.test(licenseActivated),
   ],
   [
     "license: deactivating returns to the default tier",
@@ -1209,10 +1924,28 @@ const checks = [
       licenseDeactivated.includes("输入激活码"),
   ],
   [
-    // Honesty requirement: no account, no server. A student who entered a key
+    // Honesty requirement: no account, no server. A customer who entered a key
     // should not be left believing it was checked against a licensing service.
     "license: local-only activation is disclosed",
     licenseFree.includes("仅保存在本机") || licenseFree.includes("不联网校验"),
+  ],
+  [
+    // The consequence of local-only checking, stated rather than hidden: the
+    // file cannot be moved, which is the "绑定设备" behaviour in the customer's
+    // own terms.
+    "license: the device binding is disclosed before purchase",
+    licenseFree.includes("绑定"),
+  ],
+  [
+    // A device mismatch is a third state, not "free". The customer holds a real
+    // code and must be told that rather than told their key is invalid.
+    "license: a device mismatch is distinguished from being unactivated",
+    licenseMismatch.includes("已绑定其他设备") &&
+      licenseMismatch.includes("输入激活码"),
+  ],
+  [
+    "license: the mismatch state names this machine so support can compare",
+    licenseMismatch.includes("3f9a2c41"),
   ],
   [
     "dashboard: light theme applies and is legible",

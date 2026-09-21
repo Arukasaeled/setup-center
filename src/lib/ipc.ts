@@ -28,6 +28,7 @@ import type {
   InstallStrategy,
   KnowledgeStatus,
   Entitlements,
+  LicenseDeviceView,
   LocalizationTargetView,
   MachineFacts,
   Profile,
@@ -322,6 +323,16 @@ export const activateLicense = (key: string) =>
 /** Clears the activation, returning the machine to its default tier. */
 export const deactivateLicense = () =>
   call<Entitlements>("deactivate_license");
+
+/**
+ * What the licence screen may show about this machine's binding.
+ *
+ * Returns a summary — an abbreviated digest and a probe count — never the raw
+ * hardware identifiers. There is deliberately no companion command that returns
+ * the activation code, so the UI has nothing to render even if a future change
+ * wanted it to.
+ */
+export const licenseDevice = () => call<LicenseDeviceView>("license_device");
 
 // ---------------------------------------------------------------------------
 // Diagnostics

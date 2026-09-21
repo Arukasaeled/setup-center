@@ -885,6 +885,31 @@ fn entries() -> Vec<CatalogEntry> {
             version_via_shim: false,
             install: &[],
         },
+        CatalogEntry {
+            id: SoftwareId::WindowsTerminal,
+            winget_ids: &["Microsoft.WindowsTerminal"],
+            // Matched on the Store display name. `wt.exe` is the shim Windows
+            // installs, and unlike the Electron cases above it needs no special
+            // handling: it forwards `--version` to the real binary correctly,
+            // which was checked rather than assumed.
+            name_patterns: &[
+                NamePattern::Prefix("Windows Terminal"),
+                NamePattern::Exact("Microsoft.WindowsTerminal"),
+            ],
+            executables: &["wt.exe"],
+            install_roots: &["Microsoft\\WindowsApps", "Windows Terminal"],
+            // "Windows Terminal" on its own is a weak signature — other entries
+            // can mention it in passing — so the install location must
+            // corroborate the name before a registry hit counts.
+            location_markers: &["WindowsTerminal", "Windows Terminal"],
+            version_args: Some(&["--version"]),
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Microsoft.WindowsTerminal"),
+                rationale: "Windows Terminal 有官方 winget 包",
+            }],
+        },
     ]
 }
 

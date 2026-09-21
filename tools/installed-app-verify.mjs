@@ -78,17 +78,26 @@ const clickByText = async (pattern) =>
     return true;
   })()`);
 
-// Walk the real flow: pick nothing special, just get detection running, then
-// step through to the software list where the icons live. Each hop is reported
-// so a failure names the screen it got stuck on instead of silently probing an
-// empty one — the mistake the first version of this script made.
+// Walk the real flow from the screen the app actually boots on. Each hop is
+// reported so a failure names the screen it got stuck on instead of silently
+// probing an empty one — the mistake the first version of this script made.
+//
+// ## Why the welcome hop is first
+//
+// This list used to start at "开始检测", which assumed the app had already been
+// left on the goal screen by a previous manual run. On a fresh process the app
+// boots on the welcome screen, nothing matched, and all three hops silently did
+// nothing — the probe then reported "0 img + 0 masked" and looked exactly like a
+// catastrophic packaging failure. Verified by launching the built exe cold and
+// reading the screen text back: `Setup Center / 开始 / 配置这台电脑 / 检查这台电脑
+// / 直接开始配置`.
+//
+// Starting from "检查这台电脑" (the dashboard door) rather than the wizard is
+// deliberate: it reaches the software grid in one hop instead of four, and the
+// grid is where every bundled logo is rendered.
 const hops = [
-  ["goal", "开始检测"],
-  // Detection lands on a results screen whose continue control is "仍然继续".
-  // These labels are read from the running app, not guessed: an earlier version
-  // of this script used "继续|下一步" and silently stalled here.
-  ["detect-results", "仍然继续"],
-  ["installed", "继续|下一步|选择方案|重新检测"],
+  ["dashboard", "检查这台电脑"],
+  ["software", "^软件\\s*\\d*$"],
 ];
 
 for (const [label, pattern] of hops) {
@@ -97,13 +106,34 @@ for (const [label, pattern] of hops) {
   await wait(2800);
 }
 
-// The software list may also be reachable from the sidebar once the dashboard
-// is up; try that as a fallback so the probe lands somewhere with rows.
-const beforeCount = await evaluate(
-  'document.querySelectorAll(\'[style*="mask-image"], img[src^="data:"], img[src*="asset"]\').length',
-);
+// The dashboard scans the registry on arrival and renders its grid as soon as
+// the scan lands. Polling rather than sleeping a fixed amount, because the first
+// version of this walk sampled too early, found zero marks, and fell through to
+// the wizard — which meant the *dashboard* grid, the thing this round changed,
+// was never actually measured. The fallback stayed silent about that.
+const countMarks = async () =>
+  await evaluate(
+    'document.querySelectorAll(\'[style*="mask-image"], img[src^="data:"], img[src*="asset"]\').length',
+  );
+
+let beforeCount = 0;
+for (let i = 0; i < 12 && beforeCount === 0; i++) {
+  beforeCount = await countMarks();
+  if (beforeCount === 0) await wait(1000);
+}
+console.log(`# dashboard grid marks: ${beforeCount}`);
+
+// Fallback only if the dashboard genuinely produced nothing: walk the wizard's
+// own software screen so the packaging check still has marks to measure.
 if (beforeCount === 0) {
-  await clickByText("^软件\\s*\\d*$");
+  console.log("# fallback: the dashboard grid rendered no marks, walking the wizard");
+  await clickByText("^回到首次设置$");
+  await wait(900);
+  await clickByText("^直接开始配置$");
+  await wait(900);
+  await clickByText("^开始检测$");
+  await wait(2800);
+  await clickByText("^仍然继续$");
   await wait(1500);
 }
 
