@@ -58,16 +58,32 @@ fn print_hold() {
 fn run(args: &[String]) -> i32 {
     let root = locate_root();
     let ledger = root.join("license_inventory.csv");
-    let export = newest_export(&root);
+    let pages = newest_export_pages(&root);
 
     println!("================================================");
     println!("  Setup Center  ——  激活码查询");
     println!("================================================");
     println!();
     println!("台账文件 : {}", ledger.display());
-    match &export {
-        Some(p) => println!("明文码   : {}", p.display()),
-        None => println!("明文码   : （未找到 codes_export_*.txt）"),
+    if pages.is_empty() {
+        println!("明文码   : （未找到 codes_export_*.txt）");
+    } else if pages.len() == 1 {
+        println!("明文码   : {}", pages[0].display());
+    } else {
+        // Report the span rather than one path, so it is obvious that every page
+        // was read — the whole point of merging them.
+        println!(
+            "明文码   : {} 页（{} … {}）",
+            pages.len(),
+            pages[0]
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?"),
+            pages[pages.len() - 1]
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+        );
     }
     println!();
 
@@ -81,7 +97,7 @@ fn run(args: &[String]) -> i32 {
     };
     println!("台账共 {} 条记录。", rows.len());
 
-    let codes = export.as_deref().map(read_export).unwrap_or_default();
+    let codes = read_export_pages(&pages);
     if !codes.is_empty() {
         println!("明文码共 {} 条。", codes.len());
     }
@@ -253,7 +269,17 @@ fn locate_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-fn newest_export(root: &Path) -> Option<PathBuf> {
+/// All export pages that belong to the newest batch, in page order.
+///
+/// ## Why this must return *all* pages, not the newest file
+///
+/// The earlier version picked a single `codes_export_*.txt` by name. Once the
+/// export became paged that silently degraded: it would load only the last page,
+/// so codes 001–450 would report "明文缺失" even though their plaintext was
+/// sitting in pages 1–9. Returning every page of the newest date and merging
+/// them fixes that, and merging is the correct model regardless — a page is a
+/// filing convenience, the batch is the unit.
+fn newest_export_pages(root: &Path) -> Vec<PathBuf> {
     // The export deliberately lives OUTSIDE the DevKit so that copying the kit
     // anywhere cannot leak plaintext codes. That means searching from the exe
     // directory alone is wrong: the kit at `D:\license-export\开发端\
@@ -279,16 +305,25 @@ fn newest_export(root: &Path) -> Option<PathBuf> {
     }
 
     for d in &dirs {
-        if let Some(found) = newest_export_in(d) {
-            return Some(found);
+        let found = export_pages_in(d);
+        if !found.is_empty() {
+            return found;
         }
     }
-    None
+    Vec::new()
 }
 
-fn newest_export_in(root: &Path) -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = std::fs::read_dir(root)
-        .ok()?
+/// Every export page in one directory, restricted to the newest batch date.
+///
+/// `root` is directory-scanned once, the newest `codes_export_<date>` prefix is
+/// chosen, and only pages sharing that prefix are returned — so a stale batch
+/// from an earlier day cannot mix into today's lookup.
+fn export_pages_in(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+
+    let mut all: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
@@ -296,8 +331,28 @@ fn newest_export_in(root: &Path) -> Option<PathBuf> {
             name.starts_with("codes_export_") && name.ends_with(".txt")
         })
         .collect();
-    found.sort();
-    found.pop()
+    all.sort();
+    if all.is_empty() {
+        return Vec::new();
+    }
+
+    // The batch key is everything up to the page suffix: `codes_export_20260921`.
+    // Both `…_p03.txt` and a legacy unpaged `….txt` map to the same key, so an
+    // old export and a new paged one are not mixed.
+    let key_of = |p: &Path| -> String {
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let stem = name.trim_end_matches(".txt");
+        match stem.rfind("_p") {
+            // Only treat `_pNN` at the end as a page suffix.
+            Some(i) if stem[i + 2..].chars().all(|c| c.is_ascii_digit()) => stem[..i].to_string(),
+            _ => stem.to_string(),
+        }
+    };
+
+    let newest = all.iter().map(|p| key_of(p)).max().unwrap_or_default();
+    let mut pages: Vec<PathBuf> = all.into_iter().filter(|p| key_of(p) == newest).collect();
+    pages.sort();
+    pages
 }
 
 fn split_csv(line: &str) -> Vec<String> {
@@ -385,6 +440,19 @@ fn read_export(path: &Path) -> HashMap<String, String> {
         if code.starts_with("SC-") {
             map.insert(code_hash(&normalise(&code)), code);
         }
+    }
+    map
+}
+
+/// Merges every export page into one hash → plaintext map.
+///
+/// A later page cannot overwrite an earlier one's code, because a code appears in
+/// exactly one page; inserting is therefore safe and the order only affects
+/// iteration, which nothing depends on.
+fn read_export_pages(pages: &[PathBuf]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for page in pages {
+        map.extend(read_export(page));
     }
     map
 }

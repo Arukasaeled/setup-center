@@ -50,7 +50,7 @@
 //! of "no server", and it is unchanged by this work.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ai_student_setup_lib::modules::license::inventory_file as ledger;
 use ai_student_setup_lib::modules::license::validator::{self, CodeFormat};
@@ -75,8 +75,11 @@ impl Edition {
 struct Options {
     count: usize,
     edition: Edition,
-    /// Where `codes_export_YYYYMMDD.txt` is written.
-    export_dir: PathBuf,
+    /// Where the export pages are written.
+    ///
+    /// `None` means "beside the ledger", which is resolved in `main` once the
+    /// ledger path is known — the two files belong together.
+    export_dir: Option<PathBuf>,
     /// Overrides the ledger path; defaults to `src-tauri/license_inventory.csv`.
     ledger: Option<PathBuf>,
     /// Required to write into a ledger that did not previously exist.
@@ -97,6 +100,20 @@ fn main() {
     let created_at = ai_student_setup_lib::modules::detect::now_iso8601();
     let date = created_at.get(..10).unwrap_or("1970-01-01").to_string();
     let ledger_path = options.ledger.clone().unwrap_or_else(ledger::default_path);
+
+    // Where the pages go when `--export-dir` was not given: beside the ledger,
+    // not the working directory. `license_inventory.csv` and its pages are two
+    // halves of one record, and splitting them across directories is how the
+    // ledger gets copied somewhere without the codes it describes.
+    let export_dir = options
+        .export_dir
+        .clone()
+        .unwrap_or_else(|| {
+            ledger_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        });
 
     // -- Open the ledger before minting anything ----------------------------
     //
@@ -242,17 +259,26 @@ fn main() {
     book.entries.extend(entries.iter().cloned());
 
     // -- Export -------------------------------------------------------------
-    let export = ledger::export_path(&options.export_dir, &date);
-    if let Err(e) = write_export(
-        &export,
+    //
+    // Written as pages of `PAGE_SIZE` codes rather than one long file. The
+    // reason is operational, not aesthetic: a 500-code file is unusable to hand
+    // out, because the person sending them loses their place and a
+    // half-scrolled page is how a code gets sent twice or skipped. A 50-code
+    // page is one screen, and "page 3" is a thing you can say on the phone.
+    let pages = match write_export_pages(
+        &export_dir,
+        &date,
         options.edition,
         &entries,
         &codes,
         !options.overwrite_export,
     ) {
-        eprintln!("error: could not write {}: {e}", export.display());
-        std::process::exit(1);
-    }
+        Ok(pages) => pages,
+        Err(e) => {
+            eprintln!("error: could not write the export pages: {e}");
+            std::process::exit(1);
+        }
+    };
 
     println!("edition : {}", options.edition.label());
     println!("count   : {}", codes.len());
@@ -261,12 +287,20 @@ fn main() {
         first,
         first + codes.len() as u64 - 1
     );
+    println!("ledger  : {} (appended {} row(s))", ledger_path.display(), entries.len());
     println!(
-        "ledger  : {} (appended {} row(s))",
-        ledger_path.display(),
-        entries.len()
+        "export  : {} page(s) of up to {} in {}",
+        pages.len(),
+        PAGE_SIZE,
+        export_dir.display()
     );
-    println!("export  : {}", export.display());
+    println!("          {}", pages[0].display());
+    if pages.len() > 1 {
+        println!(
+            "          … through {}",
+            pages[pages.len() - 1].display()
+        );
+    }
     println!(
         "verified: {} / {} re-validated against the client validator, tier checked",
         codes.len(),
@@ -278,71 +312,111 @@ fn main() {
     }
 }
 
-/// Writes the plaintext codes for handing to customers.
+/// How many codes go into one page.
 ///
-/// ## Why the export is numbered but the ledger is hashed
+/// 50 is chosen so a page is readable in one screen and a batch of 500 is a
+/// tidy ten files. It is a *presentation* constant: it changes how the codes are
+/// filed, never what a code means. Re-paging an existing export changes nothing
+/// about the codes in it, which is the property that makes this safe to tune.
+const PAGE_SIZE: usize = 50;
+
+/// Writes the plaintext codes as numbered pages of [`PAGE_SIZE`].
+///
+/// Returns the page paths, in order, so the caller can report them.
+///
+/// ## Why pages instead of one file
+///
+/// The old single-file export was the weakest part of the distribution flow. It
+/// is the file the author works *from* while sending codes out, and scrolling a
+/// 500-line file to find "where was I" is how a code gets sent twice. Paging it
+/// makes the unit of work the same size as the unit of delivery.
+///
+/// ## Why the ledger is still hashed and the pages are still plaintext
 ///
 /// The two files answer opposite questions. The ledger must be safe to lose
-/// sight of — it is hashed so a leak reveals no usable code. The export must be
-/// **usable**, because it is the thing pasted into a chat window when a
-/// customer buys one; hashing it would make it useless.
+/// sight of — it is hashed so a leak reveals no usable code. The pages must be
+/// **usable**, because a page is the thing pasted into a chat window when a
+/// customer buys one; hashing it would make it useless. So the pages contain
+/// plaintext and are therefore treated as a secret: written wherever the author
+/// asks, never into the repository, and never bundled.
 ///
-/// So the export contains plaintext and is therefore treated as a secret: it is
-/// written next to the ledger rather than into the repository, and it is not
-/// deleted automatically (the brief asks for it to stay) but it should be moved
-/// somewhere safe after distribution.
-///
-/// ## The overwrite guard
+/// ## The overwrite guard, now per page
 ///
 /// Re-running the issuer on the same day would otherwise **erase this morning's
-/// export**, which is the only copy of codes that may already have been sent.
-/// The file is therefore never truncated while it holds codes; a second run the
-/// same day appends instead, and the header says so.
-fn write_export(
-    path: &PathBuf,
+/// export**, which may be the only copy of codes already sent. A page that
+/// already exists is therefore appended to rather than truncated, and the header
+/// says an extra batch landed in it. A fresh page is only created when the codes
+/// genuinely continue past it.
+fn write_export_pages(
+    dir: &PathBuf,
+    date: &str,
     edition: Edition,
     entries: &[ledger::Entry],
     codes: &[String],
     append_if_exists: bool,
-) -> std::io::Result<()> {
-    let exists = path.exists();
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(append_if_exists && exists)
-        .write(!(append_if_exists && exists))
-        .truncate(!(append_if_exists && exists))
-        .open(path)?;
+) -> std::io::Result<Vec<PathBuf>> {
+    let mut pages = Vec::new();
 
-    if !(append_if_exists && exists) {
-        writeln!(
-            file,
-            "# Setup Center activation codes — {}",
-            edition.label()
-        )?;
-        writeln!(
-            file,
-            "# issued {} — keep this file private until every code is delivered",
-            entries.first().map(|e| e.created_at.as_str()).unwrap_or("")
-        )?;
-        writeln!(file, "#")?;
-        writeln!(file, "# id    code")?;
-    } else {
-        writeln!(file, "#")?;
-        writeln!(
-            file,
-            "# additional batch appended {} — {}",
-            entries.first().map(|e| e.created_at.as_str()).unwrap_or(""),
-            edition.label()
-        )?;
+    for (page_index, chunk) in entries.chunks(PAGE_SIZE).zip(codes.chunks(PAGE_SIZE)).enumerate() {
+        let (page_entries, page_codes) = chunk;
+        let path = ledger::export_page_path(dir, date, page_index + 1);
+        let exists = path.exists();
+        let append = append_if_exists && exists;
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(append)
+            .write(!append)
+            .truncate(!append)
+            .open(&path)?;
+
+        if !append {
+            writeln!(
+                file,
+                "# Setup Center activation codes — {} — page {}",
+                edition.label(),
+                page_index + 1
+            )?;
+            writeln!(
+                file,
+                "# issued {} — keep this file private until every code is delivered",
+                page_entries
+                    .first()
+                    .map(|e| e.created_at.as_str())
+                    .unwrap_or("")
+            )?;
+            writeln!(
+                file,
+                "# codes {} – {} of this batch",
+                page_entries.first().map(|e| e.id.as_str()).unwrap_or(""),
+                page_entries.last().map(|e| e.id.as_str()).unwrap_or("")
+            )?;
+            writeln!(file, "#")?;
+            writeln!(file, "# id    code")?;
+        } else {
+            writeln!(file, "#")?;
+            writeln!(
+                file,
+                "# additional batch appended {} — {}",
+                page_entries
+                    .first()
+                    .map(|e| e.created_at.as_str())
+                    .unwrap_or(""),
+                edition.label()
+            )?;
+        }
+
+        for (entry, code) in page_entries.iter().zip(page_codes.iter()) {
+            // Numbered so the author can say "code 137" on the phone, and so a
+            // delivered code can be matched back to its ledger row without ever
+            // putting the hash next to the code.
+            writeln!(file, "{} {}", entry.id, code)?;
+        }
+
+        pages.push(path);
     }
 
-    for (entry, code) in entries.iter().zip(codes.iter()) {
-        // Numbered so the author can say "code 137" on the phone, and so a
-        // delivered code can be matched back to its ledger row without ever
-        // putting the hash next to the code.
-        writeln!(file, "{} {}", entry.id, code)?;
-    }
-    Ok(())
+    Ok(pages)
 }
 
 fn parse_args() -> Result<Options, String> {
@@ -350,7 +424,7 @@ fn parse_args() -> Result<Options, String> {
 
     let mut count: Option<usize> = None;
     let mut edition: Option<Edition> = None;
-    let mut export_dir = std::env::current_dir().map_err(|e| e.to_string())?;
+    let mut export_dir: Option<PathBuf> = None;
     let mut ledger_path: Option<PathBuf> = None;
     let mut allow_new_ledger = false;
     let mut overwrite_export = false;
@@ -363,7 +437,7 @@ fn parse_args() -> Result<Options, String> {
                 let Some(dir) = args.get(i) else {
                     return Err("--export-dir needs a directory".into());
                 };
-                export_dir = PathBuf::from(dir);
+                export_dir = Some(PathBuf::from(dir));
             }
             "--ledger" => {
                 i += 1;
@@ -420,13 +494,13 @@ usage:
   issue [count] [free|pro] [options]
 
 options:
-  --export-dir <dir>     where to write codes_export_YYYYMMDD.txt
+  --export-dir <dir>     where to write the export pages
   --ledger <file>        ledger path (default: src-tauri/license_inventory.csv)
   --allow-new-ledger     permit issuing into a ledger that did not exist
-  --overwrite-export     replace today's export instead of appending to it
+  --overwrite-export     replace today's pages instead of appending to them
 
 examples:
-  issue 500 pro                    mint 500 PRO codes (the first release)
+  issue 500 pro                    mint 500 PRO codes (ten pages of 50)
   issue 100 free                   mint 100 FREE trial codes
   issue 20 pro --export-dir D:\\codes
 
@@ -437,8 +511,8 @@ notes:
   what was requested, before anything is printed or written.
 
   Two files are produced:
-    license_inventory.csv       appended; hashed codes + status. The record.
-    codes_export_YYYYMMDD.txt   plaintext codes to deliver. Keep it private.
+    license_inventory.csv              appended; hashed codes + status. The record.
+    codes_export_YYYYMMDD_pNN.txt      plaintext, 50 codes per page. Keep private.
 ";
 
 #[cfg(test)]
@@ -473,6 +547,48 @@ mod tests {
             path.file_name().unwrap().to_string_lossy(),
             "codes_export_20260921.txt"
         );
+    }
+
+    #[test]
+    fn export_pages_are_numbered_from_one_and_zero_padded() {
+        let one = ledger::export_page_path(std::path::Path::new("D:\\codes"), "2026-09-21", 1);
+        assert_eq!(
+            one.file_name().unwrap().to_string_lossy(),
+            "codes_export_20260921_p01.txt"
+        );
+
+        // Two digits, so a plain directory listing sorts pages 1..10 in order
+        // rather than p1, p10, p2.
+        let ten = ledger::export_page_path(std::path::Path::new("D:\\codes"), "2026-09-21", 10);
+        assert_eq!(
+            ten.file_name().unwrap().to_string_lossy(),
+            "codes_export_20260921_p10.txt"
+        );
+    }
+
+    #[test]
+    fn five_hundred_codes_span_ten_pages_of_fifty() {
+        // The property the whole change exists for: a batch is filed in pages
+        // the author can hand out a screenful at a time.
+        let codes: Vec<String> = (0..500).map(|i| format!("c{i}")).collect();
+        let pages: Vec<usize> = codes.chunks(PAGE_SIZE).map(|c| c.len()).collect();
+        assert_eq!(pages.len(), 10);
+        assert!(pages.iter().all(|&n| n == PAGE_SIZE));
+    }
+
+    #[test]
+    fn a_short_batch_makes_one_short_page_not_a_padded_one() {
+        let codes: Vec<String> = (0..7).map(|i| format!("c{i}")).collect();
+        let pages: Vec<usize> = codes.chunks(PAGE_SIZE).map(|c| c.len()).collect();
+        assert_eq!(pages, vec![7], "no filler rows in the last page");
+    }
+
+    #[test]
+    fn an_exact_multiple_does_not_produce_a_trailing_empty_page() {
+        // 100 codes must be two pages, not three with an empty last one.
+        let codes: Vec<String> = (0..100).map(|i| format!("c{i}")).collect();
+        let pages: Vec<usize> = codes.chunks(PAGE_SIZE).map(|c| c.len()).collect();
+        assert_eq!(pages, vec![50, 50]);
     }
 
     #[test]

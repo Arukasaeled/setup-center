@@ -300,13 +300,73 @@ pub fn entry_for(code: &str, id: u64, tier: Tier, format: CodeFormat, created_at
     }
 }
 
-/// Where the ledger lives by default: beside `Cargo.toml`, not inside `src/`.
+/// Where the ledger lives by default, resolved at **run time**.
 ///
-/// `CARGO_MANIFEST_DIR` is baked in at compile time and points at `src-tauri/`,
-/// which keeps the file out of the packaged resources — the same reason the
-/// issuer itself is an `examples/` binary.
+/// ## Why this is not just `CARGO_MANIFEST_DIR`
+///
+/// `env!("CARGO_MANIFEST_DIR")` is baked in at compile time and points at the
+/// source tree — fine for `cargo run` on the author's machine, wrong for a
+/// copied `license_admin.exe`: it would keep reading the ledger back in
+/// `D:\AI-Vault\...\src-tauri\` and silently ignore the CSV sitting next to the
+/// binary. That is the worst shape of bug for a *management* tool, because every
+/// command still "works" while answering about the wrong file.
+///
+/// The order is therefore:
+///
+/// 1. **`license_inventory.csv` beside the running executable** — what a copied
+///    DevKit folder needs. This is the case the tool is actually shipped in.
+/// 2. **The compile-time path** — preserves `cargo run --example license_admin`
+///    from the source tree, and any test or script that relied on it.
+/// 3. **The current directory** — last resort, so running from a bare shell in a
+///    directory that happens to hold the ledger still finds it.
+///
+/// A path is returned even if the file does not exist yet, because `open()`
+/// creates it and callers need to report *where* it went. Note that selection is
+/// by *existence*, so a run-time switch can never silently pick a different
+/// ledger than the one it reported.
 pub fn default_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_INVENTORY)
+    let candidates = default_path_candidates();
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
+
+    // Nothing exists: fall back to the source-tree path so `cargo run` and the
+    // tests keep their old, predictable behaviour.
+    candidates
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_INVENTORY))
+}
+
+/// The search order behind [`default_path`], exposed for tests.
+///
+/// Kept separate so the ordering can be asserted without creating files at the
+/// real compile-time location.
+pub fn default_path_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    // 1. Beside the executable.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join(DEFAULT_INVENTORY));
+        }
+    }
+
+    // 2. The source tree, as before.
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_INVENTORY));
+
+    // 3. The working directory.
+    if let Ok(cwd) = std::env::current_dir() {
+        let here = cwd.join(DEFAULT_INVENTORY);
+        if !candidates.contains(&here) {
+            candidates.push(here);
+        }
+    }
+
+    candidates
 }
 
 /// The dated export filename for a batch of newly issued codes.
@@ -315,6 +375,23 @@ pub fn default_path() -> PathBuf {
 /// pin it; `issue.rs` passes today's date.
 pub fn export_path(dir: &Path, date: &str) -> PathBuf {
     dir.join(format!("codes_export_{}.txt", date.replace('-', "")))
+}
+
+/// The filename for one page of an export.
+///
+/// Codes are filed in pages so the author can hand them out a screenful at a
+/// time; the page number is 1-based and printed as two digits so the files sort
+/// correctly in a directory listing (`p01` … `p10`, not `p1`, `p10`, `p2`).
+///
+/// The page number is **presentation only**. It is not part of a code, is not
+/// signed, and re-paging an export does not change any code's meaning — which is
+/// what makes `PAGE_SIZE` safe to tune later.
+pub fn export_page_path(dir: &Path, date: &str, page: usize) -> PathBuf {
+    dir.join(format!(
+        "codes_export_{}_p{:02}.txt",
+        date.replace('-', ""),
+        page
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +414,38 @@ mod tests {
     }
 
     // -- Creation and the overwrite guard ------------------------------------
+
+    #[test]
+    fn the_ledger_is_looked_for_beside_the_executable_first() {
+        // This is the property that makes a copied DevKit folder work: the tool
+        // must read the CSV next to it, not the one back in the source tree.
+        let candidates = default_path_candidates();
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(Path::to_path_buf))
+            .unwrap();
+
+        assert_eq!(
+            candidates[0],
+            exe_dir.join(DEFAULT_INVENTORY),
+            "the executable's own directory must be searched first"
+        );
+        assert!(
+            candidates.len() >= 2,
+            "the compile-time path must remain as a fallback for `cargo run`"
+        );
+    }
+
+    #[test]
+    fn the_search_order_ends_with_the_working_directory() {
+        let candidates = default_path_candidates();
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            candidates.last().unwrap(),
+            &cwd.join(DEFAULT_INVENTORY),
+            "the working directory is the last resort"
+        );
+    }
 
     #[test]
     fn a_missing_ledger_is_created_with_a_header() {
