@@ -868,24 +868,44 @@ const iconReport = await collectIconReport();
 // something a DOM probe can answer, and pretending otherwise would be a check
 // that passes on a broken layout.
 const gridReport = await page.evaluate(() => {
-  // The cards are the buttons inside the grid container. `grid-cols-[repeat(
-  // auto-fill,minmax(168px,1fr))]` compiles to a `grid-template-columns` that
-  // resolves to more than one column at this viewport, which is what makes it a
-  // grid rather than a wrapped list.
-  const all = [...document.querySelectorAll("button")];
-  const cards = all.filter((b) => b.querySelector("img, svg") && /必备|推荐|可选|仅检测/.test(b.innerText));
-  const container = cards[0]?.parentElement ?? null;
-  const columns = container
-    ? getComputedStyle(container).gridTemplateColumns.split(" ").filter(Boolean).length
-    : 0;
-  const sample = cards[0]?.innerText ?? "";
+  // The rows live inside the list container the section marks with
+  // `data-software-list`. Selecting a row mounts the explanation beside it, so
+  // the contract this probes is master-detail rather than "a grid with N
+  // columns": a list you scan down, and a pane that answers what you landed on.
+  //
+  // Matching on the container rather than on "every button that has an icon and
+  // a tier word" also stops the probe from silently counting unrelated buttons
+  // on the same screen, which is how the previous selector could pass while the
+  // list it meant to measure was gone.
+  const list = document.querySelector("[data-software-list]");
+  const rows = list
+    ? [...list.querySelectorAll("[data-software-row]")]
+    : [];
+
+  const container = list ?? null;
+  // One column is the *intended* shape for the list half of a master-detail
+  // split, so the old `columns >= 2` check is inverted into the thing that can
+  // actually go wrong here: the list must be a real vertical stack, not a
+  // single horizontal strip that clips every row to one line.
+  const rowHeights = rows.slice(0, 5).map((r) => r.getBoundingClientRect().height);
+  const stackedVertically =
+    rows.length >= 2 &&
+    rows[0].getBoundingClientRect().top < rows[1].getBoundingClientRect().top;
+  const rowsHaveHeight = rowHeights.length > 0 && rowHeights.every((h) => h >= 20);
+
+  const sample = rows[0]?.innerText ?? "";
   return {
-    count: cards.length,
-    columns,
-    // The four required contents, sampled on the first card.
-    hasStatus: /已安装|未安装|无法确认|需自行安装/.test(sample),
+    count: rows.length,
+    stackedVertically,
+    rowsHaveHeight,
+    // The three required contents, sampled on the first row.
+    hasStatus: /已安装|未安装|无法确认|需自行安装|已就绪|尚不可用|部分就绪/.test(sample),
     hasRecommendation: /必备|推荐|可选|仅检测/.test(sample),
-    hasPurpose: sample.split("\n").length >= 3,
+    // The row's secondary line is the version when the program is present; the
+    // purpose sentence deliberately moved to the detail pane, so "at least two
+    // lines" is what replaces the old three-line check.
+    hasDetail: sample.split("\n").filter((l) => l.trim()).length >= 2,
+    containerExists: Boolean(container),
   };
 });
 
@@ -901,18 +921,20 @@ const tabsReport = await page.evaluate(() => {
 });
 await shot("11-tabs");
 
-// Switching category must change the set of cards, not merely the selected tab.
-// Without this the "filter" is a highlight and the grid never narrows.
+// Switching category must change the set of rows, not merely the selected tab.
+// Without this the "filter" is a highlight and the list never narrows.
 const beforeFilter = gridReport.count;
 let afterFilter = beforeFilter;
 const secondTab = page.locator("[role=tab]").nth(1);
 if (await secondTab.count()) {
   await secondTab.click();
   await page.waitForTimeout(500);
-  afterFilter = await page.evaluate(() => {
-    const all = [...document.querySelectorAll("button")];
-    return all.filter((b) => b.querySelector("img, svg") && /必备|推荐|可选|仅检测/.test(b.innerText)).length;
-  });
+  // Counted through the same container the report above uses, so the two numbers
+  // are measurements of the same thing. The previous global "any button with an
+  // icon and a tier word" selector could disagree with the list under test.
+  afterFilter = await page.evaluate(
+    () => document.querySelectorAll("[data-software-list] [data-software-row]").length,
+  );
   await shot("11b-software-filtered");
   // Back to 全部 for the screenshots and the detail-pane check below.
   await page.locator("[role=tab]").first().click();
@@ -1745,35 +1767,42 @@ const checks = [
     dashboardSoftware.includes("仅检测") || dashboardSoftware.includes("需自行"),
   ],
 
-  // --- The software grid (brief phase 3) -------------------------------------
+  // --- The software master-detail (this round's UI brief) --------------------
   //
-  // The brief asks for a grid whose cards carry 图标 · 名称 · 说明 · 状态 · 推荐 ·
-  // 展开详情. Each of those is asserted separately: a card grid that renders but
-  // drops the recommendation, or the status word, is the failure mode, and a
-  // single "a grid exists" check would pass on all of them.
+  // The brief replaced the card grid with a list beside the explanation. Each
+  // required property is still asserted separately: a list that renders but drops
+  // the recommendation, or the status word, is the failure mode, and a single
+  // "a list exists" check would pass on all of them.
   [
-    "grid: programs render as cards, not as rows",
-    gridReport.count >= 8,
-    `${gridReport.count} cards`,
+    "list: programs render as rows in the list container",
+    gridReport.count >= 8 && gridReport.containerExists,
+    `${gridReport.count} rows`,
   ],
   [
-    "grid: the layout is genuinely multi-column",
-    // One column means the "grid" is a list with extra padding, which is exactly
-    // the shape the brief asked to replace.
-    gridReport.columns >= 2,
-    `${gridReport.columns} columns`,
+    // The shape that can actually go wrong here. The list half of a
+    // master-detail split *should* be one column, so the old multi-column check
+    // is replaced by the two properties that make it a usable list: the rows
+    // stack vertically, and each has real height rather than being clipped to a
+    // strip that shows one line of text.
+    "list: the rows stack vertically with real height",
+    gridReport.stackedVertically && gridReport.rowsHaveHeight,
+    `stacked=${gridReport.stackedVertically} heights=${gridReport.rowsHaveHeight}`,
   ],
   [
-    "grid: each card states its install status in words",
+    "list: each row states its install status in words",
     gridReport.hasStatus,
   ],
   [
-    "grid: each card states whether it is recommended, from the capability table",
+    "list: each row states whether it is recommended, from the capability table",
     gridReport.hasRecommendation,
   ],
   [
-    "grid: each card carries a purpose line, not only a name",
-    gridReport.hasPurpose,
+    // The row carries name plus a secondary line (the version when installed).
+    // The purpose sentence moved to the detail pane on purpose, so this checks
+    // the row still says something beyond the name rather than insisting on the
+    // three-line card it replaced.
+    "list: each row carries a second line, not only a name",
+    gridReport.hasDetail,
   ],
 
   // --- Category tabs (brief phase 4) -----------------------------------------

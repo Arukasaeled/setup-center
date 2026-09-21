@@ -89,6 +89,9 @@ import opencodeUrl from "../assets/software/opencode.svg";
 import rustUrl from "../assets/software/rust.svg";
 import javaUrl from "../assets/software/openjdk.svg";
 import jetbrainsUrl from "../assets/software/jetbrains.svg";
+import kimiCliUrl from "../assets/software/kimi_cli.png";
+import crushUrl from "../assets/software/crush.png";
+import ccSwitchUrl from "../assets/software/cc_switch.png";
 
 interface Mark {
   url: string;
@@ -119,6 +122,17 @@ const MARKS: Partial<Record<SoftwareId, Mark>> = {
   opencode: { url: opencodeUrl, stencil: true },
   // Ships `fill="white"`: legible on dark, invisible on light. Stencil.
   continue: { url: continueUrl, stencil: true },
+  // The three marks added with the Chinese / Charm agents and CC Switch. Each
+  // is the vendor's own published asset, taken from the vendor's repository:
+  // `MoonshotAI/kimi-cli` (`web/public/logo.png`),
+  // `charmbracelet/crush` (`internal/ui/notification/crush-icon.png`) and
+  // `farion1231/cc-switch` (`src-tauri/icons/128x128.png`). All three carry
+  // their own colour, so none is a stencil.
+  //
+  // Qwen Code is deliberately absent — see `NO_BRAND_ASSET`.
+  kimi_cli: { url: kimiCliUrl },
+  crush: { url: crushUrl },
+  cc_switch: { url: ccSwitchUrl },
 
   // --- Runtimes ------------------------------------------------------------
   python: { url: pythonUrl },
@@ -155,6 +169,11 @@ const MARKS: Partial<Record<SoftwareId, Mark>> = {
 export const NO_BRAND_ASSET: SoftwareId[] = [
   "msvc_build_tools",
   "windows_terminal",
+  // Qwen Code publishes no standalone logo file: its repository
+  // (`QwenLM/qwen-code`) carries only documentation screenshots, and the rule
+  // above forbids substituting a third-party icon or redrawing one. So this is
+  // a recorded decision rather than an oversight.
+  "qwen_code",
 ];
 
 /**
