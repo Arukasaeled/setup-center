@@ -57,6 +57,15 @@ fn minimum_version(id: SoftwareId) -> Option<&'static str> {
         | SoftwareId::OpenCode
         | SoftwareId::Continue
         | SoftwareId::Jetbrains
+        // The three added Chinese/Charm agents and CC Switch are all installed
+        // by their own vendor's channel (npm for qwen/crush, a GitHub release
+        // archive for Kimi, an MSI the user runs for CC Switch). None of them
+        // publishes a version floor worth enforcing, and CC Switch is not
+        // installed by this tool at all.
+        | SoftwareId::QwenCode
+        | SoftwareId::KimiCli
+        | SoftwareId::Crush
+        | SoftwareId::CcSwitch
         // Installable, but no version floor worth enforcing: every supported
         // Windows 10/11 build ships a Terminal whose new features arrive by
         // Store update, so "too old" would never be actionable.

@@ -910,6 +910,86 @@ fn entries() -> Vec<CatalogEntry> {
                 rationale: "Windows Terminal 有官方 winget 包",
             }],
         },
+        CatalogEntry {
+            id: SoftwareId::QwenCode,
+            // No winget package exists for it. An invented winget id would fail
+            // with "no such package" instead of falling through to the npm
+            // strategy, so the list stays empty on purpose.
+            winget_ids: &[],
+            name_patterns: &[NamePattern::Word("Qwen Code")],
+            // The npm package is `@qwen-code/qwen-code` and its `bin` field is
+            // `qwen` (confirmed against the registry), so the command a student
+            // types is `qwen`. npm writes `.cmd` shims on Windows.
+            executables: &["qwen.cmd", "qwen.exe", "qwen"],
+            install_roots: &["npm\\qwen", "Programs\\qwen"],
+            location_markers: &[],
+            version_args: Some(&["--version"]),
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Command("npm install -g @qwen-code/qwen-code"),
+                rationale: "通过官方 npm 包安装（@qwen-code/qwen-code，官方仓库 QwenLM/qwen-code）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::KimiCli,
+            winget_ids: &[],
+            name_patterns: &[NamePattern::Word("Kimi")],
+            // Official distribution is the GitHub release archive at
+            // `MoonshotAI/kimi-cli`, which contains `kimi.exe`. There is no
+            // official npm package — the unscoped `kimi-cli` on npm is an
+            // unrelated placeholder — so it is never an install source here.
+            executables: &["kimi.exe", "kimi.cmd", "kimi"],
+            install_roots: &["Kimi", "kimi-cli", "Programs\\kimi"],
+            location_markers: &["kimi"],
+            version_args: Some(&["--version"]),
+            version_env: &[],
+            version_via_shim: false,
+            install: &[],
+        },
+        CatalogEntry {
+            id: SoftwareId::CcSwitch,
+            // No winget package at the time of writing, and this product
+            // deliberately does **not** install it: CC Switch rewrites other
+            // tools' configuration and PATH, so an unattended install that
+            // replaced a student's existing Claude/Codex setup would be the
+            // exact harm the brief forbids. Detection and explanation only.
+            winget_ids: &[],
+            name_patterns: &[
+                NamePattern::Word("CC Switch"),
+                NamePattern::Word("cc-switch"),
+            ],
+            // Confirmed on the author's machine as a *portable* build
+            // (`D:\工具软件\cc-switch.exe`, product name "CC Switch", company
+            // "ccswitch", v3.19.2) with **no** registry uninstall entry — so the
+            // executable probe is the one that fires there. The name patterns
+            // cover the signed-MSI install case.
+            executables: &["cc-switch.exe", "cc_switch.exe", "CC Switch.exe"],
+            install_roots: &["cc-switch", "CC Switch"],
+            location_markers: &["cc-switch", "CC Switch"],
+            version_args: Some(&["--version"]),
+            version_env: &[],
+            version_via_shim: false,
+            install: &[],
+        },
+        CatalogEntry {
+            id: SoftwareId::Crush,
+            winget_ids: &[],
+            name_patterns: &[NamePattern::Word("Crush")],
+            // The official scope is `@charmland/crush`; the unscoped `crush`
+            // package belongs to an unrelated project, so the scope is part of
+            // the identity rather than a detail.
+            executables: &["crush.exe", "crush.cmd", "crush"],
+            install_roots: &["npm\\crush", "Programs\\crush"],
+            location_markers: &[],
+            version_args: Some(&["--version"]),
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Command("npm install -g @charmland/crush"),
+                rationale: "通过官方 npm 包安装（@charmland/crush，官方仓库 charmbracelet/crush）",
+            }],
+        },
     ]
 }
 

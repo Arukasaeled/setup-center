@@ -207,7 +207,15 @@ export type SoftwareId =
   | "chatgpt_desktop"
   | "windsurf"
   | "lm_studio"
-  | "windows_terminal";
+  | "windows_terminal"
+  // Added alongside the Chinese / Charm coding agents and CC Switch. Same rule
+  // as above: this union is the second half of a contract whose first half is
+  // `SoftwareId` in `model.rs`, and the two must name the same ids in the same
+  // order (the catalog-order test in Rust depends on that agreement).
+  | "qwen_code"
+  | "kimi_cli"
+  | "cc_switch"
+  | "crush";
 
 export type DetectionMethod =
   | "path"

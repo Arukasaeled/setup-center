@@ -1,0 +1,22 @@
+id: windsurf
+name: Windsurf
+category: 编辑器
+description: 内置 AI 的代码编辑器，界面接近 VS Code，上手容易。
+purpose:
+  - 在编辑器里直接让 AI 写代码、改代码
+  - 保留 VS Code 的操作习惯，同时自带 AI 能力
+  - 适合刚开始接触 AI 编程的同学
+relatedCapabilities: []
+dependsOn: []
+commonlyUsedBy:
+  - 初学者
+  - 从 VS Code 转过来的用户
+studentExplanation: |
+  Windsurf 是一个代码编辑器，定位和 Cursor 类似：把 AI 直接做进编辑器里。
+  你不用另外装 AI 插件，打开就能让 AI 帮你写功能、解释代码、修报错。
+
+  它基于 VS Code 的界面，所以如果你已经会用 VS Code，几乎不用重新学——
+  快捷键、扩展、设置的位置都一样。
+
+  和 Cursor 一样属于「AI 优先」的编辑器，收费模式不同，可以都试试再决定长期用哪个。
+versions: []

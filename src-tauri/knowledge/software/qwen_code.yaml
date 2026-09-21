@@ -1,0 +1,24 @@
+id: qwen_code
+name: Qwen Code
+category: AI 工具
+description: 阿里通义官方的命令行 AI 编程助手，用自然语言让 AI 改代码。
+purpose:
+  - 在终端里用中文向 AI 描述需求，让它直接改你的项目文件
+  - 理解整个代码库，回答"这个函数在哪里被调用"这类问题
+  - 自动执行命令、跑测试、修报错
+relatedCapabilities:
+  - node-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - Node.js
+  - Python
+studentExplanation: |
+  Qwen Code 是通义千问官方出的编程助手，和 Claude Code 是同一类工具：
+  你在终端里用中文说“帮我把这个脚本改成读取 CSV”，它会真的去改你的文件，
+  而不是只给你一段代码让你自己复制。
+
+  它装在命令行里，所以使用前你的电脑上要有 Node.js。装好之后，第一次运行时
+  会引导你登录通义账号或填入 API Key —— 这一步涉及你自己的账号，
+  本工具不会替你完成。
+versions: []

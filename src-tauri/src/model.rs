@@ -325,10 +325,45 @@ pub enum SoftwareId {
     /// following a WSL guide sees "open Windows Terminal", and on a machine that
     /// only has the legacy `conhost` window that instruction has no equivalent.
     WindowsTerminal,
+    /// Qwen Code — Alibaba's open-source terminal coding agent.
+    ///
+    /// Official channel is npm (`@qwen-code/qwen-code`, which installs the
+    /// `qwen` command) with the source at `github.com/QwenLM/qwen-code`. Added
+    /// because it is one of the few Chinese-lab coding agents that ships a real
+    /// Windows install path *and* a CLI this tool can verify — the criterion the
+    /// brief sets, rather than "it is Chinese".
+    QwenCode,
+    /// Kimi Code CLI — Moonshot AI's terminal coding agent.
+    ///
+    /// Distribution is the part worth stating: Moonshot ships **only** a GitHub
+    /// release archive per platform (`MoonshotAI/kimi-cli`), not an npm package.
+    /// The `kimi-cli` package on npm is an unrelated placeholder, so installing
+    /// by that name would fetch a stranger's code. The catalog therefore models
+    /// this as a release-archive install, and the knowledge file says so.
+    KimiCli,
+    /// CC Switch — a desktop switcher for AI coding CLI profiles.
+    ///
+    /// Verified on the author's machine as product name "CC Switch", company
+    /// "ccswitch", version 3.19.2 (a portable build with no registry uninstall
+    /// entry). Upstream is `github.com/farion1231/cc-switch`.
+    ///
+    /// It is the one entry here that **writes other tools' configuration**: a
+    /// read-only probe on this machine found it had already touched `~/.claude/`
+    /// and `~/.codex/`, and its own `%APPDATA%\cc-switch\path-backups\` shows it
+    /// rewrites PATH. It is therefore detected and explained but deliberately
+    /// **not** auto-installed — see its knowledge file.
+    CcSwitch,
+    /// Crush — Charm's terminal coding agent.
+    ///
+    /// Official npm scope is `@charmland/crush` (repository
+    /// `github.com/charmbracelet/crush`). The unscoped `crush` package is a
+    /// different, unrelated project, which is exactly why the profile must name
+    /// the scope.
+    Crush,
 }
 
 impl SoftwareId {
-    pub const ALL: [SoftwareId; 25] = [
+    pub const ALL: [SoftwareId; 29] = [
         SoftwareId::Vscode,
         SoftwareId::Git,
         SoftwareId::Python,
@@ -354,6 +389,10 @@ impl SoftwareId {
         SoftwareId::LmStudio,
         SoftwareId::Jetbrains,
         SoftwareId::WindowsTerminal,
+        SoftwareId::QwenCode,
+        SoftwareId::KimiCli,
+        SoftwareId::CcSwitch,
+        SoftwareId::Crush,
     ];
 
     /// Stable key used in JSON profiles and in the report.
@@ -384,6 +423,10 @@ impl SoftwareId {
             SoftwareId::OpenCode => "opencode",
             SoftwareId::Continue => "continue",
             SoftwareId::Jetbrains => "jetbrains",
+            SoftwareId::QwenCode => "qwen_code",
+            SoftwareId::KimiCli => "kimi_cli",
+            SoftwareId::CcSwitch => "cc_switch",
+            SoftwareId::Crush => "crush",
         }
     }
 
@@ -415,6 +458,10 @@ impl SoftwareId {
             SoftwareId::OpenCode => "OpenCode",
             SoftwareId::Continue => "Continue",
             SoftwareId::Jetbrains => "JetBrains 系列",
+            SoftwareId::QwenCode => "通义千问的命令行编程助手",
+            SoftwareId::KimiCli => "月之暗面的命令行编程助手",
+            SoftwareId::CcSwitch => "在多个 AI 编程工具之间切换配置",
+            SoftwareId::Crush => "Charm 出品的终端编程助手",
         }
     }
 
@@ -449,6 +496,10 @@ impl SoftwareId {
             SoftwareId::Gemini => "Google 的命令行 AI 助手",
             SoftwareId::OpenCode => "开源的终端 AI 编程助手",
             SoftwareId::Continue => "编辑器里的开源 AI 插件",
+            SoftwareId::QwenCode => "阿里通义官方的命令行 AI 编程助手",
+            SoftwareId::KimiCli => "Kimi 官方的命令行 AI 编程助手",
+            SoftwareId::CcSwitch => "一键切换 Claude Code / Codex 等工具的配置",
+            SoftwareId::Crush => "命令行里的 AI 编程助手，界面漂亮",
             SoftwareId::Jetbrains => "PyCharm / IDEA 等专业 IDE",
         }
     }
@@ -470,6 +521,10 @@ impl SoftwareId {
             | SoftwareId::ChatgptDesktop
             | SoftwareId::Gemini
             | SoftwareId::OpenCode
+            | SoftwareId::QwenCode
+            | SoftwareId::KimiCli
+            | SoftwareId::Crush
+            | SoftwareId::CcSwitch
             | SoftwareId::LmStudio => SoftwareCategory::AiTool,
             SoftwareId::Docker | SoftwareId::Wsl | SoftwareId::WindowsTerminal => {
                 SoftwareCategory::Runtime
@@ -515,6 +570,18 @@ impl SoftwareId {
                 // installs silently, so it meets the same bar as the rest of
                 // this list rather than the "detect only" bar.
                 | SoftwareId::WindowsTerminal
+                // Both install unattended from an official npm package with a
+                // stable, vendor-published name, which is the same bar the rest
+                // of this list meets.
+                //
+                // `KimiCli` is deliberately *not* here: Moonshot publishes no
+                // official package manager channel (only a GitHub release
+                // archive), so there is no unattended strategy this tool can
+                // stand behind. `CcSwitch` is not here either — it rewrites
+                // other tools' configuration, so an unattended install is the
+                // exact harm the brief forbids.
+                | SoftwareId::QwenCode
+                | SoftwareId::Crush
         )
     }
 

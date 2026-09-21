@@ -1,0 +1,26 @@
+id: crush
+name: Crush
+category: AI 工具
+description: Charm 出品的终端 AI 编程助手，界面精致、支持多种模型。
+purpose:
+  - 在终端里和 AI 一起写代码，界面比同类工具更好看易读
+  - 可以接入不同厂商的模型（Claude、GPT、本地模型等）
+  - 适合喜欢在命令行里工作的同学
+relatedCapabilities:
+  - node-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - Node.js
+  - 终端重度用户
+studentExplanation: |
+  Crush 是 Charm 公司出的命令行 AI 编程助手。Charm 做终端工具很有名
+  （比如 gum、glow），所以 Crush 的界面比同类工具更清爽：有颜色、有面板、
+  长回答会分段落显示，读起来不累。
+
+  它的特点是**不绑定某一家模型**——你可以填自己的 Claude、GPT 或本地模型的
+  密钥来用。因此第一次运行需要配置 API Key，这一步涉及你的账号，
+  本工具不会替你填。
+
+  它需要用 Node.js 安装。
+versions: []

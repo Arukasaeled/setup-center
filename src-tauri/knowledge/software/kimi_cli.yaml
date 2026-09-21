@@ -1,0 +1,24 @@
+id: kimi_cli
+name: Kimi Code CLI
+category: AI 工具
+description: 月之暗面（Kimi）官方的命令行 AI 编程助手。
+purpose:
+  - 在终端里让 Kimi 帮你读代码、改代码、解释报错
+  - 适合长文档与长代码库，Kimi 擅长处理大段上下文
+  - 与 Claude Code 一样能直接操作项目文件
+relatedCapabilities:
+  - node-development
+dependsOn: []
+commonlyUsedBy:
+  - 需要处理长文本的项目
+  - 中文注释较多的代码库
+studentExplanation: |
+  Kimi Code CLI 是 Kimi 官方的命令行编程助手，用法和 Claude Code 类似：
+  你在终端里用中文提出需求，它会读你的项目文件、给出修改并执行命令。
+
+  有一点要提前知道：Kimi 官方**只在自己的 GitHub 发布页**提供下载，
+  没有官方 npm 包。本工具会引导你从官方发布页获取，而不是从第三方下载站，
+  避免装到来路不明的程序。
+
+  第一次使用需要登录 Kimi 账号，这一步由你自己完成。
+versions: []

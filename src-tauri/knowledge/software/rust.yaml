@@ -1,0 +1,25 @@
+id: rust
+name: Rust
+category: 开发工具
+description: 一门系统级编程语言，很多现代开发工具本身是用它写的。
+purpose:
+  - 学习 Rust 语言（越来越多高校课程开设）
+  - 安装很多命令行工具时需要它来编译
+  - 编写对性能要求高的程序
+relatedCapabilities:
+  - rust-development
+dependsOn:
+  - msvc_build_tools
+commonlyUsedBy:
+  - Rust 课程
+  - 命令行工具开发者
+studentExplanation: |
+  Rust 是一门编程语言，特点是把「程序出错」在编译阶段就拦下来，
+  所以写出的程序不容易崩溃，速度又接近 C++。
+
+  即使你暂时不打算学 Rust，也可能需要装它：现在很多好用的命令行工具
+  （比如 ripgrep、fd、bat）都是用 Rust 写的，从源码安装时要先有 Rust 环境。
+
+  在 Windows 上，Rust 需要 C++ 编译器来链接程序，所以它会依赖
+  MSVC 编译工具。本工具会把这两项一起装好，只装 Rust 会出现链接失败。
+versions: []

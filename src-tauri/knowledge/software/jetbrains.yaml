@@ -1,0 +1,27 @@
+id: jetbrains
+name: JetBrains 系列
+category: 编辑器
+description: IntelliJ IDEA、PyCharm、WebStorm 等专业 IDE 的统称。
+purpose:
+  - 为 Java / Python / 前端提供比编辑器更强的代码分析
+  - 大型项目的重构、跳转、调试更顺手
+  - 学生可以申请免费教育授权
+relatedCapabilities: []
+dependsOn:
+  - java
+commonlyUsedBy:
+  - Java 开发者
+  - Python 开发者
+studentExplanation: |
+  JetBrains 是一家做 IDE（集成开发环境）的公司，旗下有 IntelliJ IDEA（Java）、
+  PyCharm（Python）、WebStorm（前端）等。它们比 VS Code 更"重"，
+  但也更懂你的代码：能自动找出潜在的空指针、帮你安全地重命名和重构、
+  跳转定义比 VS Code 准。
+
+  什么时候选它：写大型项目、做 Java 课程设计时，它的代码提示和调试器
+  能省下不少时间。什么时候用 VS Code 就够：写小脚本、改配置文件、
+  或者只是想装一个轻量的编辑器。
+
+  在校学生可以用学校邮箱申请**免费教育授权**，能免费用专业版。
+  申请需要你提供学校邮箱，这一步本工具不会替你完成。
+versions: []

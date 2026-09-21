@@ -1,0 +1,26 @@
+id: opencode
+name: OpenCode
+category: AI 工具
+description: 开源的终端 AI 编程助手，模型可以自己选。
+purpose:
+  - 在终端里用 AI 写代码、改代码，全部开源可查
+  - 支持接入不同厂商的模型，不锁定单一供应商
+  - 同时提供桌面版界面，不习惯命令行也能用
+relatedCapabilities:
+  - node-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - 关注开源与隐私的同学
+  - Node.js
+studentExplanation: |
+  OpenCode 是一个开源的 AI 编程助手，和 Claude Code 属于同一类工具：
+  在终端里用自然语言让 AI 帮你改项目。
+
+  它最大的特点是**开源**——代码公开，你（或者你信任的人）可以检查它到底做了
+  什么。这是相对于闭源工具的一个实际差别：它会读取你的代码并发送给模型，
+  开源让你能确认除此之外它还做了什么。
+
+  它也支持自己选择模型供应商，第一次使用需要配置对应厂商的 API Key。
+  它需要先装好 Node.js。
+versions: []

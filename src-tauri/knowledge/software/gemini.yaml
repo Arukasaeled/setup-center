@@ -1,0 +1,24 @@
+id: gemini
+name: Gemini CLI
+category: AI 工具
+description: Google 官方的命令行 AI 助手，免费额度较大。
+purpose:
+  - 在终端里向 Gemini 提问、解释代码、生成脚本
+  - 免费额度对日常学习和写作业通常够用
+  - 能理解整个项目目录，回答"这段逻辑在哪"
+relatedCapabilities:
+  - node-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - Node.js
+  - 想多试几家 AI 的同学
+studentExplanation: |
+  Gemini CLI 是 Google 官方的命令行 AI 助手，性质和 Claude Code、Qwen Code
+  一样：装在终端里，用自然语言让它读代码、改代码、执行命令。
+
+  它比较适合学生的一点是免费额度宽松，日常问问题、改小项目通常用不完。
+
+  第一次运行时它会引导你登录 Google 账号完成授权——这一步涉及你的账号，
+  本工具不会替你操作。它需要先装好 Node.js。
+versions: []

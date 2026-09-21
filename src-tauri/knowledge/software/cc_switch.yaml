@@ -1,0 +1,26 @@
+id: cc_switch
+name: CC Switch
+category: AI 工具
+description: 在多个 AI 编程工具之间切换账号与配置的桌面小工具。
+purpose:
+  - 一个界面上管理 Claude Code、Codex 等工具的配置档案
+  - 一键在不同 API 供应商 / 账号之间切换，不用手改配置文件
+  - 保留切换历史，改坏了可以回到之前的配置
+relatedCapabilities: []
+dependsOn: []
+commonlyUsedBy:
+  - 同时使用多个 AI 编程工具的同学
+  - 需要在官方账号与第三方中转之间切换的同学
+studentExplanation: |
+  你可能会同时用 Claude Code 和 Codex，而且可能有好几个 API 账号（比如
+  官方的、学校实验室的、朋友分享的）。它们的配置分别写在不同的文件里
+  （比如 ~/.claude/settings.json 和 ~/.codex/config.toml），
+  手动换来换去很容易改错、也记不住原来是什么。
+
+  CC Switch 就是解决这件事的：它在界面上列出你所有配置档案，点一下就能切换，
+  并且会自动备份原来的文件。
+
+  ⚠ 需要注意：这个工具会**修改其他程序的配置文件**，也会改写系统 PATH。
+  本工具只负责检测它是否已安装并解释它的作用，**不会替你自动安装或自动切换**——
+  因为一旦切换错了，影响的是你正在用的 AI 工具，这个决定要你自己做。
+versions: []

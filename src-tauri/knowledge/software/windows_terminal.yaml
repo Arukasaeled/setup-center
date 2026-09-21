@@ -1,0 +1,24 @@
+id: windows_terminal
+name: Windows Terminal
+category: 运行环境
+description: Windows 上更好用的终端程序，支持多标签、分屏和中文显示。
+purpose:
+  - 一个窗口里开多个终端标签（PowerShell、cmd、WSL 都能放一起）
+  - 支持分屏、搜索、复制粘贴更顺手
+  - 大多数教程截图里用的就是它
+relatedCapabilities: []
+dependsOn: []
+commonlyUsedBy:
+  - WSL 用户
+  - 任何需要在命令行里工作的人
+studentExplanation: |
+  打开命令行时看到的那扇窗，本身也是一个程序。Windows 自带的是老式的
+  「命令提示符」窗口——不能开标签页、中文容易乱码、复制粘贴也麻烦。
+
+  Windows Terminal 是微软官方的新终端：一个窗口里可以开好几个标签页
+  （一个跑 PowerShell、一个跑 WSL），能分屏，字体和颜色都能调，
+  中文显示也正常。
+
+  大多数教程里说「打开终端」时，截图画的就是它。装了它之后，
+  在文件夹里右键就能选择「在终端中打开」，方便很多。
+versions: []

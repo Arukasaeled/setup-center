@@ -1,0 +1,26 @@
+id: pnpm
+name: pnpm
+category: 开发工具
+description: 更快、更省磁盘空间的 Node.js 包管理器，很多 AI 项目要求用它。
+purpose:
+  - 安装 Node.js 项目的依赖（和 npm 一样，但更快）
+  - 多个项目共用同一份依赖，节省大量磁盘空间
+  - 很多开源 AI 项目默认用 pnpm，装不上会卡在第一步
+relatedCapabilities:
+  - node-development
+dependsOn:
+  - node
+commonlyUsedBy:
+  - 前端项目
+  - 开源 AI 项目
+studentExplanation: |
+  pnpm 和 npm 干的是同一件事：帮你的项目下载并管理依赖库。
+  区别在于 npm 会给每个项目复制一份依赖，pnpm 则把依赖集中存一份、
+  用链接的方式给每个项目使用。
+
+  带来的好处很直接：装得快，磁盘占用小很多。如果你要克隆几个开源 AI 项目
+  来跑，pnpm 通常能省下好几个 GB。
+
+  现在很多项目在 README 里直接写「请使用 pnpm install」，用 npm 装会失败。
+  它需要先装好 Node.js。
+versions: []

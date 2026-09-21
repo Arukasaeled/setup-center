@@ -1,0 +1,26 @@
+id: java
+name: Java (JDK)
+category: 开发工具
+description: Java 语言的开发工具包，编译和运行 Java 程序都需要它。
+purpose:
+  - 编译与运行 Java 程序
+  - Java 课程的作业与实验环境
+  - 许多企业级工具与 Android 开发的前置条件
+relatedCapabilities:
+  - java-development
+dependsOn: []
+commonlyUsedBy:
+  - Java 课程
+  - Android 开发
+  - 后端开发
+studentExplanation: |
+  Java 程序的运行方式和 Python 不一样：Python 是解释执行，Java 需要先把
+  .java 文件**编译**成 .class 文件再运行。JDK（Java Development Kit）
+  就是提供这套编译和运行工具的包。
+
+  如果只装 JRE（运行环境）你只能运行别人做好的程序，写不了自己的代码。
+  所以这里装的是 JDK，它包含了编译器和运行时。
+
+  计算机专业的 Java 课程、数据结构课、以及很多企业后端项目都要求先装 JDK。
+  装完还需要配置 JAVA_HOME 环境变量，本工具会自动处理。
+versions: []
