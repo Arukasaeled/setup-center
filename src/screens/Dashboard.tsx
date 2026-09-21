@@ -39,10 +39,10 @@ import { Button, SectionLabel, StatusMark } from "../components/ui";
 import { StatusBadge } from "../components/StatusBadge";
 import { CategoryTabs, type CategoryTab } from "../components/CategoryTabs";
 import {
-  SoftwareCard,
+  SoftwareRow,
   recommendationMap,
   type RecommendationTier,
-} from "../components/SoftwareCard";
+} from "../components/SoftwareRow";
 import { EnvironmentScore } from "../components/EnvironmentScore";
 import { QuickAction } from "../components/QuickAction";
 import { ProNotice } from "../components/ProGate";
@@ -154,13 +154,23 @@ export function Dashboard() {
           {section === "about" && <AboutSection />}
         </section>
 
-        <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
-          <DetailPane
-            selectedId={selectedItemId}
-            capabilities={capabilities}
-            onClear={() => selectItem(null)}
-          />
-        </aside>
+        {/* The global detail rail. The software section renders its own pane
+            beside the list — that is the master-detail the brief asks for — so
+            this one stands down while a program is selected there, rather than
+            showing the same explanation twice in two columns.
+
+            It still serves every other section: a capability, a machine fact and
+            a config requirement all select into it, and none of them has a list
+            of its own to sit beside. */}
+        {!(section === "software" && selectedItemId?.startsWith("sw:")) && (
+          <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
+            <DetailPane
+              selectedId={selectedItemId}
+              capabilities={capabilities}
+              onClear={() => selectItem(null)}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );
@@ -891,25 +901,62 @@ function SoftwareSection() {
         </div>
       )}
 
-      <SoftwareGrid
-        items={items}
-        categoryOf={categoryOf}
-        catalogue={catalogue}
-        knowledgeById={knowledgeById}
-        recommendations={recommendationMap(capabilities)}
-        selectedItemId={selectedItemId}
-        onSelect={selectItem}
-      />
+      {/* The master-detail split. The right column is wider than the global
+          `aside` because a software explanation carries a purpose paragraph, a
+          capability list and the action buttons — it is the main event of this
+          section, not a footnote to it.
+
+          A narrow window stacks them instead of squeezing both: at 320px the
+          explanation would wrap to one word per line, which is worse than
+          scrolling. */}
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:gap-7">
+        <div className="min-w-0 flex-1">
+          <SoftwareGrid
+            items={items}
+            categoryOf={categoryOf}
+            catalogue={catalogue}
+            knowledgeById={knowledgeById}
+            recommendations={recommendationMap(capabilities)}
+            selectedItemId={selectedItemId}
+            onSelect={selectItem}
+          />
+        </div>
+
+        {/* Only shown once something is selected, so the section does not open
+            with an empty pane occupying half the width. */}
+        {selectedItemId?.startsWith("sw:") && (
+          <div className="shrink-0 xl:sticky xl:top-0 xl:w-[380px]">
+            <DetailPane
+              selectedId={selectedItemId}
+              capabilities={capabilities}
+              onClear={() => selectItem(null)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * The grid, its category tabs, and the filter they share.
+ * The software master-detail: a list on the left, the explanation on the right.
  *
- * Splitting this out of `SoftwareSection` is what lets the tab state exist at
- * all: the section above also owns the loading and error branches, and holding
- * a `useState` there would put a hook next to early returns.
+ * ## Why the grid became a list
+ *
+ * The grid was a wall of equal-weight tiles, and its own detail pane lived
+ * outside it — so the section read as two unrelated surfaces. A master list is
+ * what makes the pane make sense: you scan down, you land on a row, the pane
+ * answers what you landed on. That is the whole of this round's UI brief.
+ *
+ * ## Search and category both narrow the same list
+ *
+ * They compose rather than replace each other, because the questions are
+ * independent: "where is Git" and "show me the AI tools" are both asked about
+ * the same catalogue. Applying one does not clear the other.
+ *
+ * Splitting this out of `SoftwareSection` is what lets the filter state exist
+ * at all: the section above also owns the loading and error branches, and
+ * holding a `useState` there would put a hook next to early returns.
  */
 function SoftwareGrid({
   items,
@@ -929,6 +976,7 @@ function SoftwareGrid({
   onSelect: (id: string | null) => void;
 }) {
   const [category, setCategory] = useState("");
+  const [query, setQuery] = useState("");
 
   // Tabs are built from the *rendered* items, in the catalog's declared order.
   //
@@ -943,8 +991,8 @@ function SoftwareGrid({
         const list = items.filter((i) => categoryOf.get(i.id)?.category === key);
         return {
           key,
-          // The display name comes from the same descriptor the card reads, so
-          // the tab and the card's own category label cannot disagree.
+          // The display name comes from the same descriptor the row reads, so
+          // the tab and the row's own category label cannot disagree.
           label: categoryOf.get(list[0]?.id)?.categoryName ?? key,
           count: list.length,
         };
@@ -953,44 +1001,94 @@ function SoftwareGrid({
   ];
 
   // A rescan can empty the selected category (a program can disappear). Falling
-  // back to 全部 rather than rendering nothing is what stops the grid from
+  // back to 全部 rather than rendering nothing is what stops the list from
   // looking broken right after a recheck.
-  const visible =
+  const inCategory =
     category === ""
       ? items
       : items.filter((i) => categoryOf.get(i.id)?.category === category);
-  const shown = visible.length > 0 ? visible : items;
-  const activeTab = visible.length > 0 ? category : "";
+  const activeTab = inCategory.length > 0 ? category : "";
+
+  // Search matches the names a student would actually type: the knowledge name
+  // when there is one, the catalogue name, and the raw id. Matching only the
+  // display name would fail on "vscode" for a row titled "Visual Studio Code".
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? inCategory.filter((item) => {
+        const knowledge = knowledgeById.get(item.id);
+        const descriptor = categoryOf.get(item.id);
+        const haystack = [
+          item.id,
+          item.name,
+          knowledge?.knowledge.name,
+          descriptor?.name,
+          descriptor?.purpose,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      })
+    : inCategory;
 
   return (
-    <>
-      <CategoryTabs tabs={tabs} active={activeTab} onSelect={setCategory} />
-
-      <div className="stagger grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-2.5">
-        {shown.map((item) => {
-          const id = softwareKey(item.id);
-          const descriptor = categoryOf.get(item.id);
-          return (
-            <SoftwareCard
-              key={item.id}
-              item={item}
-              catalogue={catalogue}
-              knowledge={knowledgeById.get(item.id) ?? null}
-              installed={item.installed}
-              // A program this tool cannot install is never "可选": offering it
-              // as a recommendation would promise an action that does not exist.
-              recommendation={
-                descriptor && !descriptor.installable
-                  ? "detectOnly"
-                  : (recommendations.get(item.id) ?? "optional")
-              }
-              selected={selectedItemId === id}
-              onClick={() => onSelect(id)}
-            />
-          );
-        })}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CategoryTabs tabs={tabs} active={activeTab} onSelect={setCategory} />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索软件…"
+          aria-label="搜索软件"
+          data-software-search
+          className={clsx(
+            "w-[168px] shrink-0 rounded-[9px] border px-3 py-1.5 text-[12.5px]",
+            "border-[color:var(--line-subtle)] bg-transparent",
+            "text-[color:var(--text-primary)] placeholder:text-[color:var(--text-quiet)]",
+            "focus:border-[color:var(--line-strong)] focus:outline-none",
+            "transition-colors duration-150",
+          )}
+        />
       </div>
-    </>
+
+      {/* The list is its own scroll container so a long catalogue does not push
+          the header off screen while the pane stays where it is. */}
+      <div
+        data-software-list
+        className="stagger flex max-h-[calc(100vh-260px)] flex-col gap-0.5 overflow-y-auto pr-1"
+      >
+        {visible.length === 0 ? (
+          <p className="text-[color:var(--text-quiet)] px-3 py-6 text-center text-[12.5px]">
+            {needle
+              ? `没有匹配「${query.trim()}」的软件`
+              : "这一类暂时没有软件"}
+          </p>
+        ) : (
+          visible.map((item) => {
+            const id = softwareKey(item.id);
+            const descriptor = categoryOf.get(item.id);
+            return (
+              <SoftwareRow
+                key={item.id}
+                item={item}
+                catalogue={catalogue}
+                knowledge={knowledgeById.get(item.id) ?? null}
+                // A program this tool cannot install is never "可选": offering it
+                // as a recommendation would promise an action that does not exist.
+                recommendation={
+                  descriptor && !descriptor.installable
+                    ? "detectOnly"
+                    : (recommendations.get(item.id) ?? "optional")
+                }
+                selected={selectedItemId === id}
+                onClick={() => onSelect(id)}
+              />
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }
 
