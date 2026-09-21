@@ -37,7 +37,7 @@ export function VersionBadge() {
   const isPro = entitlements.tier === "pro";
   // A device mismatch is neither: the customer holds a real code that does not
   // belong to this machine, and labelling them "免费版" would hide why.
-  const mismatch = entitlements.state === "deviceMismatch";
+  const mismatch = entitlements.state === "device_mismatch";
 
   const label = isPro ? "PRO" : "FREE";
   const title = isPro

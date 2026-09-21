@@ -453,14 +453,82 @@ fn main() {
                             .to_string(),
                     ),
                     device_hash: Some(license::device_summary().0),
+                    // A fixed date, and the only fabricated field in this block.
+                    //
+                    // It cannot be derived: this machine is not activated, and a
+                    // value read from a real activation would change every time
+                    // the fixtures are regenerated — making every UI diff noisy
+                    // and the assertion below it flaky. A constant is the honest
+                    // choice as long as it is clearly a fixture value, which is
+                    // why it is named here rather than silently defaulted.
+                    //
+                    // Leaving it `None` is worse than either option: the licence
+                    // screen correctly hides the 激活时间 row when there is no
+                    // time, so the fixture would render a *different screen* from
+                    // the one an activated customer sees, and the assertion about
+                    // that row would pass for the wrong reason.
+                    activated_at: Some("2026-01-15T10:30:00Z".to_string()),
                     ..Default::default()
                 },
                 true,
             ),
+            // The state a customer reaches by copying `license.dat` to a second
+            // PC, or by having their hardware change enough that the fingerprint
+            // stops matching. It is produced by the *same* projection the other
+            // entries use, with a device hash that deliberately is not this
+            // machine's — which is exactly what a foreign machine's file holds.
+            //
+            // This belongs in the probe rather than in a hand-written fixture
+            // because the licence screen has a distinct branch for it, and a
+            // branch nothing generates is a branch nothing checks.
+            "freeMismatch": license::Entitlements::of(
+                &license::LicenseFile {
+                    license_hash: Some(
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                    ),
+                    device_hash: Some("0".repeat(64)),
+                    ..Default::default()
+                },
+                true,
+            ),        },
+        // What the licence screen prints beside the tier: the machine summary and
+        // the probe count behind it. Emitted per mode because the screen shows
+        // the mismatch variant only when the state calls for it, and the harness
+        // has to be able to drive all of them.
+        "licenseDevice": {
+            "freeEnforced": license_device_summary(),
+            "freeUnenforced": license_device_summary(),
+            "proEnforced": license_device_summary(),
+            "freeMismatch": license_device_summary(),
         },
     });
 
     println!("{}", serde_json::to_string_pretty(&out).unwrap());
+}
+
+/// The machine summary the licence screen renders beside the tier.
+///
+/// Mirrors `commands::license_device` rather than calling it: that function is
+/// `pub` on the Tauri-facing module and reads the machine's *real* stored
+/// licence, whereas the fixtures must describe four modes the machine may not be
+/// in. What is shared is the derivation, and the harness asserts on the rendered
+/// result, so a drift between the two shows up as a failing assertion rather than
+/// as a silent mismatch.
+fn license_device_summary() -> Value {
+    let (hash, components) = license::device_summary();
+    let entitlements =
+        license::Entitlements::of(&license::load(), license::enforcement_enabled());
+    json!({
+        // First 8 hex characters only, exactly as the command truncates it: enough
+        // that two machines are visibly different in a support conversation, not
+        // enough to correlate.
+        "shortId": hash.chars().take(8).collect::<String>(),
+        "componentsReadable": components,
+        "reliable": entitlements.device_reliable,
+        "boundHere": entitlements.state == license::LicenseState::Active,
+        "state": entitlements.state,
+    })
 }
 
 /// The same label the command produces for a probe source.
@@ -468,8 +536,7 @@ fn main() {
 /// Duplicated rather than shared because `commands.rs` is Tauri-facing and this
 /// is a build-time example; the harness asserts on the string, so the two
 /// drifting would be caught by a UI test rather than by a silent mismatch.
-fn evidence_label(e: &EvidenceView) -> String {
-    let source = match e.source {
+fn evidence_label(e: &EvidenceView) -> String {    let source = match e.source {
         ProbeSource::Registry => "系统注册表",
         ProbeSource::Path => "命令行路径",
         ProbeSource::Winget => "winget 包列表",

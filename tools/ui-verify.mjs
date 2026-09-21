@@ -1973,8 +1973,16 @@ const checks = [
       licenseMismatch.includes("输入激活码"),
   ],
   [
+    // The short id the *fixture* carries, not a constant. It was hardcoded to an
+    // earlier random value (`3f9a2c41`), which meant the assertion only described
+    // the fixture it was written against: regenerating fixtures from this machine
+    // changed the id and the check failed while the screen was correct.
+    //
+    // Reading it back from the fixture keeps the assertion about the product —
+    // "the mismatch screen prints the machine id the backend reported" — and it
+    // still fails if the screen prints a different machine's id or none at all.
     "license: the mismatch state names this machine so support can compare",
-    licenseMismatch.includes("3f9a2c41"),
+    licenseMismatch.includes(fixtures.licenseDevice.freeEnforced.shortId),
   ],
   [
     "dashboard: light theme applies and is legible",

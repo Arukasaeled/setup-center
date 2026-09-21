@@ -129,7 +129,7 @@ export function ActivationCard({
   const [key, setKey] = useState("");
 
   const isPro = entitlements?.state === "active";
-  const mismatch = entitlements?.state === "deviceMismatch";
+  const mismatch = entitlements?.state === "device_mismatch";
 
   if (isPro && entitlements) {
     return (
@@ -318,7 +318,7 @@ export function LicenseSection() {
   }
 
   const isPro = entitlements.state === "active";
-  const mismatch = entitlements.state === "deviceMismatch";
+  const mismatch = entitlements.state === "device_mismatch";
 
   return (
     <div className="flex flex-col gap-8">

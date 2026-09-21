@@ -906,10 +906,13 @@ function SoftwareSection() {
           capability list and the action buttons — it is the main event of this
           section, not a footnote to it.
 
-          A narrow window stacks them instead of squeezing both: at 320px the
-          explanation would wrap to one word per line, which is worse than
-          scrolling. */}
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:gap-7">
+          The breakpoint is `lg` (1024px) rather than `xl` (1280px) because the
+          desktop window is commonly ~1040px wide, and at `xl` that produces the
+          stacked layout — the list with the explanation *below* it — which is
+          not the two-column shape this section is for. Below `lg` they stack,
+          because squeezing both into 320px wraps the explanation to one word per
+          line, which is worse than scrolling. */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-7">
         <div className="min-w-0 flex-1">
           <SoftwareGrid
             items={items}
@@ -925,7 +928,7 @@ function SoftwareSection() {
         {/* Only shown once something is selected, so the section does not open
             with an empty pane occupying half the width. */}
         {selectedItemId?.startsWith("sw:") && (
-          <div className="shrink-0 xl:sticky xl:top-0 xl:w-[380px]">
+          <div className="shrink-0 lg:sticky lg:top-0 lg:w-[380px]">
             <DetailPane
               selectedId={selectedItemId}
               capabilities={capabilities}

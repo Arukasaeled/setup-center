@@ -3,7 +3,7 @@
     "detected": true,
     "machine": {
       "cpu": "Intel(R) Core(TM) Ultra 7 251HX · 18 线程",
-      "disk": "C:\\Users\\35074\\AppData\\Local\\Setup Center 可用 103.0 GB",
+      "disk": "C:\\Users\\35074\\AppData\\Local\\Setup Center 可用 99.4 GB",
       "gpu": "OrayIddDriver Device (显存未知)、NVIDIA GeForce RTX 5060 Laptop GPU (8.0 GB)、Intel(R) Graphics (2.0 GB)、GameViewer Virtual Display Adapter (显存未知)",
       "memory": "15.5 GB",
       "notes": []
@@ -13,27 +13,27 @@
       "capabilitiesMet": 8,
       "extras": [
         {
-          "detail": "更快、更省磁盘的包管理器",
-          "id": "pnpm",
-          "name": "pnpm",
-          "severity": "info"
-        },
-        {
-          "detail": "系统级语言，许多工具由它编写",
+          "detail": "一门系统级编程语言，很多现代开发工具本身是用它写的。",
           "id": "rust",
           "name": "Rust",
           "severity": "info"
         },
         {
-          "detail": "Java 课程与工具运行环境",
+          "detail": "Java 语言的开发工具包，编译和运行 Java 程序都需要它。",
           "id": "java",
           "name": "Java",
           "severity": "info"
         },
         {
-          "detail": "开源的终端 AI 编程助手",
-          "id": "opencode",
-          "name": "OpenCode",
+          "detail": "Windows 上更好用的终端程序，支持多标签、分屏和中文显示。",
+          "id": "windows_terminal",
+          "name": "Windows Terminal",
+          "severity": "info"
+        },
+        {
+          "detail": "在多个 AI 编程工具之间切换账号与配置的桌面小工具。",
+          "id": "cc_switch",
+          "name": "在多个 AI 编程工具之间切换配置",
           "severity": "info"
         }
       ],
@@ -94,7 +94,7 @@
           "severity": "info"
         },
         {
-          "detail": "Node.js 本身不是 AI 工具，但很多 AI 工具是用它写的。\n最典型的例子是 MCP 服务器——它的作用范围很广，可以在 AI 助手和你电脑上的\n文件、数据库之间搭桥，而绝大多数 MCP 服务器都需要 Node 才能运行。\n如果你只做数据分析，Node 可以暂时不装；但只要你想用命令行 AI 助手，\n它基本是必需项。",
+          "detail": "OpenCode 是一个开源的 AI 编程助手，和 Claude Code 属于同一类工具：\n在终端里用自然语言让 AI 帮你改项目。\n\n它最大的特点是**开源**——代码公开，你（或者你信任的人）可以检查它到底做了\n什么。这是相对于闭源工具的一个实际差别：它会读取你的代码并发送给模型，\n开源让你能确认除此之外它还做了什么。\n\n它也支持自己选择模型供应商，第一次使用需要配置对应厂商的 API Key。\n它需要先装好 Node.js。",
           "id": "node-development",
           "name": "Node.js 开发",
           "severity": "info"
@@ -4473,7 +4473,7 @@
           "label": "至少 10 GB 可用磁盘空间",
           "met": true,
           "necessity": "required",
-          "observed": "103.0 GB",
+          "observed": "99.4 GB",
           "remedy": null,
           "unknown": false
         }
@@ -4728,7 +4728,7 @@
           "label": "至少 20 GB 可用磁盘空间",
           "met": true,
           "necessity": "required",
-          "observed": "103.0 GB",
+          "observed": "99.4 GB",
           "remedy": null,
           "unknown": false
         }
@@ -4801,7 +4801,7 @@
           "label": "至少 15 GB 可用磁盘空间",
           "met": true,
           "necessity": "required",
-          "observed": "103.0 GB",
+          "observed": "99.4 GB",
           "remedy": null,
           "unknown": false
         }
@@ -5042,7 +5042,7 @@
     "blockingCount": 0,
     "disks": [
       {
-        "freeBytes": 110547546112,
+        "freeBytes": 106702950400,
         "label": null,
         "lowSpace": false,
         "root": "C:\\Users\\35074\\AppData\\Local\\Setup Center",
@@ -5081,13 +5081,13 @@
       ],
       "hypervisorPresent": true,
       "memory": {
-        "availableBytes": 4763127808,
+        "availableBytes": 5785255936,
         "totalBytes": 16607784960
       },
       "virtualizationEnabled": true
     },
     "network": {
-      "latencyMs": 125,
+      "latencyMs": 102,
       "proxy": null,
       "quality": "degraded",
       "reachableHosts": [
@@ -5097,97 +5097,97 @@
       "wingetReachable": true
     },
     "score": 90,
-    "scoreMax": 135,
+    "scoreMax": 135.0,
     "signals": [
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.cpu",
         "label": "处理器",
-        "score": 10,
+        "score": 10.0,
         "severity": "info",
         "value": "Intel(R) Core(TM) Ultra 7 251HX（18 线程）",
-        "weight": 10
+        "weight": 10.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.memory",
         "label": "内存",
-        "score": 15,
+        "score": 15.0,
         "severity": "info",
         "value": "15.5 GB",
-        "weight": 15
+        "weight": 15.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.gpu",
         "label": "显卡",
-        "score": 5,
+        "score": 5.0,
         "severity": "info",
         "value": "NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存",
-        "weight": 5
+        "weight": 5.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "machine.virtualization",
         "label": "虚拟化支持",
-        "score": 5,
+        "score": 5.0,
         "severity": "info",
         "value": "已启用（WSL2 / Docker 可用）",
-        "weight": 5
+        "weight": 5.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "windows.version",
         "label": "Windows 版本",
-        "score": 25,
+        "score": 25.0,
         "severity": "info",
         "value": "Windows 11 25H2 (10.0.26200)",
-        "weight": 25
+        "weight": 25.0
       },
       {
         "confidence": "unknown",
         "hint": "部分软件需要提权。安装失败时可右键以管理员身份重新运行。",
         "key": "admin.rights",
         "label": "管理员权限",
-        "score": 7,
+        "score": 7.0,
         "severity": "warning",
         "value": "未提权（当前账户属于管理员组）",
-        "weight": 10
+        "weight": 10.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "disk.space",
         "label": "磁盘空间",
-        "score": 20,
+        "score": 20.0,
         "severity": "info",
-        "value": "103.0 GB 可用",
-        "weight": 20
+        "value": "99.4 GB 可用",
+        "weight": 20.0
       },
       {
         "confidence": "unknown",
         "hint": "网络可用但速度较慢，安装可能需要更长时间。",
         "key": "network.connectivity",
         "label": "网络连接",
-        "score": 15,
+        "score": 15.0,
         "severity": "warning",
-        "value": "较慢（125 ms，1 个探测点失败）",
-        "weight": 25
+        "value": "较慢（102 ms，1 个探测点失败）",
+        "weight": 25.0
       },
       {
         "confidence": "ok",
         "hint": null,
         "key": "network.winget",
         "label": "winget 组件源",
-        "score": 20,
+        "score": 20.0,
         "severity": "info",
         "value": "可达",
-        "weight": 20
+        "weight": 20.0
       }
     ],
     "warningCount": 2,
@@ -5402,9 +5402,9 @@
       ],
       "confidence": "confirmed",
       "evidence": [
-        "系统注册表 · absent",
-        "命令行路径 · absent",
-        "winget 包列表 · Claude · 1.40609.0.0"
+        "系统注册表 · C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+        "命令行路径 · C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+        "winget 包列表 · Claude · 2.2553.1.0"
       ],
       "installed": true,
       "knowledge": {
@@ -5429,7 +5429,7 @@
         "versions": []
       },
       "onPath": false,
-      "version": "1.40609.0.0"
+      "version": "2.2553.1"
     },
     {
       "applicableNotes": [],
@@ -5632,18 +5632,23 @@
       ],
       "installed": false,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
+        "category": "编辑器",
+        "commonlyUsedBy": [
+          "初学者",
+          "从 VS Code 转过来的用户"
+        ],
         "dependsOn": [],
-        "description": "内置 AI 的代码编辑器，新手容易上手",
-        "fromKnowledge": false,
+        "description": "内置 AI 的代码编辑器，界面接近 VS Code，上手容易。",
+        "fromKnowledge": true,
         "id": "windsurf",
         "name": "Windsurf",
         "purposes": [
-          "内置 AI 的代码编辑器，新手容易上手"
+          "在编辑器里直接让 AI 写代码、改代码",
+          "保留 VS Code 的操作习惯，同时自带 AI 能力",
+          "适合刚开始接触 AI 编程的同学"
         ],
         "relatedCapabilities": [],
-        "studentExplanation": "",
+        "studentExplanation": "Windsurf 是一个代码编辑器，定位和 Cursor 类似：把 AI 直接做进编辑器里。\n你不用另外装 AI 插件，打开就能让 AI 帮你写功能、解释代码、修报错。\n\n它基于 VS Code 的界面，所以如果你已经会用 VS Code，几乎不用重新学——\n快捷键、扩展、设置的位置都一样。\n\n和 Cursor 一样属于「AI 优先」的编辑器，收费模式不同，可以都试试再决定长期用哪个。\n",
         "versions": []
       },
       "onPath": false,
@@ -5806,7 +5811,9 @@
     },
     {
       "applicableNotes": [],
-      "capabilityNames": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
       "confidence": "confirmed",
       "evidence": [
         "系统注册表 · absent",
@@ -5815,18 +5822,27 @@
       ],
       "installed": true,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "更快、更省磁盘的包管理器",
-        "fromKnowledge": false,
+        "category": "开发工具",
+        "commonlyUsedBy": [
+          "前端项目",
+          "开源 AI 项目"
+        ],
+        "dependsOn": [
+          "node"
+        ],
+        "description": "更快、更省磁盘空间的 Node.js 包管理器，很多 AI 项目要求用它。",
+        "fromKnowledge": true,
         "id": "pnpm",
         "name": "pnpm",
         "purposes": [
-          "更快、更省磁盘的包管理器"
+          "安装 Node.js 项目的依赖（和 npm 一样，但更快）",
+          "多个项目共用同一份依赖，节省大量磁盘空间",
+          "很多开源 AI 项目默认用 pnpm，装不上会卡在第一步"
         ],
-        "relatedCapabilities": [],
-        "studentExplanation": "",
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "pnpm 和 npm 干的是同一件事：帮你的项目下载并管理依赖库。\n区别在于 npm 会给每个项目复制一份依赖，pnpm 则把依赖集中存一份、\n用链接的方式给每个项目使用。\n\n带来的好处很直接：装得快，磁盘占用小很多。如果你要克隆几个开源 AI 项目\n来跑，pnpm 通常能省下好几个 GB。\n\n现在很多项目在 README 里直接写「请使用 pnpm install」，用 npm 装会失败。\n它需要先装好 Node.js。\n",
         "versions": []
       },
       "onPath": true,
@@ -5879,18 +5895,27 @@
       ],
       "installed": true,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "系统级语言，许多工具由它编写",
-        "fromKnowledge": false,
+        "category": "开发工具",
+        "commonlyUsedBy": [
+          "Rust 课程",
+          "命令行工具开发者"
+        ],
+        "dependsOn": [
+          "msvc_build_tools"
+        ],
+        "description": "一门系统级编程语言，很多现代开发工具本身是用它写的。",
+        "fromKnowledge": true,
         "id": "rust",
         "name": "Rust",
         "purposes": [
-          "系统级语言，许多工具由它编写"
+          "学习 Rust 语言（越来越多高校课程开设）",
+          "安装很多命令行工具时需要它来编译",
+          "编写对性能要求高的程序"
         ],
-        "relatedCapabilities": [],
-        "studentExplanation": "",
+        "relatedCapabilities": [
+          "rust-development"
+        ],
+        "studentExplanation": "Rust 是一门编程语言，特点是把「程序出错」在编译阶段就拦下来，\n所以写出的程序不容易崩溃，速度又接近 C++。\n\n即使你暂时不打算学 Rust，也可能需要装它：现在很多好用的命令行工具\n（比如 ripgrep、fd、bat）都是用 Rust 写的，从源码安装时要先有 Rust 环境。\n\n在 Windows 上，Rust 需要 C++ 编译器来链接程序，所以它会依赖\nMSVC 编译工具。本工具会把这两项一起装好，只装 Rust 会出现链接失败。\n",
         "versions": []
       },
       "onPath": true,
@@ -5907,18 +5932,26 @@
       ],
       "installed": true,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "Java 课程与工具运行环境",
-        "fromKnowledge": false,
-        "id": "java",
-        "name": "Java",
-        "purposes": [
-          "Java 课程与工具运行环境"
+        "category": "开发工具",
+        "commonlyUsedBy": [
+          "Java 课程",
+          "Android 开发",
+          "后端开发"
         ],
-        "relatedCapabilities": [],
-        "studentExplanation": "",
+        "dependsOn": [],
+        "description": "Java 语言的开发工具包，编译和运行 Java 程序都需要它。",
+        "fromKnowledge": true,
+        "id": "java",
+        "name": "Java (JDK)",
+        "purposes": [
+          "编译与运行 Java 程序",
+          "Java 课程的作业与实验环境",
+          "许多企业级工具与 Android 开发的前置条件"
+        ],
+        "relatedCapabilities": [
+          "java-development"
+        ],
+        "studentExplanation": "Java 程序的运行方式和 Python 不一样：Python 是解释执行，Java 需要先把\n.java 文件**编译**成 .class 文件再运行。JDK（Java Development Kit）\n就是提供这套编译和运行工具的包。\n\n如果只装 JRE（运行环境）你只能运行别人做好的程序，写不了自己的代码。\n所以这里装的是 JDK，它包含了编译器和运行时。\n\n计算机专业的 Java 课程、数据结构课、以及很多企业后端项目都要求先装 JDK。\n装完还需要配置 JAVA_HOME 环境变量，本工具会自动处理。\n",
         "versions": []
       },
       "onPath": true,
@@ -5926,7 +5959,9 @@
     },
     {
       "applicableNotes": [],
-      "capabilityNames": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
       "confidence": "confirmedAbsent",
       "evidence": [
         "系统注册表 · absent",
@@ -5935,18 +5970,27 @@
       ],
       "installed": false,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "Google 的命令行 AI 助手",
-        "fromKnowledge": false,
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "Node.js",
+          "想多试几家 AI 的同学"
+        ],
+        "dependsOn": [
+          "node"
+        ],
+        "description": "Google 官方的命令行 AI 助手，免费额度较大。",
+        "fromKnowledge": true,
         "id": "gemini",
         "name": "Gemini CLI",
         "purposes": [
-          "Google 的命令行 AI 助手"
+          "在终端里向 Gemini 提问、解释代码、生成脚本",
+          "免费额度对日常学习和写作业通常够用",
+          "能理解整个项目目录，回答\"这段逻辑在哪\""
         ],
-        "relatedCapabilities": [],
-        "studentExplanation": "",
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "Gemini CLI 是 Google 官方的命令行 AI 助手，性质和 Claude Code、Qwen Code\n一样：装在终端里，用自然语言让它读代码、改代码、执行命令。\n\n它比较适合学生的一点是免费额度宽松，日常问问题、改小项目通常用不完。\n\n第一次运行时它会引导你登录 Google 账号完成授权——这一步涉及你的账号，\n本工具不会替你操作。它需要先装好 Node.js。\n",
         "versions": []
       },
       "onPath": false,
@@ -5954,7 +5998,9 @@
     },
     {
       "applicableNotes": [],
-      "capabilityNames": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
       "confidence": "confirmed",
       "evidence": [
         "系统注册表 · Microsoft.PowerShell.Core\\Registry::HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\d074f30d-5f88-5885-b075-be1348cc7676 · 1.18.27",
@@ -5963,18 +6009,27 @@
       ],
       "installed": true,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "开源的终端 AI 编程助手",
-        "fromKnowledge": false,
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "关注开源与隐私的同学",
+          "Node.js"
+        ],
+        "dependsOn": [
+          "node"
+        ],
+        "description": "开源的终端 AI 编程助手，模型可以自己选。",
+        "fromKnowledge": true,
         "id": "open_code",
         "name": "OpenCode",
         "purposes": [
-          "开源的终端 AI 编程助手"
+          "在终端里用 AI 写代码、改代码，全部开源可查",
+          "支持接入不同厂商的模型，不锁定单一供应商",
+          "同时提供桌面版界面，不习惯命令行也能用"
         ],
-        "relatedCapabilities": [],
-        "studentExplanation": "",
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "OpenCode 是一个开源的 AI 编程助手，和 Claude Code 属于同一类工具：\n在终端里用自然语言让 AI 帮你改项目。\n\n它最大的特点是**开源**——代码公开，你（或者你信任的人）可以检查它到底做了\n什么。这是相对于闭源工具的一个实际差别：它会读取你的代码并发送给模型，\n开源让你能确认除此之外它还做了什么。\n\n它也支持自己选择模型供应商，第一次使用需要配置对应厂商的 API Key。\n它需要先装好 Node.js。\n",
         "versions": []
       },
       "onPath": false,
@@ -6030,18 +6085,23 @@
       ],
       "installed": false,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "对隐私敏感的同学",
+          "想研究开源模型的人"
+        ],
         "dependsOn": [],
-        "description": "在本机离线运行开源大模型",
-        "fromKnowledge": false,
+        "description": "在自己的电脑上离线运行开源大模型的桌面程序。",
+        "fromKnowledge": true,
         "id": "lm_studio",
         "name": "LM Studio",
         "purposes": [
-          "在本机离线运行开源大模型"
+          "断网也能用 AI（模型下载到本机后不再需要联网）",
+          "不用担心对话内容被上传到别人的服务器",
+          "尝试不同的开源模型，直观对比效果"
         ],
         "relatedCapabilities": [],
-        "studentExplanation": "",
+        "studentExplanation": "LM Studio 让你把开源大模型下载到自己的电脑上运行。它有一个图形界面，\n可以像应用商店一样搜索和下载模型，点一下就开始对话，不需要敲命令。\n\n什么时候值得用：\n· 断网了还想用 AI 帮忙（模型已在本地，不需要联网）\n· 处理的内容比较敏感，不想上传到云端服务\n· 想比较不同开源模型的实际表现\n\n需要提醒的现实问题：本地运行模型对电脑配置要求较高，\n显存（显卡内存）越大能跑的模型越好。普通核显笔记本只能跑较小的模型，\n速度和效果都不如云端服务。装之前可以先看看自己显卡的显存大小。\n",
         "versions": []
       },
       "onPath": false,
@@ -6058,18 +6118,206 @@
       ],
       "installed": false,
       "knowledge": {
-        "category": "",
-        "commonlyUsedBy": [],
-        "dependsOn": [],
-        "description": "PyCharm / IDEA 等专业 IDE",
-        "fromKnowledge": false,
+        "category": "编辑器",
+        "commonlyUsedBy": [
+          "Java 开发者",
+          "Python 开发者"
+        ],
+        "dependsOn": [
+          "java"
+        ],
+        "description": "IntelliJ IDEA、PyCharm、WebStorm 等专业 IDE 的统称。",
+        "fromKnowledge": true,
         "id": "jetbrains",
         "name": "JetBrains 系列",
         "purposes": [
-          "PyCharm / IDEA 等专业 IDE"
+          "为 Java / Python / 前端提供比编辑器更强的代码分析",
+          "大型项目的重构、跳转、调试更顺手",
+          "学生可以申请免费教育授权"
         ],
         "relatedCapabilities": [],
-        "studentExplanation": "",
+        "studentExplanation": "JetBrains 是一家做 IDE（集成开发环境）的公司，旗下有 IntelliJ IDEA（Java）、\nPyCharm（Python）、WebStorm（前端）等。它们比 VS Code 更\"重\"，\n但也更懂你的代码：能自动找出潜在的空指针、帮你安全地重命名和重构、\n跳转定义比 VS Code 准。\n\n什么时候选它：写大型项目、做 Java 课程设计时，它的代码提示和调试器\n能省下不少时间。什么时候用 VS Code 就够：写小脚本、改配置文件、\n或者只是想装一个轻量的编辑器。\n\n在校学生可以用学校邮箱申请**免费教育授权**，能免费用专业版。\n申请需要你提供学校邮箱，这一步本工具不会替你完成。\n",
+        "versions": []
+      },
+      "onPath": false,
+      "version": null
+    },
+    {
+      "applicableNotes": [],
+      "capabilityNames": [],
+      "confidence": "confirmed",
+      "evidence": [
+        "系统注册表 · absent",
+        "命令行路径 · C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+        "winget 包列表 · Windows 终端 · 1.24.11911.0"
+      ],
+      "installed": true,
+      "knowledge": {
+        "category": "运行环境",
+        "commonlyUsedBy": [
+          "WSL 用户",
+          "任何需要在命令行里工作的人"
+        ],
+        "dependsOn": [],
+        "description": "Windows 上更好用的终端程序，支持多标签、分屏和中文显示。",
+        "fromKnowledge": true,
+        "id": "windows_terminal",
+        "name": "Windows Terminal",
+        "purposes": [
+          "一个窗口里开多个终端标签（PowerShell、cmd、WSL 都能放一起）",
+          "支持分屏、搜索、复制粘贴更顺手",
+          "大多数教程截图里用的就是它"
+        ],
+        "relatedCapabilities": [],
+        "studentExplanation": "打开命令行时看到的那扇窗，本身也是一个程序。Windows 自带的是老式的\n「命令提示符」窗口——不能开标签页、中文容易乱码、复制粘贴也麻烦。\n\nWindows Terminal 是微软官方的新终端：一个窗口里可以开好几个标签页\n（一个跑 PowerShell、一个跑 WSL），能分屏，字体和颜色都能调，\n中文显示也正常。\n\n大多数教程里说「打开终端」时，截图画的就是它。装了它之后，\n在文件夹里右键就能选择「在终端中打开」，方便很多。\n",
+        "versions": []
+      },
+      "onPath": true,
+      "version": "1.24.11911.0"
+    },
+    {
+      "applicableNotes": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
+      "confidence": "confirmedAbsent",
+      "evidence": [
+        "系统注册表 · absent",
+        "命令行路径 · absent",
+        "winget 包列表 · absent"
+      ],
+      "installed": false,
+      "knowledge": {
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "Node.js",
+          "Python"
+        ],
+        "dependsOn": [
+          "node"
+        ],
+        "description": "阿里通义官方的命令行 AI 编程助手，用自然语言让 AI 改代码。",
+        "fromKnowledge": true,
+        "id": "qwen_code",
+        "name": "Qwen Code",
+        "purposes": [
+          "在终端里用中文向 AI 描述需求，让它直接改你的项目文件",
+          "理解整个代码库，回答\"这个函数在哪里被调用\"这类问题",
+          "自动执行命令、跑测试、修报错"
+        ],
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "Qwen Code 是通义千问官方出的编程助手，和 Claude Code 是同一类工具：\n你在终端里用中文说“帮我把这个脚本改成读取 CSV”，它会真的去改你的文件，\n而不是只给你一段代码让你自己复制。\n\n它装在命令行里，所以使用前你的电脑上要有 Node.js。装好之后，第一次运行时\n会引导你登录通义账号或填入 API Key —— 这一步涉及你自己的账号，\n本工具不会替你完成。\n",
+        "versions": []
+      },
+      "onPath": false,
+      "version": null
+    },
+    {
+      "applicableNotes": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
+      "confidence": "confirmedAbsent",
+      "evidence": [
+        "系统注册表 · absent",
+        "命令行路径 · absent",
+        "winget 包列表 · absent"
+      ],
+      "installed": false,
+      "knowledge": {
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "需要处理长文本的项目",
+          "中文注释较多的代码库"
+        ],
+        "dependsOn": [],
+        "description": "月之暗面（Kimi）官方的命令行 AI 编程助手。",
+        "fromKnowledge": true,
+        "id": "kimi_cli",
+        "name": "Kimi Code CLI",
+        "purposes": [
+          "在终端里让 Kimi 帮你读代码、改代码、解释报错",
+          "适合长文档与长代码库，Kimi 擅长处理大段上下文",
+          "与 Claude Code 一样能直接操作项目文件"
+        ],
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "Kimi Code CLI 是 Kimi 官方的命令行编程助手，用法和 Claude Code 类似：\n你在终端里用中文提出需求，它会读你的项目文件、给出修改并执行命令。\n\n有一点要提前知道：Kimi 官方**只在自己的 GitHub 发布页**提供下载，\n没有官方 npm 包。本工具会引导你从官方发布页获取，而不是从第三方下载站，\n避免装到来路不明的程序。\n\n第一次使用需要登录 Kimi 账号，这一步由你自己完成。\n",
+        "versions": []
+      },
+      "onPath": false,
+      "version": null
+    },
+    {
+      "applicableNotes": [],
+      "capabilityNames": [],
+      "confidence": "confirmed",
+      "evidence": [
+        "系统注册表 · D:\\工具软件\\ · 3.19.2",
+        "命令行路径 · absent",
+        "winget 包列表 · CC Switch · 3.19.2"
+      ],
+      "installed": true,
+      "knowledge": {
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "同时使用多个 AI 编程工具的同学",
+          "需要在官方账号与第三方中转之间切换的同学"
+        ],
+        "dependsOn": [],
+        "description": "在多个 AI 编程工具之间切换账号与配置的桌面小工具。",
+        "fromKnowledge": true,
+        "id": "cc_switch",
+        "name": "CC Switch",
+        "purposes": [
+          "一个界面上管理 Claude Code、Codex 等工具的配置档案",
+          "一键在不同 API 供应商 / 账号之间切换，不用手改配置文件",
+          "保留切换历史，改坏了可以回到之前的配置"
+        ],
+        "relatedCapabilities": [],
+        "studentExplanation": "你可能会同时用 Claude Code 和 Codex，而且可能有好几个 API 账号（比如\n官方的、学校实验室的、朋友分享的）。它们的配置分别写在不同的文件里\n（比如 ~/.claude/settings.json 和 ~/.codex/config.toml），\n手动换来换去很容易改错、也记不住原来是什么。\n\nCC Switch 就是解决这件事的：它在界面上列出你所有配置档案，点一下就能切换，\n并且会自动备份原来的文件。\n\n⚠ 需要注意：这个工具会**修改其他程序的配置文件**，也会改写系统 PATH。\n本工具只负责检测它是否已安装并解释它的作用，**不会替你自动安装或自动切换**——\n因为一旦切换错了，影响的是你正在用的 AI 工具，这个决定要你自己做。\n",
+        "versions": []
+      },
+      "onPath": false,
+      "version": "3.19.2"
+    },
+    {
+      "applicableNotes": [],
+      "capabilityNames": [
+        "Node.js 开发"
+      ],
+      "confidence": "confirmedAbsent",
+      "evidence": [
+        "系统注册表 · absent",
+        "命令行路径 · absent",
+        "winget 包列表 · absent"
+      ],
+      "installed": false,
+      "knowledge": {
+        "category": "AI 工具",
+        "commonlyUsedBy": [
+          "Node.js",
+          "终端重度用户"
+        ],
+        "dependsOn": [
+          "node"
+        ],
+        "description": "Charm 出品的终端 AI 编程助手，界面精致、支持多种模型。",
+        "fromKnowledge": true,
+        "id": "crush",
+        "name": "Crush",
+        "purposes": [
+          "在终端里和 AI 一起写代码，界面比同类工具更好看易读",
+          "可以接入不同厂商的模型（Claude、GPT、本地模型等）",
+          "适合喜欢在命令行里工作的同学"
+        ],
+        "relatedCapabilities": [
+          "node-development"
+        ],
+        "studentExplanation": "Crush 是 Charm 公司出的命令行 AI 编程助手。Charm 做终端工具很有名\n（比如 gum、glow），所以 Crush 的界面比同类工具更清爽：有颜色、有面板、\n长回答会分段落显示，读起来不累。\n\n它的特点是**不绑定某一家模型**——你可以填自己的 Claude、GPT 或本地模型的\n密钥来用。因此第一次运行需要配置 API Key，这一步涉及你的账号，\n本工具不会替你填。\n\n它需要用 Node.js 安装。\n",
         "versions": []
       },
       "onPath": false,
@@ -6565,68 +6813,92 @@
   },
   "knowledgeStatus": {
     "conceptCount": 5,
-    "softwareCount": 16,
+    "softwareCount": 29,
     "sourceDir": "D:\\AI-Vault\\DeepSeek\\ai-student-setup\\src-tauri\\knowledge",
-    "warnings": [],
-    "withoutKnowledge": [
-      "windsurf",
-      "pnpm",
-      "rust",
-      "java",
-      "gemini",
-      "opencode",
-      "lm_studio",
-      "jetbrains"
-    ]
+    "warnings": [
+      "java.yaml 关联了未知能力 “java-development”，该关联不会显示。",
+      "rust.yaml 关联了未知能力 “rust-development”，该关联不会显示。"
+    ],
+    "withoutKnowledge": []
   },
   "license": {
     "freeEnforced": {
-      "tier": "free",
-      "tierLabel": "免费版",
-      "canInstall": false,
+      "activated": false,
+      "activatedAt": null,
       "canConfigure": false,
-      "activated": false,
-      "enforced": true,
-      "state": "inactive",
-      "activatedAt": null,
+      "canInstall": false,
       "deviceReliable": true,
-      "reason": "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。"
-    },
-    "freeUnenforced": {
+      "enforced": true,
+      "reason": "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。",
+      "state": "inactive",
       "tier": "free",
-      "tierLabel": "免费版",
-      "canInstall": true,
-      "canConfigure": true,
-      "activated": false,
-      "enforced": false,
-      "state": "inactive",
-      "activatedAt": null,
-      "deviceReliable": true,
-      "reason": "当前版本：免费版（本构建未启用限制，全部功能可用）。"
-    },
-    "proEnforced": {
-      "tier": "pro",
-      "tierLabel": "专业版",
-      "canInstall": true,
-      "canConfigure": true,
-      "activated": true,
-      "enforced": true,
-      "state": "active",
-      "activatedAt": "2026-01-15T10:30:00Z",
-      "deviceReliable": true,
-      "reason": "已激活专业版：自动安装、环境初始化与配置功能已解锁。"
+      "tierLabel": "免费版"
     },
     "freeMismatch": {
-      "tier": "free",
-      "tierLabel": "免费版",
-      "canInstall": false,
-      "canConfigure": false,
       "activated": false,
-      "enforced": true,
-      "state": "deviceMismatch",
       "activatedAt": null,
+      "canConfigure": false,
+      "canInstall": false,
       "deviceReliable": true,
-      "reason": "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。"
+      "enforced": true,
+      "reason": "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。",
+      "state": "device_mismatch",
+      "tier": "free",
+      "tierLabel": "免费版"
+    },
+    "freeUnenforced": {
+      "activated": false,
+      "activatedAt": null,
+      "canConfigure": true,
+      "canInstall": true,
+      "deviceReliable": true,
+      "enforced": false,
+      "reason": "当前版本：免费版（本构建未启用限制，全部功能可用）。",
+      "state": "inactive",
+      "tier": "free",
+      "tierLabel": "免费版"
+    },
+    "proEnforced": {
+      "activated": true,
+      "activatedAt": "2026-01-15T10:30:00Z",
+      "canConfigure": true,
+      "canInstall": true,
+      "deviceReliable": true,
+      "enforced": true,
+      "reason": "已激活专业版：自动安装、环境初始化与配置功能已解锁。",
+      "state": "active",
+      "tier": "pro",
+      "tierLabel": "专业版"
+    }
+  },
+  "licenseDevice": {
+    "freeEnforced": {
+      "boundHere": false,
+      "componentsReadable": 4,
+      "reliable": true,
+      "shortId": "dbe44ff0",
+      "state": "inactive"
+    },
+    "freeMismatch": {
+      "boundHere": false,
+      "componentsReadable": 4,
+      "reliable": true,
+      "shortId": "dbe44ff0",
+      "state": "inactive"
+    },
+    "freeUnenforced": {
+      "boundHere": false,
+      "componentsReadable": 4,
+      "reliable": true,
+      "shortId": "dbe44ff0",
+      "state": "inactive"
+    },
+    "proEnforced": {
+      "boundHere": false,
+      "componentsReadable": 4,
+      "reliable": true,
+      "shortId": "dbe44ff0",
+      "state": "inactive"
     }
   },
   "localizationTargets": [
@@ -6837,12 +7109,44 @@
       "purpose": "PyCharm / IDEA 等专业 IDE"
     },
     {
-      "id": "windows_terminal",
-      "name": "Windows Terminal",
-      "purpose": "更好用的终端，支持多标签与分屏",
       "category": "runtime",
       "categoryName": "运行环境",
-      "installable": true
+      "id": "windows_terminal",
+      "installable": true,
+      "name": "Windows Terminal",
+      "purpose": "更好用的终端，支持多标签与分屏"
+    },
+    {
+      "category": "aiTool",
+      "categoryName": "AI 工具",
+      "id": "qwen_code",
+      "installable": true,
+      "name": "通义千问的命令行编程助手",
+      "purpose": "阿里通义官方的命令行 AI 编程助手"
+    },
+    {
+      "category": "aiTool",
+      "categoryName": "AI 工具",
+      "id": "kimi_cli",
+      "installable": false,
+      "name": "月之暗面的命令行编程助手",
+      "purpose": "Kimi 官方的命令行 AI 编程助手"
+    },
+    {
+      "category": "aiTool",
+      "categoryName": "AI 工具",
+      "id": "cc_switch",
+      "installable": false,
+      "name": "在多个 AI 编程工具之间切换配置",
+      "purpose": "一键切换 Claude Code / Codex 等工具的配置"
+    },
+    {
+      "category": "aiTool",
+      "categoryName": "AI 工具",
+      "id": "crush",
+      "installable": true,
+      "name": "Charm 出品的终端编程助手",
+      "purpose": "命令行里的 AI 编程助手，界面漂亮"
     }
   ],
   "plans": {
@@ -6883,7 +7187,7 @@
         {
           "fallbackPlan": [
             "优先尝试 winget",
-            "winget 无对应包或版本过旧时，改用 Claude 官方安装包"
+            "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）"
           ],
           "id": "claude_desktop",
           "name": "Claude Desktop",
@@ -7064,7 +7368,7 @@
         {
           "fallbackPlan": [
             "优先尝试 winget",
-            "winget 无对应包或版本过旧时，改用 Claude 官方安装包"
+            "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）"
           ],
           "id": "claude_desktop",
           "name": "Claude Desktop",
@@ -7114,7 +7418,7 @@
         {
           "fallbackPlan": [
             "优先尝试 winget",
-            "winget 无对应包或版本过旧时，改用 Claude 官方安装包"
+            "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）"
           ],
           "id": "claude_desktop",
           "name": "Claude Desktop",
@@ -8014,7 +8318,9 @@
     "blockers": [],
     "canStart": true,
     "isElevated": false,
-    "needsAdmin": [],
+    "needsAdmin": [
+      "claude_desktop"
+    ],
     "wingetVersion": "1.29.290"
   },
   "report": {
@@ -8059,7 +8365,7 @@
       "blockingCount": 0,
       "disks": [
         {
-          "freeBytes": 110547546112,
+          "freeBytes": 106702950400,
           "label": null,
           "lowSpace": false,
           "root": "C:\\Users\\35074\\AppData\\Local\\Setup Center",
@@ -8098,13 +8404,13 @@
         ],
         "hypervisorPresent": true,
         "memory": {
-          "availableBytes": 4763127808,
+          "availableBytes": 5785255936,
           "totalBytes": 16607784960
         },
         "virtualizationEnabled": true
       },
       "network": {
-        "latencyMs": 125,
+        "latencyMs": 102,
         "proxy": null,
         "quality": "degraded",
         "reachableHosts": [
@@ -8114,97 +8420,97 @@
         "wingetReachable": true
       },
       "score": 90,
-      "scoreMax": 135,
+      "scoreMax": 135.0,
       "signals": [
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.cpu",
           "label": "处理器",
-          "score": 10,
+          "score": 10.0,
           "severity": "info",
           "value": "Intel(R) Core(TM) Ultra 7 251HX（18 线程）",
-          "weight": 10
+          "weight": 10.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.memory",
           "label": "内存",
-          "score": 15,
+          "score": 15.0,
           "severity": "info",
           "value": "15.5 GB",
-          "weight": 15
+          "weight": 15.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.gpu",
           "label": "显卡",
-          "score": 5,
+          "score": 5.0,
           "severity": "info",
           "value": "NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存",
-          "weight": 5
+          "weight": 5.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "machine.virtualization",
           "label": "虚拟化支持",
-          "score": 5,
+          "score": 5.0,
           "severity": "info",
           "value": "已启用（WSL2 / Docker 可用）",
-          "weight": 5
+          "weight": 5.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "windows.version",
           "label": "Windows 版本",
-          "score": 25,
+          "score": 25.0,
           "severity": "info",
           "value": "Windows 11 25H2 (10.0.26200)",
-          "weight": 25
+          "weight": 25.0
         },
         {
           "confidence": "unknown",
           "hint": "部分软件需要提权。安装失败时可右键以管理员身份重新运行。",
           "key": "admin.rights",
           "label": "管理员权限",
-          "score": 7,
+          "score": 7.0,
           "severity": "warning",
           "value": "未提权（当前账户属于管理员组）",
-          "weight": 10
+          "weight": 10.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "disk.space",
           "label": "磁盘空间",
-          "score": 20,
+          "score": 20.0,
           "severity": "info",
-          "value": "103.0 GB 可用",
-          "weight": 20
+          "value": "99.4 GB 可用",
+          "weight": 20.0
         },
         {
           "confidence": "unknown",
           "hint": "网络可用但速度较慢，安装可能需要更长时间。",
           "key": "network.connectivity",
           "label": "网络连接",
-          "score": 15,
+          "score": 15.0,
           "severity": "warning",
-          "value": "较慢（125 ms，1 个探测点失败）",
-          "weight": 25
+          "value": "较慢（102 ms，1 个探测点失败）",
+          "weight": 25.0
         },
         {
           "confidence": "ok",
           "hint": null,
           "key": "network.winget",
           "label": "winget 组件源",
-          "score": 20,
+          "score": 20.0,
           "severity": "info",
           "value": "可达",
-          "weight": 20
+          "weight": 20.0
         }
       ],
       "warningCount": 2,
@@ -8219,7 +8525,7 @@
       }
     },
     "environmentScore": 90,
-    "generatedAt": "2026-09-19T13:18:13.1140377+08:00",
+    "generatedAt": "2026-09-21T14:07:21.1046354+08:00",
     "notAttempted": [
       "MCP 服务器安装（后续版本）",
       "Skills 安装（后续版本）",
@@ -8289,7 +8595,7 @@
         {
           "fallbackPlan": [
             "优先尝试 winget",
-            "winget 无对应包或版本过旧时，改用 Claude 官方安装包"
+            "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）"
           ],
           "id": "claude_desktop",
           "name": "Claude Desktop",
@@ -8470,7 +8776,7 @@
             "hint": null,
             "key": "claude_desktop.present",
             "label": "已安装",
-            "observed": "已检测到"
+            "observed": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe（3 个来源确认）"
           },
           "version": {
             "confidence": "ok",
@@ -8478,7 +8784,7 @@
             "hint": null,
             "key": "claude_desktop.version",
             "label": "版本正常",
-            "observed": "1.40609.0.0"
+            "observed": "2.2553.1"
           }
         },
         {
@@ -8543,7 +8849,7 @@
       "passedCount": 5
     }
   },
-  "reportText": "Setup Center Report\n===================\n\n生成时间: 2026-09-19T13:18:13.1140377+08:00\n程序版本: 0.1.0\n安装方案: AI 开发版 + 桌面应用 (ai_engineer)\n\n环境检测:\n  [OK]   处理器          Intel(R) Core(TM) Ultra 7 251HX（18 线程）\n  [OK]   内存           15.5 GB\n  [OK]   显卡           NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存\n  [OK]   虚拟化支持        已启用（WSL2 / Docker 可用）\n  [OK]   Windows 版本   Windows 11 25H2 (10.0.26200)\n  [??]   管理员权限        未提权（当前账户属于管理员组）\n  [OK]   磁盘空间         103.0 GB 可用\n  [??]   网络连接         较慢（125 ms，1 个探测点失败）\n  [OK]   winget 组件源   可达\n  环境评分: 90%\n\n安装结果:\n  VS Code          installed\n      - 已安装        ok       D:\\工具软件\\Microsoft VS Code\\bin\\code.cmd（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       1.138.0\n  Git              installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\Programs\\AI Switch\\PortableGit\\bin\\git.exe\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       2.54.0.windows.1\n  Python           installed\n      - 已安装        ok       C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.PythonManager_26.3.240.0_x64__qbz5n2kfra8p0\\python.exe（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       3.14.7\n  Node.js          installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\hermes\\node\\node.exe（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       22.23.2\n  Claude Desktop   FAILED\n      - 已安装        ok       已检测到\n      - 已加入 PATH   fail     不在 PATH 中\n      - 版本正常       ok       1.40609.0.0\n  Claude Code      FAILED\n      - 已安装        fail     未找到\n      - 已加入 PATH   skipped  未安装，跳过\n      - 版本正常       skipped  未安装，跳过\n  Codex            installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\hermes\\node\\codex.cmd（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       0.153.4\n\nEnvironment: INCOMPLETE\n通过 5/7 项\n\n本次未做（明确说明）:\n  - MCP 服务器安装（后续版本）\n  - Skills 安装（后续版本）\n  - Agent 管理（后续版本）\n",
+  "reportText": "Setup Center Report\n===================\n\n生成时间: 2026-09-21T14:07:21.1046354+08:00\n程序版本: 0.1.0\n安装方案: AI 开发版 + 桌面应用 (ai_engineer)\n\n环境检测:\n  [OK]   处理器          Intel(R) Core(TM) Ultra 7 251HX（18 线程）\n  [OK]   内存           15.5 GB\n  [OK]   显卡           NVIDIA GeForce RTX 5060 Laptop GPU，8 GB 显存\n  [OK]   虚拟化支持        已启用（WSL2 / Docker 可用）\n  [OK]   Windows 版本   Windows 11 25H2 (10.0.26200)\n  [??]   管理员权限        未提权（当前账户属于管理员组）\n  [OK]   磁盘空间         99.4 GB 可用\n  [??]   网络连接         较慢（102 ms，1 个探测点失败）\n  [OK]   winget 组件源   可达\n  环境评分: 90%\n\n安装结果:\n  VS Code          installed\n      - 已安装        ok       D:\\工具软件\\Microsoft VS Code\\bin\\code.cmd（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       1.138.0\n  Git              installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\Programs\\AI Switch\\PortableGit\\bin\\git.exe\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       2.54.0.windows.1\n  Python           installed\n      - 已安装        ok       C:\\Program Files\\WindowsApps\\PythonSoftwareFoundation.PythonManager_26.3.240.0_x64__qbz5n2kfra8p0\\python.exe（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       3.14.7\n  Node.js          installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\hermes\\node\\node.exe（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       22.23.2\n  Claude Desktop   FAILED\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe（3 个来源确认）\n      - 已加入 PATH   fail     不在 PATH 中\n      - 版本正常       ok       2.2553.1\n  Claude Code      FAILED\n      - 已安装        fail     未找到\n      - 已加入 PATH   skipped  未安装，跳过\n      - 版本正常       skipped  未安装，跳过\n  Codex            installed\n      - 已安装        ok       C:\\Users\\35074\\AppData\\Local\\hermes\\node\\codex.cmd（3 个来源确认）\n      - 已加入 PATH   ok       在 PATH 中\n      - 版本正常       ok       0.153.4\n\nEnvironment: INCOMPLETE\n通过 5/7 项\n\n本次未做（明确说明）:\n  - MCP 服务器安装（后续版本）\n  - Skills 安装（后续版本）\n  - Agent 管理（后续版本）\n",
   "scan": {
     "inventory": {
       "items": [
@@ -8681,17 +8987,17 @@
           "confidence": "ok",
           "evidence": [
             {
-              "detail": null,
-              "outcome": "absent",
+              "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+              "outcome": "present",
               "source": "registry"
             },
             {
-              "detail": null,
-              "outcome": "absent",
+              "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+              "outcome": "present",
               "source": "path"
             },
             {
-              "detail": "Claude · 1.40609.0.0",
+              "detail": "Claude · 2.2553.1.0",
               "outcome": "present",
               "source": "winget"
             }
@@ -8704,11 +9010,13 @@
           "name": "Claude Desktop",
           "onPath": false,
           "packageId": "Anthropic.Claude",
-          "path": null,
+          "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
           "sources": [
+            "registry",
+            "path",
             "winget"
           ],
-          "version": "1.40609.0.0"
+          "version": "2.2553.1"
         },
         {
           "confidence": "fail",
@@ -9302,16 +9610,48 @@
           "version": null
         },
         {
-          "confidence": "fail",
+          "confidence": "ok",
           "evidence": [
             {
-              "detail": "2.7.13.0",
-              "outcome": "present",
+              "detail": null,
+              "outcome": "absent",
               "source": "registry"
             },
             {
-              "detail": "C:\\Program Files\\WindowsApps\\MicrosoftCorporationII.WindowsSubsystemForLinux_2.7.13.0_x64__8wekyb3d8bbwe\\wsl.exe · unknown",
+              "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
               "outcome": "present",
+              "source": "path"
+            },
+            {
+              "detail": "Windows 终端 · 1.24.11911.0",
+              "outcome": "present",
+              "source": "winget"
+            }
+          ],
+          "hints": [],
+          "id": "windows_terminal",
+          "installed": true,
+          "name": "Windows Terminal",
+          "onPath": true,
+          "packageId": "Microsoft.WindowsTerminal",
+          "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+          "sources": [
+            "path",
+            "winget"
+          ],
+          "version": "1.24.11911.0"
+        },
+        {
+          "confidence": "fail",
+          "evidence": [
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "registry"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
               "source": "path"
             },
             {
@@ -9321,16 +9661,105 @@
             }
           ],
           "hints": [],
-          "id": "windows_terminal",
+          "id": "qwen_code",
           "installed": false,
-          "name": "WSL",
+          "name": "通义千问的命令行编程助手",
           "onPath": false,
           "packageId": null,
           "path": null,
+          "sources": [],
+          "version": null
+        },
+        {
+          "confidence": "fail",
+          "evidence": [
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "registry"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "path"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "winget"
+            }
+          ],
+          "hints": [],
+          "id": "kimi_cli",
+          "installed": false,
+          "name": "月之暗面的命令行编程助手",
+          "onPath": false,
+          "packageId": null,
+          "path": null,
+          "sources": [],
+          "version": null
+        },
+        {
+          "confidence": "ok",
+          "evidence": [
+            {
+              "detail": "D:\\工具软件\\ · 3.19.2",
+              "outcome": "present",
+              "source": "registry"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "path"
+            },
+            {
+              "detail": "CC Switch · 3.19.2",
+              "outcome": "present",
+              "source": "winget"
+            }
+          ],
+          "hints": [
+            "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+          ],
+          "id": "cc_switch",
+          "installed": true,
+          "name": "在多个 AI 编程工具之间切换配置",
+          "onPath": false,
+          "packageId": "farion1231.CC-Switch",
+          "path": null,
           "sources": [
             "registry",
-            "path"
+            "winget"
           ],
+          "version": "3.19.2"
+        },
+        {
+          "confidence": "fail",
+          "evidence": [
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "registry"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "path"
+            },
+            {
+              "detail": null,
+              "outcome": "absent",
+              "source": "winget"
+            }
+          ],
+          "hints": [],
+          "id": "crush",
+          "installed": false,
+          "name": "Charm 出品的终端编程助手",
+          "onPath": false,
+          "packageId": null,
+          "path": null,
+          "sources": [],
           "version": null
         }
       ],
@@ -9339,9 +9768,9 @@
         "PATH",
         "winget"
       ],
-      "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+      "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
     },
-    "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+    "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
   },
   "sessions": {
     "ai_basic": {
@@ -9396,7 +9825,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -9406,7 +9835,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -9416,7 +9845,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -9426,7 +9855,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "ChatGPT",
             "stage": "安装完成",
@@ -9571,17 +10000,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -9594,11 +10023,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -10190,6 +10621,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -10197,7 +10781,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -10256,7 +10840,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -10266,7 +10850,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -10276,7 +10860,7 @@
           },
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -10286,7 +10870,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "ChatGPT",
             "stage": "等待继续安装",
@@ -10431,17 +11015,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -10454,11 +11038,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -11050,6 +11636,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -11057,7 +11796,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -11133,7 +11872,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -11143,7 +11882,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -11153,7 +11892,7 @@
           },
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -11163,7 +11902,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "ChatGPT",
             "stage": "安装完成",
@@ -11308,17 +12047,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -11331,11 +12070,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -11927,6 +12668,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -11934,7 +12828,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     },
@@ -11972,7 +12866,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -11982,7 +12876,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -11992,7 +12886,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -12002,7 +12896,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -12012,7 +12906,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -12022,7 +12916,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -12167,17 +13061,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -12190,11 +13084,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -12786,6 +13682,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -12793,7 +13842,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -12852,7 +13901,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -12862,7 +13911,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -12872,7 +13921,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -12882,7 +13931,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -12892,7 +13941,7 @@
           },
           {
             "detail": "Claude Code 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Code",
             "stage": "需要管理员权限",
@@ -12902,7 +13951,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -13047,17 +14096,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -13070,11 +14119,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -13666,6 +14717,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -13673,7 +14877,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -13731,7 +14935,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -13741,7 +14945,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -13751,7 +14955,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -13761,7 +14965,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -13771,7 +14975,7 @@
           },
           {
             "detail": "Claude Code：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Code",
             "stage": "安装未能完成",
@@ -13781,7 +14985,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -13926,17 +15130,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -13949,11 +15153,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -14545,6 +15751,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -14552,7 +15911,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     },
@@ -14608,7 +15967,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -14618,7 +15977,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -14628,7 +15987,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -14638,7 +15997,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -14648,7 +16007,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -14658,7 +16017,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -14668,7 +16027,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -14813,17 +16172,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -14836,11 +16195,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -15432,6 +16793,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -15439,7 +16953,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -15499,7 +17013,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -15509,7 +17023,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -15519,7 +17033,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -15529,7 +17043,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -15539,7 +17053,7 @@
           },
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -15549,7 +17063,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Claude Code",
             "stage": "等待继续安装",
@@ -15559,7 +17073,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -15704,17 +17218,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -15727,11 +17241,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -16323,6 +17839,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -16330,7 +17999,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -16406,7 +18075,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -16416,7 +18085,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -16426,7 +18095,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -16436,7 +18105,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Node.js",
             "stage": "已检测到，无需安装",
@@ -16446,7 +18115,7 @@
           },
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -16456,7 +18125,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 5,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -16466,7 +18135,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 6,
             "name": "Codex",
             "stage": "已检测到，无需安装",
@@ -16611,17 +18280,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -16634,11 +18303,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -17230,6 +18901,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -17237,7 +19061,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     },
@@ -17275,7 +19099,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "安装完成",
@@ -17420,17 +19244,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -17443,11 +19267,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -18039,6 +19865,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -18046,7 +20025,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -18104,7 +20083,7 @@
         "steps": [
           {
             "detail": "Claude Desktop 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "需要管理员权限",
@@ -18249,17 +20228,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -18272,11 +20251,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -18868,6 +20849,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -18875,7 +21009,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -18933,7 +21067,7 @@
         "steps": [
           {
             "detail": "Claude Desktop：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "Claude Desktop",
             "stage": "安装未能完成",
@@ -19078,17 +21212,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -19101,11 +21235,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -19697,6 +21833,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -19704,7 +21993,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     },
@@ -19742,7 +22031,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -19752,7 +22041,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -19762,7 +22051,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -19772,7 +22061,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Claude Code",
             "stage": "安装完成",
@@ -19917,17 +22206,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -19940,11 +22229,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -20536,6 +22827,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -20543,7 +22987,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -20601,7 +23045,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -20611,7 +23055,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -20621,7 +23065,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -20631,7 +23075,7 @@
           },
           {
             "detail": "Claude Code 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Claude Code",
             "stage": "需要管理员权限",
@@ -20776,17 +23220,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -20799,11 +23243,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -21395,6 +23841,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -21402,7 +24001,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -21460,7 +24059,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -21470,7 +24069,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -21480,7 +24079,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -21490,7 +24089,7 @@
           },
           {
             "detail": "Claude Code：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "Claude Code",
             "stage": "安装未能完成",
@@ -21635,17 +24234,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -21658,11 +24257,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -22254,6 +24855,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -22261,7 +25015,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     },
@@ -22313,7 +25067,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -22323,7 +25077,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -22333,7 +25087,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -22343,7 +25097,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "安装完成",
@@ -22353,7 +25107,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "CMake",
             "stage": "安装完成",
@@ -22498,17 +25252,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -22521,11 +25275,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -23117,6 +25873,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -23124,7 +26033,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "halted": {
@@ -23183,7 +26092,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -23193,7 +26102,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -23203,7 +26112,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -23213,7 +26122,7 @@
           },
           {
             "detail": "MSVC 编译工具 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "需要管理员权限",
@@ -23223,7 +26132,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "CMake",
             "stage": "等待继续安装",
@@ -23368,17 +26277,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -23391,11 +26300,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -23987,6 +26898,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -23994,7 +27058,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       },
       "partial": {
@@ -24066,7 +27130,7 @@
         "steps": [
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 0,
             "name": "VS Code",
             "stage": "已检测到，无需安装",
@@ -24076,7 +27140,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 1,
             "name": "Git",
             "stage": "已检测到，无需安装",
@@ -24086,7 +27150,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 2,
             "name": "Python",
             "stage": "已检测到，无需安装",
@@ -24096,7 +27160,7 @@
           },
           {
             "detail": "MSVC 编译工具：软件源中没有找到对应的包",
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 3,
             "name": "MSVC 编译工具",
             "stage": "安装未能完成",
@@ -24106,7 +27170,7 @@
           },
           {
             "detail": null,
-            "fraction": 1,
+            "fraction": 1.0,
             "index": 4,
             "name": "CMake",
             "stage": "安装完成",
@@ -24251,17 +27315,17 @@
               "confidence": "ok",
               "evidence": [
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude · 2.2553.1",
+                  "outcome": "present",
                   "source": "registry"
                 },
                 {
-                  "detail": null,
-                  "outcome": "absent",
+                  "detail": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe · unknown",
+                  "outcome": "present",
                   "source": "path"
                 },
                 {
-                  "detail": "Claude · 1.40609.0.0",
+                  "detail": "Claude · 2.2553.1.0",
                   "outcome": "present",
                   "source": "winget"
                 }
@@ -24274,11 +27338,13 @@
               "name": "Claude Desktop",
               "onPath": false,
               "packageId": "Anthropic.Claude",
-              "path": null,
+              "path": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe",
               "sources": [
+                "registry",
+                "path",
                 "winget"
               ],
-              "version": "1.40609.0.0"
+              "version": "2.2553.1"
             },
             {
               "confidence": "fail",
@@ -24870,6 +27936,159 @@
               "path": null,
               "sources": [],
               "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe · unknown",
+                  "outcome": "present",
+                  "source": "path"
+                },
+                {
+                  "detail": "Windows 终端 · 1.24.11911.0",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "windows_terminal",
+              "installed": true,
+              "name": "Windows Terminal",
+              "onPath": true,
+              "packageId": "Microsoft.WindowsTerminal",
+              "path": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe\\wt.exe",
+              "sources": [
+                "path",
+                "winget"
+              ],
+              "version": "1.24.11911.0"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "qwen_code",
+              "installed": false,
+              "name": "通义千问的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "kimi_cli",
+              "installed": false,
+              "name": "月之暗面的命令行编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
+            },
+            {
+              "confidence": "ok",
+              "evidence": [
+                {
+                  "detail": "D:\\工具软件\\ · 3.19.2",
+                  "outcome": "present",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": "CC Switch · 3.19.2",
+                  "outcome": "present",
+                  "source": "winget"
+                }
+              ],
+              "hints": [
+                "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
+              ],
+              "id": "cc_switch",
+              "installed": true,
+              "name": "在多个 AI 编程工具之间切换配置",
+              "onPath": false,
+              "packageId": "farion1231.CC-Switch",
+              "path": null,
+              "sources": [
+                "registry",
+                "winget"
+              ],
+              "version": "3.19.2"
+            },
+            {
+              "confidence": "fail",
+              "evidence": [
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "registry"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "path"
+                },
+                {
+                  "detail": null,
+                  "outcome": "absent",
+                  "source": "winget"
+                }
+              ],
+              "hints": [],
+              "id": "crush",
+              "installed": false,
+              "name": "Charm 出品的终端编程助手",
+              "onPath": false,
+              "packageId": null,
+              "path": null,
+              "sources": [],
+              "version": null
             }
           ],
           "providers": [
@@ -24877,7 +28096,7 @@
             "PATH",
             "winget"
           ],
-          "scannedAt": "2026-09-19T13:18:11.4625027+08:00"
+          "scannedAt": "2026-09-21T14:07:19.6461588+08:00"
         }
       }
     }
@@ -24907,7 +28126,7 @@
       },
       {
         "fallbacks": [
-          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest）"
+          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe）"
         ],
         "id": "git",
         "name": "Git",
@@ -24916,7 +28135,7 @@
       },
       {
         "fallbacks": [
-          "winget 无对应包或版本过旧时，改用 Claude 官方安装包（官方安装包 https://claude.ai/download）"
+          "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）（官方安装包 https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe）"
         ],
         "id": "claude_desktop",
         "name": "Claude Desktop",
@@ -24943,7 +28162,7 @@
       },
       {
         "fallbacks": [
-          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest）"
+          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe）"
         ],
         "id": "git",
         "name": "Git",
@@ -24952,7 +28171,7 @@
       },
       {
         "fallbacks": [
-          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/downloads/windows/）"
+          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe）"
         ],
         "id": "python",
         "name": "Python",
@@ -24997,7 +28216,7 @@
       },
       {
         "fallbacks": [
-          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest）"
+          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe）"
         ],
         "id": "git",
         "name": "Git",
@@ -25006,7 +28225,7 @@
       },
       {
         "fallbacks": [
-          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/downloads/windows/）"
+          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe）"
         ],
         "id": "python",
         "name": "Python",
@@ -25022,7 +28241,7 @@
       },
       {
         "fallbacks": [
-          "winget 无对应包或版本过旧时，改用 Claude 官方安装包（官方安装包 https://claude.ai/download）"
+          "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）（官方安装包 https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe）"
         ],
         "id": "claude_desktop",
         "name": "Claude Desktop",
@@ -25051,7 +28270,7 @@
     "beginner": [
       {
         "fallbacks": [
-          "winget 无对应包或版本过旧时，改用 Claude 官方安装包（官方安装包 https://claude.ai/download）"
+          "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）（官方安装包 https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe）"
         ],
         "id": "claude_desktop",
         "name": "Claude Desktop",
@@ -25071,7 +28290,7 @@
       },
       {
         "fallbacks": [
-          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest）"
+          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe）"
         ],
         "id": "git",
         "name": "Git",
@@ -25080,7 +28299,7 @@
       },
       {
         "fallbacks": [
-          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/downloads/windows/）"
+          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe）"
         ],
         "id": "python",
         "name": "Python",
@@ -25109,7 +28328,7 @@
       },
       {
         "fallbacks": [
-          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest）"
+          "回退到 Git for Windows 官方安装包（官方安装包 https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe）"
         ],
         "id": "git",
         "name": "Git",
@@ -25118,7 +28337,7 @@
       },
       {
         "fallbacks": [
-          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/downloads/windows/）"
+          "回退到 python.org 官方安装包（官方安装包 https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe）"
         ],
         "id": "python",
         "name": "Python",
@@ -25222,7 +28441,7 @@
             "hint": null,
             "key": "claude_desktop.present",
             "label": "已安装",
-            "observed": "已检测到"
+            "observed": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe（3 个来源确认）"
           },
           "version": {
             "confidence": "ok",
@@ -25230,7 +28449,7 @@
             "hint": null,
             "key": "claude_desktop.version",
             "label": "版本正常",
-            "observed": "1.40609.0.0"
+            "observed": "2.2553.1"
           }
         },
         {
@@ -25584,7 +28803,7 @@
             "hint": null,
             "key": "claude_desktop.present",
             "label": "已安装",
-            "observed": "已检测到"
+            "observed": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe（3 个来源确认）"
           },
           "version": {
             "confidence": "ok",
@@ -25592,7 +28811,7 @@
             "hint": null,
             "key": "claude_desktop.version",
             "label": "版本正常",
-            "observed": "1.40609.0.0"
+            "observed": "2.2553.1"
           }
         },
         {
@@ -25678,7 +28897,7 @@
             "hint": null,
             "key": "claude_desktop.present",
             "label": "已安装",
-            "observed": "已检测到"
+            "observed": "C:\\Users\\35074\\AppData\\Local\\AnthropicClaude\\claude.exe（3 个来源确认）"
           },
           "version": {
             "confidence": "ok",
@@ -25686,7 +28905,7 @@
             "hint": null,
             "key": "claude_desktop.version",
             "label": "版本正常",
-            "observed": "1.40609.0.0"
+            "observed": "2.2553.1"
           }
         }
       ],
@@ -25966,36 +29185,6 @@
         }
       ],
       "passedCount": 3
-    }
-  },
-  "licenseDevice": {
-    "freeEnforced": {
-      "shortId": "3f9a2c41",
-      "componentsReadable": 4,
-      "reliable": true,
-      "boundHere": false,
-      "state": "inactive"
-    },
-    "freeUnenforced": {
-      "shortId": "3f9a2c41",
-      "componentsReadable": 4,
-      "reliable": true,
-      "boundHere": false,
-      "state": "inactive"
-    },
-    "proEnforced": {
-      "shortId": "3f9a2c41",
-      "componentsReadable": 4,
-      "reliable": true,
-      "boundHere": true,
-      "state": "active"
-    },
-    "freeMismatch": {
-      "shortId": "3f9a2c41",
-      "componentsReadable": 4,
-      "reliable": true,
-      "boundHere": false,
-      "state": "deviceMismatch"
     }
   }
 }

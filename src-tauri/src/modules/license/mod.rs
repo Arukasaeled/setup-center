@@ -718,4 +718,60 @@ mod tests {
         let b = current_fingerprint() as *const Fingerprint;
         assert_eq!(a, b);
     }
+
+    // -- The wire contract the frontend compares against ----------------------
+
+    #[test]
+    fn the_state_serialises_as_snake_case_because_the_frontend_compares_on_it() {
+        // This pins the *wire form* of `LicenseState`, which nothing did before.
+        //
+        // The bug this catches, found by regenerating the UI fixtures from real
+        // probe output: `LicenseState` carries its own
+        // `#[serde(rename_all = "snake_case")]`, so the value on the wire is
+        // `device_mismatch` — while three frontend call sites compared against
+        // `deviceMismatch`. The mismatch branch was therefore dead in the shipped
+        // binary: a customer who copied `license.dat` to a second PC was shown
+        // the ordinary free-tier screen, with no mention that their licence was
+        // bound elsewhere.
+        //
+        // It survived because the old hand-written fixtures spelled the value
+        // `deviceMismatch`, agreeing with the (wrong) TypeScript type rather than
+        // with the binary. A test that asserts the serialised form is what stops
+        // that from recurring: the enclosing `Entitlements` camelCases its field
+        // *names*, which makes "the values are camelCase too" an easy and wrong
+        // assumption to carry.
+        let json = serde_json::to_string(&LicenseState::DeviceMismatch).unwrap();
+        assert_eq!(json, "\"device_mismatch\"");
+
+        // Both of the other two, for the same reason: a screen that checks for
+        // "active" or "inactive" has the identical failure mode.
+        assert_eq!(
+            serde_json::to_string(&LicenseState::Active).unwrap(),
+            "\"active\""
+        );
+        assert_eq!(
+            serde_json::to_string(&LicenseState::Inactive).unwrap(),
+            "\"inactive\""
+        );
+
+        // And through the projection the UI actually reads, so the guarantee is
+        // about `Entitlements` and not only about the bare enum.
+        let projected = Entitlements::of(
+            &LicenseFile {
+                license_hash: Some("00".repeat(32)),
+                device_hash: Some("0".repeat(64)),
+                ..Default::default()
+            },
+            true,
+        );
+        assert_eq!(projected.state, LicenseState::DeviceMismatch);
+        let text = serde_json::to_string(&projected).unwrap();
+        assert!(
+            text.contains("\"state\":\"device_mismatch\""),
+            "the projection must carry the snake_case value: {text}"
+        );
+        // The field *names* are still camelCase — both rules are in force at once,
+        // which is precisely why this was easy to get wrong.
+        assert!(text.contains("\"deviceReliable\""), "{text}");
+    }
 }

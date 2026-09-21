@@ -943,11 +943,21 @@ export interface Entitlements {
   /**
    * The machine-check outcome.
    *
-   * `deviceMismatch` is distinct from `inactive` because the two need different
+   * `device_mismatch` is distinct from `inactive` because the two need different
    * sentences: a customer who copied `license.dat` to a second PC has a valid
    * code and must be told that, not told their code is wrong.
+   *
+   * **Snake case, and that is load-bearing.** `LicenseState` in
+   * `modules/license/mod.rs` carries its own `#[serde(rename_all = "snake_case")]`,
+   * which applies to the *values* even though the enclosing `Entitlements` struct
+   * camelCases its field *names*. Writing `deviceMismatch` here (as this type did
+   * until it was corrected) type-checks and reads plausibly, while every
+   * comparison against it is false at run time — which is exactly how the
+   * mismatch branch stayed dead: the type said one thing, the binary sent
+   * another, and a hand-written fixture with the wrong casing agreed with the
+   * type rather than with the binary.
    */
-  state: "inactive" | "active" | "deviceMismatch";
+  state: "inactive" | "active" | "device_mismatch";
   /** ISO-8601 activation time, for display. `null` when inactive. */
   activatedAt: string | null;
   /**
@@ -975,5 +985,6 @@ export interface LicenseDeviceView {
   componentsReadable: number;
   reliable: boolean;
   boundHere: boolean;
-  state: "inactive" | "active" | "deviceMismatch";
+  /** Snake case, for the same reason as `Entitlements.state` above. */
+  state: "inactive" | "active" | "device_mismatch";
 }
