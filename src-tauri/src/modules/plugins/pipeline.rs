@@ -713,11 +713,14 @@ fn apply(
         ("claude-code-layers", PluginTarget::ClaudeCode) => {
             let home = claude_home().ok_or("找不到 %USERPROFILE%\\.claude")?;
             let mut written = Vec::new();
+            let mut registered = false;
 
             for layer in layers {
                 if layer.needs_verified_version() {
                     return Err(format!(
-                        "{} 需要已验证的 Claude Code 版本，当前未验证，已拒绝。",
+                        "{} 在当前 Claude Code 版本不可用：已超出上游验证窗口\
+                         （Windows native ≤2.1.153，上游 bun-binary-io 自 2026-05-31\
+                         未更新），Layer 1–3 不受影响。",
                         layer.label()
                     ));
                 }
@@ -727,9 +730,21 @@ fn apply(
                         if !from.is_dir() {
                             return Err("上游缺少 plugin/ 目录。".into());
                         }
+                        // Windows / CC 2.1.278 适配，先改源头再 copy —— marketplace
+                        // cache 从源头 copy，源头不适配 cache 拿到的就是坏的（实测：
+                        // 旧格式清单让 `plugin list` 报 No plugins installed、裸
+                        // session-start 唤不起、无 BOM 的 ps1 被按 GBK 解析成乱码）。
+                        write_plugin_manifest(&from)?;
+                        rewrite_hooks_cmd(&from)?;
+                        ensure_ps1_bom(&from)?;
+                        write_marketplace_manifest(src, entry)?;
                         let to = home.join("plugins").join(code_plugin_dir(entry));
                         copy_dir(&from, &to)?;
+                        write_plugin_manifest(&to)?;
+                        rewrite_hooks_cmd(&to)?;
+                        ensure_ps1_bom(&to)?;
                         written.push(to.display().to_string());
+                        registered = true;
                     }
                     CodeLayer::Config => {
                         let overlay_path = src.join("settings-overlay.json");
@@ -762,8 +777,16 @@ fn apply(
                         .map_err(|e| format!("写入 settings.json：{e}"))?;
                         written.push(settings_path.display().to_string());
                     }
-                    CodeLayer::CliPatch => unreachable!("已在上方拒绝"),
+                    CodeLayer::CliPatch => {
+                        return Err(format!("{} 未通过版本闸，不应到达此处。", layer.label()))
+                    }
                 }
+            }
+            // 注册是 Hook/Plugin 层的**生效必要条件**：copy 目录只是落盘，CC 2.1.278
+            // 只认 marketplace 注册态（enabledPlugins）。失败必须让整个安装失败 ——
+            // 上方 Err 路径会 restore 备份，绝不留下"装了但不生效"的半成品。
+            if registered {
+                written.extend(register_plugin(src, entry)?);
             }
             Ok(written)
         }
@@ -1108,4 +1131,543 @@ pub fn views(catalog: &PluginCatalog) -> Vec<super::PluginView> {
 /// 某个 target 的状态（UI 顶部"Claude Desktop 已安装 ✓"）。
 pub fn targets() -> Vec<TargetState> {
     vec![probe::desktop(), probe::code()]
+}
+
+// ---------------------------------------------------------------------------
+// 注册链：清单适配 → hooks Windows 化 → BOM → marketplace 登记 → 启用
+// ---------------------------------------------------------------------------
+//
+// 落盘 ≠ 生效。CC 2.1.x 只认 `installed_plugins.json` + `known_marketplaces.json`
+// + settings 的 `enabledPlugins` 这条注册态：只把文件 copy 进 `~/.claude/plugins`
+// 会让 `plugin list` 显示 No plugins installed / × disabled —— 本机实测踩过。
+// 这组函数把"手动敲 claude plugin marketplace add/install/enable 能成的那套状态"
+// 变成幂等的文件写入，让新机器开箱即通；schema 与 CLI 实际产出逐字段对齐
+// （`installed_plugins.json` version: 2），不依赖 PATH 上有没有 claude。
+
+/// 本地 marketplace 名：`write_marketplace_manifest` 写出的 `name`、注册表的键、
+/// 以及 `插件@marketplace` 键的后半段必须三处一致，常量是唯一来源。
+const ZH_MARKETPLACE: &str = "zh-cn-local";
+
+fn load_json_or(path: &Path, default: Value) -> Result<Value, String> {
+    match std::fs::read_to_string(path) {
+        Ok(t) => serde_json::from_str(&t).map_err(|e| format!("解析 {}：{e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(default),
+        Err(e) => Err(format!("读取 {}：{e}", path.display())),
+    }
+}
+
+fn write_json_pretty(path: &Path, v: &Value) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(v).map_err(|e| e.to_string())? + "\n";
+    std::fs::write(path, body).map_err(|e| format!("写入 {}：{e}", path.display()))
+}
+
+/// ISO-8601 UTC（`2026-09-22T06:29:22.000Z`）—— 注册表两份 JSON 的时间字段要
+/// 这种形状；`now_stamp()` 的 unix 秒填进去是 `Invalid Date`。不引 chrono：
+/// 纯算术，有单测钉住已知时间点。
+fn iso_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    iso_from_unix(secs)
+}
+
+fn iso_from_unix(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // civil_from_days（Howard Hinnant 的经典算法）：epoch 天数 → 年月日。
+    let z = days + 719_468;
+    let era_z = if z >= 0 { z } else { z - 146_096 };
+    let era = era_z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let mon = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mon <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mon:02}-{day:02}T{h:02}:{m:02}:{s:02}.000Z")
+}
+
+/// 把插件目录补成 CC 认的两份清单：根 `manifest.json`（hooks/outputStyles 元数据）
+/// 与 `.claude-plugin\plugin.json`（新格式 sidecar）。**实测：缺 sidecar 时
+/// `claude plugin list` 报 No plugins installed** —— 只 copy 目录不修清单，装了也
+/// 认不出。幂等：已正确则一个字节都不写。
+fn write_plugin_manifest(plugin_dir: &Path) -> Result<(), String> {
+    let mpath = plugin_dir.join("manifest.json");
+    let text = std::fs::read_to_string(&mpath)
+        .map_err(|e| format!("读取 {}：{e}", mpath.display()))?;
+    let manifest: Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析 {}：{e}", mpath.display()))?;
+    for k in ["name", "version", "description"] {
+        let ok = manifest
+            .get(k)
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        if !ok {
+            return Err(format!("manifest.json 缺少非空 `{k}`，拒绝注册无名插件。"));
+        }
+    }
+    let author = match manifest.get("author") {
+        Some(Value::String(s)) => json!({ "name": s }),
+        Some(other) => other.clone(),
+        None => json!({ "name": "unknown" }),
+    };
+    let hooks_ref = manifest
+        .get("hooks")
+        .and_then(|v| v.as_str())
+        .map(|s| Value::String(format!("./{}", s.trim_start_matches("./"))))
+        .or_else(|| {
+            plugin_dir
+                .join("hooks.json")
+                .is_file()
+                .then(|| Value::String("./hooks.json".into()))
+        });
+    let mut derived = json!({
+        "name": manifest["name"],
+        "version": manifest["version"],
+        "description": manifest["description"],
+        "author": author,
+        "license": manifest.get("license").cloned().unwrap_or_else(|| json!("MIT")),
+    });
+    if let Some(h) = hooks_ref {
+        if let Some(obj) = derived.as_object_mut() {
+            obj.insert("hooks".into(), h);
+        }
+    }
+    let meta = plugin_dir.join(".claude-plugin");
+    std::fs::create_dir_all(&meta).map_err(|e| format!("创建 {}：{e}", meta.display()))?;
+    let ppath = meta.join("plugin.json");
+    let cur = std::fs::read_to_string(&ppath)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    if cur.as_ref() != Some(&derived) {
+        write_json_pretty(&ppath, &derived)?;
+    }
+    Ok(())
+}
+
+/// hooks.json 的 command 必须落到 Windows 能执行的载体（`.cmd`）。上游以 bash 为
+/// 主，裸 `session-start` 在 Windows 上唤不起（实测）：已有 `.cmd` 就改引用，只有
+/// `.ps1` 就生成等价 `.cmd` 包装，都没有则保持原样（不引 bash 依赖）。幂等。
+fn rewrite_hooks_cmd(plugin_dir: &Path) -> Result<(), String> {
+    let hpath = plugin_dir.join("hooks.json");
+    if !hpath.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&hpath)
+        .map_err(|e| format!("读取 {}：{e}", hpath.display()))?;
+    let mut root: Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析 hooks.json：{e}"))?;
+    let Some(events) = root.get_mut("hooks").and_then(|v| v.as_object_mut()) else {
+        return Ok(());
+    };
+    let mut changed = false;
+    for (_event, list) in events.iter_mut() {
+        let Some(entries) = list.as_array_mut() else { continue };
+        for item in entries {
+            let Some(inner) = item.get_mut("hooks").and_then(|v| v.as_array_mut()) else {
+                continue;
+            };
+            for h in inner.iter_mut() {
+                let Some(cmd) = h.get("command").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let bare = cmd.trim().trim_matches(|c| c == '\'' || c == '"');
+                let Some(rel) = bare.strip_prefix("${CLAUDE_PLUGIN_ROOT}/") else {
+                    continue;
+                };
+                let low = rel.to_ascii_lowercase();
+                if low.ends_with(".cmd") || low.ends_with(".bat") || low.ends_with(".exe") {
+                    continue;
+                }
+                let stem = Path::new(rel)
+                    .with_extension("")
+                    .to_string_lossy()
+                    .to_string();
+                let cmd_path = plugin_dir.join(format!("{stem}.cmd"));
+                if !cmd_path.is_file() {
+                    let ps1 = plugin_dir.join(format!("{stem}.ps1"));
+                    if !ps1.is_file() {
+                        continue;
+                    }
+                    let ps1_name = ps1
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let wrap = format!(
+                        "@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass \
+                         -File \"%~dp0{ps1_name}\"\r\n"
+                    );
+                    std::fs::write(&cmd_path, wrap)
+                        .map_err(|e| format!("写入 {}：{e}", cmd_path.display()))?;
+                }
+                let new_cmd = format!("'${{CLAUDE_PLUGIN_ROOT}}/{stem}.cmd'");
+                if h.get("command").and_then(|v| v.as_str()) != Some(new_cmd.as_str()) {
+                    if let Some(obj) = h.as_object_mut() {
+                        obj.insert("command".into(), Value::String(new_cmd));
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    if changed {
+        write_json_pretty(&hpath, &root)?;
+    }
+    Ok(())
+}
+
+/// UTF-8 BOM：无 BOM 的 `.ps1` 在 Windows PowerShell 5 上按 GBK 解析 → 中文注释
+/// 全乱码、可能连语法都坏（实测）。幂等：已有 BOM 不动。
+fn ensure_ps1_bom(dir: &Path) -> Result<(), String> {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let rd = std::fs::read_dir(&d).map_err(|e| format!("读取 {}：{e}", d.display()))?;
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            let is_ps1 = p
+                .extension()
+                .map(|x| x.eq_ignore_ascii_case("ps1"))
+                .unwrap_or(false);
+            if !is_ps1 {
+                continue;
+            }
+            let bytes = std::fs::read(&p).map_err(|e| format!("读取 {}：{e}", p.display()))?;
+            if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                continue;
+            }
+            let mut nb = Vec::with_capacity(bytes.len() + 3);
+            nb.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+            nb.extend_from_slice(&bytes);
+            std::fs::write(&p, nb).map_err(|e| format!("写入 {}：{e}", p.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// 本地 marketplace 清单：`claude plugin marketplace add` 认的是源码根
+/// `.claude-plugin\marketplace.json`。已有且含本插件则不动（保留上游多余字段）。
+fn write_marketplace_manifest(src: &Path, entry: &PluginEntry) -> Result<(), String> {
+    let dir = src.join(".claude-plugin");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 {}：{e}", dir.display()))?;
+    let path = dir.join("marketplace.json");
+    let cur = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    let already_ok = cur
+        .as_ref()
+        .map(|c| {
+            let name_ok = c.get("name").and_then(|n| n.as_str()) == Some(ZH_MARKETPLACE);
+            let has_plugin = c
+                .get("plugins")
+                .and_then(|p| p.as_array())
+                .map(|a| {
+                    a.iter().any(|x| {
+                        x.get("name").and_then(|n| n.as_str()) == Some(entry.id.as_str())
+                    })
+                })
+                .unwrap_or(false);
+            name_ok && has_plugin
+        })
+        .unwrap_or(false);
+    if already_ok {
+        return Ok(());
+    }
+    let desc = std::fs::read_to_string(src.join("plugin").join("manifest.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.get("description").cloned())
+        .unwrap_or_else(|| Value::String(entry.description.clone()));
+    let want = json!({
+        "name": ZH_MARKETPLACE,
+        "owner": { "name": "Setup Center" },
+        "plugins": [{
+            "name": entry.id.clone(),
+            "source": "./plugin",
+            "description": desc,
+        }],
+    });
+    write_json_pretty(&path, &want)
+}
+
+/// marketplace 登记 + 安装登记 + 启用：直写 CC 的三份注册文件（schema 与本机
+/// `claude plugin marketplace add/install/enable` 实际产出逐字段一致，v2）。
+/// **只落盘不算生效** —— CC 只认 `installed_plugins.json` + `enabledPlugins` 这条
+/// 注册态。任何一步失败都返回 Err，让上层回滚，绝不留"装了但不生效"的半成品。
+fn register_plugin(src: &Path, entry: &PluginEntry) -> Result<Vec<String>, String> {
+    let home = claude_home().ok_or("找不到 %USERPROFILE%，无法注册 Claude 插件。")?;
+    let root = home.join("plugins");
+    std::fs::create_dir_all(&root).map_err(|e| format!("创建 {}：{e}", root.display()))?;
+
+    // 版本以（已适配过的）源头清单为准：cache 路径带版本，与 CLI 安装一致。
+    let manifest_text = std::fs::read_to_string(src.join("plugin").join("manifest.json"))
+        .map_err(|e| format!("读取源头 manifest.json：{e}"))?;
+    let manifest: Value =
+        serde_json::from_str(&manifest_text).map_err(|e| format!("manifest.json：{e}"))?;
+    let version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&entry.version)
+        .to_string();
+
+    let id_at = format!("{}@{}", entry.id, ZH_MARKETPLACE);
+    let iso = iso_now();
+
+    // 1) cache —— CC 实际加载插件的地方（installPath 指向这里）。copy_dir 是合并
+    //    覆盖语义，重装幂等；新版本进新目录，旧目录自然成为孤儿、不碍事。
+    let cache = root
+        .join("cache")
+        .join(ZH_MARKETPLACE)
+        .join(&entry.id)
+        .join(&version);
+    copy_dir(&src.join("plugin"), &cache)?;
+
+    // 2) known_marketplaces.json —— 只覆写本 marketplace 的键，其它键原样保留。
+    let km_path = root.join("known_marketplaces.json");
+    let mut km = load_json_or(&km_path, json!({}))?;
+    if !km.is_object() {
+        return Err("known_marketplaces.json 不是对象。".into());
+    }
+    let src_str = src.display().to_string();
+    km[ZH_MARKETPLACE] = json!({
+        "source": { "source": "directory", "path": src_str.clone() },
+        "installLocation": src_str,
+        "lastUpdated": iso.clone(),
+    });
+
+    // 3) installed_plugins.json（v2）—— 已有条目原位更新，不重复堆积。
+    let ip_path = root.join("installed_plugins.json");
+    let mut ip = load_json_or(&ip_path, json!({ "version": 2, "plugins": {} }))?;
+    if !ip.is_object() {
+        return Err("installed_plugins.json 不是对象。".into());
+    }
+    if ip.get("version").is_none() {
+        ip["version"] = json!(2);
+    }
+    let plugins = ip
+        .as_object_mut()
+        .and_then(|o| {
+            o.entry("plugins")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+        })
+        .ok_or("installed_plugins.json 的 plugins 不是对象。")?;
+    let cache_str = cache.display().to_string();
+    let rec = match plugins
+        .get(&id_at)
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .filter(|v| v.is_object())
+        .cloned()
+    {
+        Some(mut r) => {
+            r["lastUpdated"] = Value::String(iso);
+            r["version"] = Value::String(version);
+            r["installPath"] = Value::String(cache_str);
+            r
+        }
+        None => json!({
+            "scope": "user",
+            "installPath": cache_str,
+            "version": version,
+            "installedAt": iso,
+            "lastUpdated": iso,
+        }),
+    };
+    plugins.insert(id_at.clone(), Value::Array(vec![rec]));
+    write_json_pretty(&ip_path, &ip)?;
+    write_json_pretty(&km_path, &km)?;
+
+    // 4) settings.json —— `enabledPlugins` 是"启用"的唯一真源（`plugin list` 的
+    //    Status 由它派生）。深合并且只加不覆盖：E2E 断言安装前的键一个都不能丢。
+    let st_path = home.join("settings.json");
+    let mut st = load_json_or(&st_path, json!({}))?;
+    if !st.is_object() {
+        return Err("settings.json 不是对象。".into());
+    }
+    let ep = st
+        .as_object_mut()
+        .and_then(|o| {
+            o.entry("enabledPlugins")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+        })
+        .ok_or("settings.json 的 enabledPlugins 不是对象。")?;
+    ep.insert(id_at, Value::Bool(true));
+    write_json_pretty(&st_path, &st)?;
+
+    Ok(vec![
+        cache_str_final(&cache),
+        km_path.display().to_string(),
+        ip_path.display().to_string(),
+        st_path.display().to_string(),
+    ])
+}
+
+fn cache_str_final(p: &Path) -> String {
+    p.display().to_string()
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tmpd(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("sc-ph-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn entry_stub() -> PluginEntry {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
+        PluginCatalog::load(&dir)
+            .get("claude-code-zh-cn")
+            .expect("catalogue entry claude-code-zh-cn")
+            .clone()
+    }
+
+    #[test]
+    fn iso_from_unix_matches_known_epochs() {
+        assert_eq!(iso_from_unix(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(iso_from_unix(1_767_225_600), "2026-01-01T00:00:00.000Z");
+    }
+
+    #[test]
+    fn manifest_sidecar_is_derived_and_idempotent() {
+        let d = tmpd("manifest");
+        std::fs::write(
+            d.join("manifest.json"),
+            json!({
+                "name": "demo", "version": "1.2.3", "description": "演示",
+                "author": "someone", "license": "MIT", "hooks": "hooks.json"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(d.join("hooks.json"), "{}").unwrap();
+        write_plugin_manifest(&d).unwrap();
+        let p = d.join(".claude-plugin").join("plugin.json");
+        let side: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert_eq!(side["name"], json!("demo"));
+        assert_eq!(side["author"]["name"], json!("someone"));
+        assert_eq!(side["hooks"], json!("./hooks.json"));
+        let first = std::fs::read_to_string(&p).unwrap();
+        write_plugin_manifest(&d).unwrap();
+        assert_eq!(first, std::fs::read_to_string(&p).unwrap(), "应幂等不重写");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn manifest_without_name_is_rejected() {
+        let d = tmpd("manifest-bad");
+        std::fs::write(d.join("manifest.json"), json!({ "version": "1" }).to_string()).unwrap();
+        assert!(write_plugin_manifest(&d).is_err(), "缺 name 必须拒绝");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn hooks_bare_command_gains_a_cmd_wrapper() {
+        let d = tmpd("hooks");
+        std::fs::create_dir_all(d.join("hooks")).unwrap();
+        std::fs::write(d.join("hooks").join("session-start.ps1"), "Write-Host hi").unwrap();
+        std::fs::write(
+            d.join("hooks.json"),
+            json!({
+                "hooks": { "SessionStart": [ { "matcher": "", "hooks": [
+                    { "type": "command",
+                      "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/session-start'",
+                      "async": false }
+                ] } ] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        rewrite_hooks_cmd(&d).unwrap();
+        let out: Value =
+            serde_json::from_str(&std::fs::read_to_string(d.join("hooks.json")).unwrap()).unwrap();
+        assert_eq!(
+            out["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            json!("'${CLAUDE_PLUGIN_ROOT}/hooks/session-start.cmd'")
+        );
+        let wrap_path = d.join("hooks").join("session-start.cmd");
+        assert!(wrap_path.is_file(), "应生成 .cmd 包装");
+        let wrap = std::fs::read_to_string(&wrap_path).unwrap();
+        assert!(wrap.contains("session-start.ps1"), "包装应指向 ps1：{wrap}");
+        let b1 = std::fs::read_to_string(d.join("hooks.json")).unwrap();
+        rewrite_hooks_cmd(&d).unwrap();
+        assert_eq!(b1, std::fs::read_to_string(d.join("hooks.json")).unwrap(), "应幂等");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn hooks_cmd_reference_is_left_alone() {
+        let d = tmpd("hooks-ok");
+        std::fs::create_dir_all(d.join("hooks")).unwrap();
+        std::fs::write(d.join("hooks").join("x.cmd"), "@echo off").unwrap();
+        std::fs::write(
+            d.join("hooks.json"),
+            json!({
+                "hooks": { "SessionStart": [ { "matcher": "", "hooks": [
+                    { "type": "command",
+                      "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/x.cmd'" }
+                ] } ] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let before = std::fs::read_to_string(d.join("hooks.json")).unwrap();
+        rewrite_hooks_cmd(&d).unwrap();
+        assert_eq!(before, std::fs::read_to_string(d.join("hooks.json")).unwrap());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn ps1_without_bom_gets_one_and_stays_idempotent() {
+        let d = tmpd("bom");
+        let f = d.join("a.ps1");
+        std::fs::write(&f, "Write-Output '中文'").unwrap();
+        ensure_ps1_bom(&d).unwrap();
+        let b1 = std::fs::read(&f).unwrap();
+        assert!(b1.starts_with(&[0xEF, 0xBB, 0xBF]), "无 BOM 应补 BOM");
+        ensure_ps1_bom(&d).unwrap();
+        let b2 = std::fs::read(&f).unwrap();
+        assert_eq!(b1, b2, "已有 BOM 不应重复添加");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn marketplace_manifest_created_and_preserved() {
+        let d = tmpd("mkt");
+        std::fs::create_dir_all(d.join("plugin")).unwrap();
+        std::fs::write(
+            d.join("plugin").join("manifest.json"),
+            json!({ "name": "demo", "version": "1.0.0", "description": "插件描述" }).to_string(),
+        )
+        .unwrap();
+        let entry = entry_stub();
+        write_marketplace_manifest(&d, &entry).unwrap();
+        let mp = d.join(".claude-plugin").join("marketplace.json");
+        let m: Value = serde_json::from_str(&std::fs::read_to_string(&mp).unwrap()).unwrap();
+        assert_eq!(m["name"], json!("zh-cn-local"));
+        assert_eq!(m["plugins"][0]["source"], json!("./plugin"));
+        assert_eq!(m["plugins"][0]["description"], json!("插件描述"));
+        // 已有合法清单：保留上游多余字段（幂等 = 不重写）
+        let mut m2 = m.clone();
+        m2["extra"] = json!("keep");
+        std::fs::write(&mp, m2.to_string()).unwrap();
+        write_marketplace_manifest(&d, &entry).unwrap();
+        let again: Value = serde_json::from_str(&std::fs::read_to_string(&mp).unwrap()).unwrap();
+        assert_eq!(again["extra"], json!("keep"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }
