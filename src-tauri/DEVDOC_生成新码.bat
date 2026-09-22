@@ -1,48 +1,60 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ================================================
-echo   Setup Center —— 生成新的激活码
+echo   Setup Center -- Generate New License Codes
 echo ================================================
 echo.
-echo   这一步会新增激活码，并追加到台账。
-echo   已有的记录不会被改动。
+echo   This adds new codes and appends them to the ledger.
+echo   Existing records are not touched.
 echo.
-echo   输入格式：  数量 类型
+echo   Format:   COUNT TIER
 echo.
-echo   例子：
-echo     200 pro     生成 200 个专业版码
-echo     100 free    生成 100 个免费版码
+echo   Examples:
+echo     200 pro     generate 200 pro codes
+echo     100 free    generate 100 free codes
 echo.
-echo   直接回车 = 取消
+echo   Press Enter alone = cancel
 echo.
-
-set /p ARGS=请输入（数量 类型）:
-
-if "%ARGS%"=="" (
-    echo.
-    echo 已取消，什么都没生成。
-    echo.
-    pause
-    exit /b 0
-)
-
-echo.
-echo --- 正在生成 ---
+echo   New plaintext pages go to D:\license-export\ (next to p01..p10),
+echo   NOT into this devkit folder.
 echo.
 
-issue.exe %ARGS%
+set /p ARGS=Enter (count tier):
+
+if not defined ARGS goto cancelled
+
+echo.
+echo --- Generating ---
+echo.
+
+rem Ledger = this folder (exe-adjacent, auto-detected)
+rem Plaintext export = two levels up, i.e. D:\license-export\
+rem   %~dp0 already ends with a backslash, so use ..\..
+rem --overwrite-export: overwrite the page number when run twice on the
+rem   same day, instead of stacking new codes into the same page
+issue.exe %ARGS% --export-dir "%~dp0..\.." --overwrite-export
 set RC=%ERRORLEVEL%
 
 echo.
-if %RC% NEQ 0 (
-    echo *** 生成失败（代码 %RC%）。上面的输出里应该有原因。***
-) else (
-    echo *** 生成成功。台账和导出文件都已更新。***
-    echo.
-    echo 用「查码.exe」可以查看新生成的码。
-)
+if %RC% NEQ 0 goto failed
 
+echo *** OK. Ledger and plaintext page are both updated. ***
+echo.
+echo Plaintext pages are in D:\license-export\, named like:
+echo     codes_export_YYYYMMDD_pNN.txt
+echo Use the lookup tool to find a code by serial number.
+goto finish
+
+:failed
+echo *** FAILED (exit code %RC%). ***
+echo The reason should be in the output above.
+goto finish
+
+:cancelled
+echo.
+echo Cancelled. Nothing was generated.
+
+:finish
 echo.
 pause

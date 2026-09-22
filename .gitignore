@@ -9,6 +9,11 @@ src-tauri/target/
 # regenerable artifacts. Deleted in the 0.1.1 closeout; ignored so a future
 # isolated build cannot be swept into history by `git add -A`.
 src-tauri/target-v3/
+# A second isolated target dir (CARGO_TARGET_DIR=target-verify) used when running
+# `cargo run --example ...` against a throwaway profile while another build holds
+# the default one. ~4 GB of regenerable artifacts, deleted after each use and
+# ignored so a leaked one cannot be added by `git add -A`.
+src-tauri/target-verify/
 src-tauri/gen/
 
 # Editor

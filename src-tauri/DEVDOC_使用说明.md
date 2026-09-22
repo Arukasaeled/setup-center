@@ -69,18 +69,51 @@
 
 ---
 
-## 记账（记录码的去向）
+## 记账（记录码的去向）—— 也就是"改变状态"
+
+每个码有三种状态：
+
+| 状态 | 什么意思 | 什么时候用 |
+|---|---|---|
+| `unused` | **未使用**（新码默认） | 刚生成，还没发出去 |
+| `activated` | **已激活** | 用户报"我激活了"，你记一笔 |
+| `revoked` | **已作废** | 这个码不发了（退货、发重了、泄露了） |
+
+> ⚠️ **改状态只是你自己的账本，不会影响用户那边。** 用户机器上的 `license.dat` 是离线存的，你把台账标成 `revoked`，用户照样能用。`revoked` 是**给你自己看的**（"这个码别再发"），不是远程吊销。
+
+### 最省事的方式：双击 `记账.bat`
+
+双击 → 输入数字 → 按提示填。菜单长这样：
+
+```
+  1  看全部记录      （等于 list）
+  2  只看统计        （等于 status）
+  3  验证一个码      （等于 verify）
+  4  记：已激活
+  5  记：退回未使用
+  6  记：作废
+```
+
+选 `4` 后它会依次问：编号 → 设备哈希（不知道就回车）→ 备注。
+
+### 或者敲命令
 
 ```
 .\license_admin.exe list                        看全部
 .\license_admin.exe status                      只看统计
 .\license_admin.exe verify SC-XXX-...           验证一个码真不真
-.\license_admin.exe mark 137 activated --note 张三       记：137 已激活，给张三
-.\license_admin.exe mark 137 unused                     记：137 退回未使用
-.\license_admin.exe mark 137 revoked                    记：137 作废
+.\license_admin.exe mark 137 activated --note 张三     137 已激活，给张三
+.\license_admin.exe mark 137 unused                    137 退回未使用
+.\license_admin.exe mark 137 revoked                   137 作废
 ```
 
+**编号写 `137` 或 `00137` 都行**，前面补零无所谓。
+
+**`activated` 会自动记下时间**；改成 `unused` 或 `revoked` 会把这个时间和设备哈希**清空**（免得作废的码看起来还在被使用）。
+
 `mark` 之前会自动备份台账为 `.bak`，改坏了能用备份还原。
+
+> **说明**：`license_admin.exe` 是命令行程序，**双击会一闪就关**。所以用 `记账.bat`，或者在这个文件夹开 PowerShell 敲命令。
 
 ---
 
@@ -91,20 +124,41 @@
 它们在：
 
 ```
-D:\license-export\codes_export_20260921.txt
+D:\license-export\codes_export_20260921_p01.txt   ← 第 1～50 个
+D:\license-export\codes_export_20260921_p02.txt   ← 第 51～100 个
+...
+D:\license-export\codes_export_20260921_p10.txt   ← 第 451～500 个
 ```
 
-`查码.exe` 会自动去找这个文件。如果你把它挪到别的地方，「查码.exe」就只看得到台账状态、看不到明文码了。
+**每 50 个码一个文件，一共 10 个。** 一页刚好一屏，发的时候不容易看串行。
 
-**建议**：这个导出文件定期备份到 U 盘或网盘。**它是唯一的明文来源** —— 台账里存的是哈希，哈希不可逆，删了这个文件就再也发不出码了。
+文件里的样子（`#` 开头是说明，不用管）：
+
+```
+# Setup Center activation codes — PRO — page 1
+# codes 001 – 050 of this batch
+#
+# id    code
+001 SC-AAAAA-11111-BBBBB-22222
+002 SC-CCCCC-33333-DDDDD-44444
+...
+050 SC-EEEEE-55555-FFFFF-66666
+```
+
+> 页码只是**分文件**用的，跟码本身没关系。以后想改成 100 个一页，已发出的码照样有效。
+
+`查码.exe` 会自动去找这些文件。如果你把它们挪到别的地方，「查码.exe」就只看得到台账状态、看不到明文码了。
+
+**建议**：这 10 个文件定期备份到 U 盘或网盘。**它们是唯一的明文来源** —— 台账里存的是哈希，哈希不可逆，删了就再也发不出码了。
 
 ---
 
 ## 三条铁律
 
 1. **别删 `license_inventory.csv`**。它是唯一记录。删了以后重新生成会从 `001` 开始，和已发出的码**编号撞车**。
-2. **别把 `codes_export_*.txt` 连同压缩包一起发给别人**。那是 500 个能直接激活的码。
-3. **`license_inventory.csv` 可以进 git，`codes_export_*.txt` 不行**（已经设好 gitignore 了，别手动加回去）。
+2. **别把 `codes_export_*_p*.txt` 连同压缩包一起发给别人**。那是明文码，能直接激活。
+3. **`license_inventory.csv` 可以进 git，`codes_export_*` 不行**（已经设好 gitignore 了，别手动加回去）。
+4. **别改程序里的密钥**。改了以后所有已发出的码当场全部作废。要加新类型的码，跟我说，不要自己动。
 
 ---
 

@@ -45,8 +45,37 @@ if (-not $SkipBuild) {
 }
 
 Step "Assembling DevKit -> $DevKit"
-if (Test-Path $DevKit) { Remove-Item $DevKit -Recurse -Force }
+# What this script itself produces. Anything in $DevKit outside this set was put
+# there by hand and cannot be regenerated — the ledger's pre-mark .bak (the
+# documented restore path) and the *.utf8bak encoding backups. Wiping the folder
+# silently destroyed them, so they are lifted out first and put back after.
+$scriptOwns = @(
+    'issue.exe', 'license_admin.exe', '查码.exe',
+    'license_inventory.csv', '使用说明.md', '生成新码.bat', '记账.bat'
+)
+$preserved = @()
+if (Test-Path $DevKit) {
+    $keepDir = Join-Path ([System.IO.Path]::GetTempPath()) ("devkit-keep-" + [System.IO.Path]::GetRandomFileName())
+    New-Item -ItemType Directory -Path $keepDir -Force | Out-Null
+    foreach ($f in Get-ChildItem $DevKit -Recurse -File) {
+        if ($f.Name -notin $scriptOwns) {
+            $relPath = $f.FullName.Substring($DevKit.Length).TrimStart('\')
+            $dest = Join-Path $keepDir $relPath
+            New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
+            Copy-Item $f.FullName $dest -Force
+            $preserved += $relPath
+        }
+    }
+    if ($preserved) { Ok "preserved $($preserved.Count) hand-made file(s): $($preserved -join ', ')" }
+    Remove-Item $DevKit -Recurse -Force
+}
 New-Item -ItemType Directory -Path $DevKit -Force | Out-Null
+if ($preserved) {
+    foreach ($relPath in $preserved) {
+        Copy-Item (Join-Path $keepDir $relPath) (Join-Path $DevKit $relPath) -Force
+    }
+    Remove-Item $keepDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $rel = Join-Path $SrcTauri 'target\release\examples'
 $map = @{
@@ -97,15 +126,24 @@ if ($exports.Count -eq 0) {
 
 Step 'Guardrail: DevKit must contain no plaintext codes'
 $codes = @()
-$latest = Get-ChildItem $ExportDir -Filter 'codes_export_*.txt' -File -ErrorAction SilentlyContinue |
-    Sort-Object Name | Select-Object -Last 1
-if ($latest) {
-    $codes = Get-Content $latest.FullName |
-        Where-Object { $_ -match 'SC-' } |
-        ForEach-Object { ($_ -split '\s+')[-1].Trim() } |
-        Where-Object { $_ -like 'SC-*' } |
-        Select-Object -Unique
-    Ok "sample pool: $($codes.Count) plaintext codes from $($latest.Name)"
+# Every page, not just the newest one. The earlier version took
+# `Sort-Object Name | Select-Object -Last 1` — which is page 10 of a paged
+# export, so codes 1-450 were invisible to this check. That is not a theoretical
+# gap: it passed while 使用说明.md was shipping real codes 001 and 002, because
+# those live on page 1. A guardrail that samples 50 of 500 codes is a guardrail
+# that reports "clean" over a live leak.
+$exportPages = Get-ChildItem $ExportDir -Filter 'codes_export_*.txt' -File -ErrorAction SilentlyContinue |
+    Sort-Object Name
+$latest = $exportPages | Select-Object -Last 1
+if ($exportPages) {
+    $codes = foreach ($page in $exportPages) {
+        Get-Content $page.FullName |
+            Where-Object { $_ -match 'SC-' } |
+            ForEach-Object { ($_ -split '\s+')[-1].Trim() } |
+            Where-Object { $_ -like 'SC-*' }
+    }
+    $codes = $codes | Select-Object -Unique
+    Ok "sample pool: $($codes.Count) plaintext codes across $($exportPages.Count) page(s)"
 }
 
 $leaks = 0

@@ -1,22 +1,21 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ================================================
-echo   Setup Center —— 台账记账
+echo   Setup Center -- License Ledger
 echo ================================================
 echo.
-echo   1  看全部记录      （等于 list）
-echo   2  只看统计        （等于 status）
-echo   3  验证一个码      （等于 verify）
-echo   4  记：已激活
-echo   5  记：退回未使用
-echo   6  记：作废
+echo   1  List all records      (list)
+echo   2  Statistics only       (status)
+echo   3  Verify one code       (verify)
+echo   4  Mark: ACTIVATED
+echo   5  Mark: back to UNUSED
+echo   6  Mark: REVOKED
 echo.
-echo   0  退出
+echo   0  Exit
 echo.
 
-set /p CHOICE=请输入数字:
+set /p CHOICE=Choose a number:
 
 if "%CHOICE%"=="1" goto list
 if "%CHOICE%"=="2" goto status
@@ -24,8 +23,10 @@ if "%CHOICE%"=="3" goto verify
 if "%CHOICE%"=="4" goto mark_activated
 if "%CHOICE%"=="5" goto mark_unused
 if "%CHOICE%"=="6" goto mark_revoked
+if not defined CHOICE goto bad
 if "%CHOICE%"=="0" exit /b 0
-echo 没看懂，重新双击一次吧。
+:bad
+echo Not understood. Please run this file again.
 pause
 exit /b 1
 
@@ -39,46 +40,47 @@ goto done
 
 :verify
 echo.
-echo 把要验证的激活码整串粘进来（形如 SC-ABCDE-23456-FGHJK-VWXYZ）
+echo Paste the whole license code (like SC-ABCDE-23456-FGHJK-VWXYZ)
 echo.
-set /p CODE=激活码:
-if "%CODE%"=="" goto done
+set /p CODE=Code:
+if not defined CODE goto done
 echo.
 license_admin.exe verify %CODE%
 goto done
 
 :mark_activated
 echo.
-set /p ID=编号（例如 137）:
-if "%ID%"=="" goto done
-set /p DEV=对方设备哈希（不知道就直接回车）:
-set /p NOTE=备注，比如发给谁（可留空）:
+set /p ID=Serial number (e.g. 137):
+if not defined ID goto done
+set /p DEV=Device hash of the other machine (press Enter if unknown):
+set /p NOTE=Note, e.g. who you gave it to (can be empty):
 echo.
-if "%DEV%"=="" (
-    license_admin.exe mark %ID% activated "" --note "%NOTE%"
-) else (
-    license_admin.exe mark %ID% activated %DEV% --note "%NOTE%"
-)
+if not defined DEV goto act_nodev
+license_admin.exe mark %ID% activated %DEV% --note "%NOTE%"
+goto done
+
+:act_nodev
+license_admin.exe mark %ID% activated "" --note "%NOTE%"
 goto done
 
 :mark_unused
 echo.
-set /p ID=编号（例如 137）:
-if "%ID%"=="" goto done
+set /p ID=Serial number (e.g. 137):
+if not defined ID goto done
 echo.
 license_admin.exe mark %ID% unused
 goto done
 
 :mark_revoked
 echo.
-set /p ID=编号（例如 137）:
-if "%ID%"=="" goto done
+set /p ID=Serial number (e.g. 137):
+if not defined ID goto done
 echo.
 license_admin.exe mark %ID% revoked
 goto done
 
 :done
 echo.
-echo --- 完成 ---
+echo --- Done ---
 echo.
 pause
