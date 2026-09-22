@@ -206,6 +206,14 @@ export function PluginsSection() {
                 <span className="rounded-full border border-[color:var(--line-default)] px-2 py-[2px] text-[10.5px] text-[color:var(--text-quiet)]">
                   {v.category}
                 </span>
+                {v.free && (
+                  <span
+                    className="rounded-full border border-[color:var(--line-default)] px-2 py-[2px] text-[10.5px] text-[color:var(--text-quiet)]"
+                    data-testid={`plugin-free-${v.id}`}
+                  >
+                    免费
+                  </span>
+                )}
                 <span className="rounded-full border border-[color:var(--line-default)] px-2 py-[2px] text-[10.5px] text-[color:var(--text-quiet)]">
                   风险{RISK_LABEL[v.riskLevel] ?? v.riskLevel}
                 </span>

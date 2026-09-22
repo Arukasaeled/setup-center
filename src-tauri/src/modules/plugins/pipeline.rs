@@ -214,7 +214,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
 
     // --- 6. backup（失败即中止，绝不带伤安装）------------------------------
     let backup_dir = backup_dir_for(entry, target, version.as_deref());
-    match take_backup(entry, target, &src, &backup_dir) {
+    match take_backup(entry, target, &src, &backup_dir, version.as_deref()) {
         Ok(files) => stages.push(StageOutcome::ok(
             "backup",
             "备份",
@@ -390,14 +390,72 @@ fn check_source(dir: &Path) -> Result<String, String> {
     Ok(format!("{}（MIT，已核对）", dir.display()))
 }
 
+/// Claude Desktop **实际生效**的 resources 目录。
+///
+/// Squirrel 有两种布局：经典布局把 `app.asar` 放根 `resources\`，更新布局放
+/// `app-<版本>\resources\`（本机 2.2553.1 = `app-2.2553\resources\`，根
+/// `resources\` 是**空的**）。probe 的 `is_localized` 早就做了这个回退，但
+/// backup/verify 曾写死根目录 —— 在本机导致"备了空清单 + 验证必失败"。
+/// 三处必须共用这一个判据，否则同一台机器上探测说"已汉化"、验证说"没生效"。
+fn active_desktop_resources(version: Option<&str>) -> Option<PathBuf> {
+    let root = claude_desktop_root()?;
+    // 1. 经典布局：根 resources 自己就有 app.asar。
+    let root_res = root.join("resources");
+    if root_res.join("app.asar").is_file() {
+        return Some(root_res);
+    }
+    // 2. Squirrel 布局：目录名与 claude.exe 的 ProductVersion 一致。
+    if let Some(v) = version {
+        let p = root.join(format!("app-{v}")).join("resources");
+        if p.join("app.asar").is_file() {
+            return Some(p);
+        }
+    }
+    // 3. 版本读不到时：挑最新的、带 app.asar 的 app-*\resources。
+    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+    if let Ok(rd) = std::fs::read_dir(&root) {
+        for e in rd.flatten() {
+            let p = e.path().join("resources");
+            if p.join("app.asar").is_file() {
+                let mt = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                if best.as_ref().map(|(t, _)| mt > *t).unwrap_or(true) {
+                    best = Some((mt, p));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// 上游 transcript 是否已出现成功句 `安装完成`。
+///
+/// ps1 用 `Start-Transcript` 把它写进 stage 根的 `install-windows.log`，
+/// 只有 [8/8] 全部成功才会出现（失败走 catch → throw，不会有这句）。
+/// 实测日志带 UTF-8 BOM（`EF BB BF`），先剥再匹配；读失败按"还没完成"处理，
+/// 由轮询继续。
+fn log_says_installed(p: &std::path::Path) -> bool {
+    let Ok(bytes) = std::fs::read(p) else {
+        return false;
+    };
+    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+    String::from_utf8_lossy(body).contains("安装完成")
+}
+
 /// 需要备份的文件 —— **按插件声明，不按猜测**。
-fn backup_targets(entry: &PluginEntry, _target: PluginTarget, src: &Path) -> Vec<PathBuf> {
+fn backup_targets(
+    entry: &PluginEntry,
+    _target: PluginTarget,
+    src: &Path,
+    version: Option<&str>,
+) -> Vec<PathBuf> {
     match entry.installer.as_str() {
-        // Desktop：上游只改 `resources` 下的语言资源与 `app.asar`。
+        // Desktop：上游只改**生效的** resources 目录下的语言资源与 `app.asar`。
         "external-windows-bat" => {
             let mut out = Vec::new();
-            if let Some(root) = claude_desktop_root() {
-                let res = root.join("resources");
+            if let Some(res) = active_desktop_resources(version) {
                 for name in ["app.asar", "zh-CN.json", "en-US.json"] {
                     let p = res.join(name);
                     if p.is_file() {
@@ -443,8 +501,9 @@ fn take_backup(
     target: PluginTarget,
     src: &Path,
     dest: &Path,
+    version: Option<&str>,
 ) -> Result<Vec<PathBuf>, String> {
-    let targets = backup_targets(entry, target, src);
+    let targets = backup_targets(entry, target, src, version);
     if targets.is_empty() {
         // 没有既有文件 = 全新安装，写入的都是新文件，回滚只需删除它们。
         std::fs::create_dir_all(dest).map_err(|e| format!("创建备份目录失败：{e}"))?;
@@ -527,7 +586,7 @@ fn apply(
     entry: &PluginEntry,
     target: PluginTarget,
     src: &Path,
-    _version: Option<&str>,
+    version: Option<&str>,
     layers: &[CodeLayer],
 ) -> Result<Vec<String>, String> {
     match (entry.installer.as_str(), target) {
@@ -540,11 +599,76 @@ fn apply(
             if !bat.is_file() {
                 return Err(format!("上游缺少 install-windows.bat：{}", src.display()));
             }
-            Err(format!(
-                "需要交互式 UAC 授权（上游 {} 要求提权）。Setup Center 不代为静默提权，\
-                 请在授权窗口中完成；完成后用「验证」确认结果。",
-                entry.name
-            ))
+            // 上一次运行的 transcript 必须先删：否则它还含着旧的"安装完成"，
+            // 新安装尚未跑完就会被轮询读到，形成假通过（stage 目录名是固定的）。
+            let install_log = std::env::temp_dir()
+                .join("ClaudeDesktopZhCnInstaller")
+                .join("install-windows.log");
+            let _ = std::fs::remove_file(&install_log);
+            // 启动上游安装器：交互窗口与 UAC 都由上游脚本自己弹（`Start-Process
+            // -Verb RunAs`），我们不静默提权 —— 这才是"不静默提权"的真实形态。
+            // 旧行为是无条件 Err("请在授权窗口中完成")却从不打开任何窗口：文案承诺
+            // 了一个不存在的窗口，用户只能对着空气等待。窗口必须由这一行真实打开。
+            // 这里刻意**不加** CREATE_NO_WINDOW：交互式安装的进度窗口就是给用户看的。
+            let mut child = Command::new("cmd")
+                .arg("/C")
+                .arg(&bat)
+                .spawn()
+                .map_err(|e| format!("启动上游安装器失败：{e}"))?;
+
+            // 第一段：等 bat 自己退出。bat 在 UAC 被答复后才返回（Start-Process
+            // -Verb RunAs 会阻塞在提权对话框上），所以退出码直接反映 UAC 结果。
+            // 超时说明它卡在 `pause`（错误分支）或别的等待上 —— 不能无限期挂住
+            // 整条管线，到点杀掉并如实报告。
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+            let code = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status.code(),
+                    Ok(None) if std::time::Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(
+                            "上游安装器 180 秒内未退出（可能在等待按键或 UAC 未被答复）。\
+                             请在它的窗口里完成操作后，点「验证」复查。"
+                                .into(),
+                        );
+                    }
+                    Err(e) => return Err(format!("等待上游安装器失败：{e}")),
+                }
+            };
+            if code != Some(0) {
+                return Err(format!(
+                    "上游安装器退出码 {code:?}（通常是 UAC 被取消）。\
+                     可点「验证」查看实际结果，再决定是否重试。"
+                ));
+            }
+
+            // 第二段：bat 派生的**提权副本是异步的**（bat 自己 exit 0 不代表安装
+            // 完成），所以上游 transcript 的成功句才是完成信号。拿
+            // `.zh-cn-backups` 当证据是错的：备份目录在**备份段**就已创建，
+            // 会把"刚备份完、补丁还没打"误判成装完。
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            loop {
+                if log_says_installed(&install_log) {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(
+                        "上游提权副本 120 秒内未在 install-windows.log 中留下成功句\
+                         `安装完成`（可能仍在安装或 UAC 被取消）。请点「验证」复查实际结果。"
+                            .into(),
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+
+            let touched = active_desktop_resources(version)
+                .map(|r| r.display().to_string())
+                .unwrap_or_else(|| bat.display().to_string());
+            Ok(vec![touched])
         }
         // Claude Code Layer 1–3：写用户配置，不需要管理员，也不碰二进制。
         ("claude-code-layers", PluginTarget::ClaudeCode) => {
@@ -609,7 +733,7 @@ fn apply(
 }
 
 /// 安装后验证：检查**预期状态**，而不是检查"文件存在"。
-fn verify(entry: &PluginEntry, target: PluginTarget, _version: Option<&str>) -> StageOutcome {
+fn verify(entry: &PluginEntry, target: PluginTarget, version: Option<&str>) -> StageOutcome {
     match (entry.installer.as_str(), target) {
         ("claude-code-layers", PluginTarget::ClaudeCode) => {
             let home = match claude_home() {
@@ -637,9 +761,10 @@ fn verify(entry: &PluginEntry, target: PluginTarget, _version: Option<&str>) -> 
             }
         }
         ("external-windows-bat", PluginTarget::ClaudeDesktop) => {
-            // 上游打完补丁会留下它自己的备份目录 —— 那是"确实跑过"的证据。
-            match claude_desktop_root() {
-                Some(root) if root.join("resources").join(".zh-cn-backups").exists() => {
+            // 与 probe 的 is_localized、backup_targets 共用**生效目录**判据：
+            // 写死根 resources 会让 app-<v> 布局的机器"验证必失败"。
+            match active_desktop_resources(version) {
+                Some(res) if res.join(".zh-cn-backups").exists() => {
                     StageOutcome::ok("verify", "验证", "检测到上游备份目录，补丁已应用。")
                 }
                 Some(_) => StageOutcome::fail(
