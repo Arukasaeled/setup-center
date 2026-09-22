@@ -356,6 +356,22 @@ export function PluginsSection() {
                 >
                   {v.active ? "重新安装" : "安装"}
                 </Button>
+                {/* 接管：目标已中文化但没有我方状态记录（例如绕过本工具的外部
+                    安装）。零写入动作，因此不受 blockedReason（版本未验证等）
+                    约束 —— 那些闸保护的是补丁写入，这里一个字节都不改。 */}
+                {!v.active &&
+                  v.verifySupported &&
+                  targets.find((t) => t.target === v.resolvedTarget)?.localized && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => void act(v.id, "adopt")}
+                      data-testid={`plugin-adopt-${v.id}`}
+                    >
+                      接管登记
+                    </Button>
+                  )}
                 {v.active && v.verifySupported && (
                   <Button
                     variant="ghost"

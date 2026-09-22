@@ -371,3 +371,64 @@ fn data_roots_share_the_license_directory() {
     assert_eq!(backup_root(), root.join("plugin-backups"));
     assert_eq!(state_path(), root.join("plugin-state.json"));
 }
+
+// ---------------------------------------------------------------------------
+// 端到端（真实机器状态）—— 默认 ignore，只在人工确认后显式执行
+// ---------------------------------------------------------------------------
+
+/// 真实安装 Claude Code 汉化到 %USERPROFILE%\.claude：
+/// install 必须成功 → verify 必须通过 → settings.json **只加不覆盖**
+/// （安装前已有的键一个都不能少，本机 settings 里可能有第三方 token）。
+#[test]
+#[ignore = "E2E：真实写入 %USERPROFILE%\\.claude，仅人工触发"]
+fn e2e_claude_code_install_verify_no_lost_keys() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
+    let catalog = PluginCatalog::load(&dir);
+    let entry = catalog.get("claude-code-zh-cn").expect("catalogue entry claude-code-zh-cn");
+    let home = std::env::var("USERPROFILE").expect("USERPROFILE");
+    let settings = PathBuf::from(home).join(".claude").join("settings.json");
+    let before: serde_json::Value = std::fs::read_to_string(&settings)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| json!({}));
+
+    let opts = pipeline::RunOptions { allow_unverified: true, ..Default::default() };
+    let dry = pipeline::run(entry, RunMode::DryRun, &opts);
+    assert!(!dry.stages.is_empty(), "dryRun 至少要有 detect/version 阶段");
+
+    let run = pipeline::run(entry, RunMode::Install, &opts);
+    assert_eq!(run.status, RunStatus::Succeeded, "install 被拒：{} | stages={:?}", run.reason, run.stages);
+
+    let ver = pipeline::run(entry, RunMode::Verify, &opts);
+    assert_eq!(ver.status, RunStatus::Succeeded, "verify 失败：{} | stages={:?}", ver.reason, ver.stages);
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings).expect("settings 读回"))
+            .expect("settings 仍是合法 JSON");
+    let b = before.as_object().expect("安装前 settings 应是对象");
+    for k in b.keys() {
+        assert!(after.get(k).is_some(), "深合并丢失了安装前的键：{k}");
+    }
+    let text = after.to_string().to_lowercase();
+    assert!(
+        text.contains("\"language\"") && text.contains("chinese"),
+        "settings 未写入 language: Chinese"
+    );
+}
+
+/// 接管：本机 Claude Desktop 已被外部安装器汉化、无我方状态记录 →
+/// Adopt 必须验证通过并登记；重复 Adopt 幂等（记录不重复堆积）。
+#[test]
+#[ignore = "E2E：依赖本机已汉化的 Claude Desktop，写 Setup Center 状态记录"]
+fn e2e_adopt_desktop_records_state() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
+    let catalog = PluginCatalog::load(&dir);
+    let entry = catalog.get("claude-desktop-zh-cn").expect("catalogue entry claude-desktop-zh-cn");
+    let opts = pipeline::RunOptions::default();
+    let run = pipeline::run(entry, RunMode::Adopt, &opts);
+    assert_eq!(run.status, RunStatus::Succeeded, "adopt 被拒：{} | stages={:?}", run.reason, run.stages);
+    let again = pipeline::run(entry, RunMode::Adopt, &opts);
+    assert_eq!(again.status, RunStatus::Succeeded, "第二次 adopt 应幂等成功：{}", again.reason);
+    let ver = pipeline::run(entry, RunMode::Verify, &opts);
+    assert_eq!(ver.status, RunStatus::Succeeded, "接管后 verify 应通过：{}", ver.reason);
+}

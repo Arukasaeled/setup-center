@@ -395,7 +395,7 @@ pub struct PluginView {
 #[serde(rename_all = "camelCase")]
 pub struct StageOutcome {
     /// 稳定键，UI 用它做 testid：`detect` / `version` / `compat` /
-    /// `conflict` / `backup` / `apply` / `verify` / `rollback`。
+    /// `conflict` / `backup` / `apply` / `verify` / `rollback` / `adopt`。
     pub key: String,
     pub label: String,
     /// `ok` | `warn` | `fail` | `skipped`。
@@ -426,6 +426,12 @@ pub enum RunMode {
     Install,
     Verify,
     Rollback,
+    /// 接管既有安装：复用 `verify()` 判定已存在的汉化状态，只写**我们自己的**
+    /// 状态记录 —— 不碰 Claude 文件、不执行上游脚本、不弹 UAC。因此它不经过
+    /// 面向补丁写入的 compat 硬闸：那个闸保护的是别人的目标文件，而这里一个
+    /// 字节都不改。存在理由：绕过 Setup Center 装好的汉化没有状态记录，UI 会
+    /// 误报"未安装"，验证按钮也因此不出现。
+    Adopt,
 }
 
 /// 一次运行的终局。

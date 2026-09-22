@@ -1669,7 +1669,8 @@ pub async fn plugin_targets() -> Vec<plugins::TargetState> {
     plugins::pipeline::targets()
 }
 
-/// Runs one pipeline invocation (`dryRun` | `install` | `verify` | `rollback`)
+/// Runs one pipeline invocation
+/// (`dryRun` | `install` | `verify` | `rollback` | `adopt`)
 /// and returns the complete stage record.
 ///
 /// `mode` arrives as a string because that is what the button knows, and is
@@ -1689,6 +1690,7 @@ pub async fn run_plugin(
         "install" => plugins::RunMode::Install,
         "verify" => plugins::RunMode::Verify,
         "rollback" => plugins::RunMode::Rollback,
+        "adopt" => plugins::RunMode::Adopt,
         other => return Err(AppError::Internal(format!("unknown plugin run mode: {other}"))),
     };
     let entry = state

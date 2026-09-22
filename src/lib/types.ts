@@ -1106,7 +1106,7 @@ export type EvidenceStage =
 
 export type CodeLayer = "plugin" | "hook" | "config" | "cliPatch";
 
-export type PluginRunMode = "dryRun" | "install" | "verify" | "rollback";
+export type PluginRunMode = "dryRun" | "install" | "verify" | "rollback" | "adopt";
 
 export type PluginRunStatus = "succeeded" | "refused" | "failed";
 

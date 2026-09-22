@@ -132,6 +132,47 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
         ),
     });
 
+    // --- 接管（Adopt）：把"别人装好的汉化"登记成我们的状态 ----------------
+    // 只做两件事：复用 verify() 判定既有状态、写一条状态记录。**跳过
+    // compat / source / backup / apply 全部写入段** —— 它不改 Claude 任何
+    // 文件、不弹 UAC、不执行上游脚本，所以也不该被"版本未验证"这类面向
+    // 补丁的闸拦住（那个闸保护的是别人的目标文件）。
+    if mode == RunMode::Adopt {
+        let v = verify(entry, target, version.as_deref());
+        let passed = v.status == "ok";
+        stages.push(v);
+        if !passed {
+            return refuse(
+                entry,
+                mode,
+                stages,
+                modified,
+                target,
+                "未检测到可接管的汉化状态（验证未通过），未写入任何记录。",
+            );
+        }
+        if let Err(e) = record(entry, target, version.as_deref(), None, &[], &default_layers(entry)) {
+            stages.push(StageOutcome::fail("adopt", "接管登记", e.clone()));
+            return refuse(entry, mode, stages, modified, target, &e);
+        }
+        stages.push(StageOutcome::ok(
+            "adopt",
+            "接管登记",
+            "已登记现有汉化状态；本次未修改任何 Claude 文件。",
+        ));
+        return PluginRun {
+            plugin_id: entry.id.clone(),
+            mode,
+            status: RunStatus::Succeeded,
+            reason: "已接管现有安装：仅登记状态，可在卡片上使用「验证」。".into(),
+            stages,
+            modified,
+            backup: existing_backup(entry, target, version.as_deref()),
+            restored: false,
+            offer_retry: false,
+        };
+    }
+
     // --- 3. compat -------------------------------------------------------
     let (compat_status, compat_reason) =
         compat::evaluate(entry.range_for(target), target, state.installed, version.as_deref());
@@ -141,23 +182,21 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
         StageOutcome::warn("compat", "检测兼容性", compat_reason.clone())
     });
 
-    // 未验证 → 默认拒绝。这是全管线唯一一处"不写任何字节就返回"的硬闸。
-    if !compat_status.allows_install() && !(opts.allow_unverified && mode == RunMode::Install) {
-        let detail = if opts.allow_unverified {
-            format!("已放行未验证版本，但当前模式为 {mode:?}，不做写入。")
-        } else {
-            format!("{compat_reason}（未确认风险，已停止；原文件未修改。）")
-        };
-        let _ = detail;
+    // 未验证 → **只拦要写入的安装**。这是全管线唯一一处"不写任何字节就返回"
+    // 的硬闸（brief 第六条：未验证版本绝不直接强制 patch），所以它的射程也
+    // 必须只覆盖写入：预览 / 验证 / 回滚不改目标文件（回滚还是恢复自己的
+    // 备份），拦它们只会让已放行安装的用户既验不了也回不去。真机实测：本机
+    // Claude Code 2.1.278 高于上游冻结的 2.1.153、Desktop 上游干脆不发布
+    // 版本清单 —— 旧闸（拒绝一切非 Install 模式）让"验证"按钮在几乎所有
+    // 真实机器上必然拒绝，免费服务的验证功能形同虚设。compat 的 warn 阶段
+    // 已在上面无条件推送，未验证的事实用户始终看得见。
+    if mode == RunMode::Install && !compat_status.allows_install() && !opts.allow_unverified {
         stages.push(StageOutcome::skipped(
             "conflict",
             "检查冲突",
             "兼容性未通过，未进入后续阶段。",
         ));
         return refuse(entry, mode, stages, modified, target, "版本未验证");
-    }
-    if compat_status.allows_install() {
-        // fallthrough
     }
 
     // --- 4. conflict -----------------------------------------------------
@@ -296,7 +335,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
     }
 
     // 记录"针对哪个版本安装"——第七条的版本漂移检测靠它。
-    if let Err(e) = record(entry, target, version.as_deref(), &backup_dir, &modified, &layers) {
+    if let Err(e) = record(entry, target, version.as_deref(), Some(&backup_dir), &modified, &layers) {
         stages.push(StageOutcome::warn(
             "state",
             "记录状态",
@@ -946,7 +985,7 @@ fn record(
     entry: &PluginEntry,
     target: PluginTarget,
     version: Option<&str>,
-    backup: &Path,
+    backup: Option<&Path>,
     modified: &[String],
     layers: &[CodeLayer],
 ) -> Result<(), String> {
@@ -957,7 +996,9 @@ fn record(
         target,
         claude_version: version.unwrap_or("unknown").into(),
         installed_at: now_stamp(),
-        backup: Some(backup.display().to_string()),
+        // `None` = 接管登记（Adopt）：没有我方备份就不能记成有，否则
+        // `views.backup` 会亮出一个点了必失败的回滚按钮。
+        backup: backup.map(|p| p.display().to_string()),
         modified: modified.to_vec(),
         layers: layers.to_vec(),
     });
