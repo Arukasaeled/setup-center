@@ -35,6 +35,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Button, SectionLabel } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { selectedProfile, useApp } from "../lib/store";
 import type {
   BootstrapSessionView,
@@ -100,9 +101,7 @@ export function BootstrapScreen() {
     return (
       <div className="flex h-full flex-col items-center justify-center px-10">
         <p className="text-[color:var(--text-tertiary)] text-[14px]">还没有生成配置方案</p>
-        <Button variant="ghost" className="mt-4" onClick={() => goTo("choose")}>
-          返回选择方案
-        </Button>
+        <BackButton className="mt-4" label="返回选择方案" />
       </div>
     );
   }
@@ -213,9 +212,7 @@ export function BootstrapScreen() {
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
         <div className="flex items-center gap-2">
-          <Button variant="quiet" onClick={() => goTo("install")} disabled={bootstrapping}>
-            返回安装
-          </Button>
+          <BackButton disabled={bootstrapping} label="返回安装" />
           {bootstrapping && (
             <Button variant="ghost" onClick={() => void cancelBootstrap()}>
               取消

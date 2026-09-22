@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, SectionLabel, ScoreReadout, StatusMark } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { useApp } from "../lib/store";
 import type { Signal } from "../lib/types";
 
@@ -121,9 +122,7 @@ export function DetectScreen() {
       </div>
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        <Button variant="quiet" onClick={() => goTo("welcome")}>
-          返回
-        </Button>
+        <BackButton />
         <div className="flex items-center gap-3">
           {environment && (
             <Button variant="quiet" onClick={() => void runDetection()}>

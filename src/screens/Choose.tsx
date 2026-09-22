@@ -15,6 +15,7 @@
 import { useEffect } from "react";
 import clsx from "clsx";
 import { Button, Hint, SectionLabel } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { useApp } from "../lib/store";
 import { describeSoftware } from "../lib/software";
 import type { Profile, SoftwareDescriptor } from "../lib/types";
@@ -86,9 +87,7 @@ export function ChooseScreen() {
       </div>
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        <Button variant="quiet" onClick={() => goTo("software")}>
-          返回
-        </Button>
+        <BackButton />
         <Button
           disabled={!selectedProfileId || planLoading}
           onClick={() => void next()}

@@ -171,6 +171,20 @@ pub enum StrategySource {
     Command(&'static str),
 }
 
+impl StrategySource {
+    /// The winget package id, if this strategy uses winget at all.
+    ///
+    /// The id a strategy would actually hand to winget. Exists so a test can
+    /// assert *which package* an entry installs without matching on the enum
+    /// shape — which is what makes the ChatGPT regression testable.
+    pub fn winget_package_id(&self) -> Option<&'static str> {
+        match self {
+            StrategySource::Winget(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
 impl CatalogEntry {
     /// winget package ids.
     pub fn winget_ids(&self) -> Vec<String> {
@@ -562,19 +576,26 @@ fn entries() -> Vec<CatalogEntry> {
                 // Codex was installed. The icon-path requirement below rejects
                 // that case; enabling `registry_provider`'s install-location rule
                 // makes the check structural rather than name-based.
-                NamePattern::Exact("ChatGPT"),
                 NamePattern::Exact("Codex"),
                 NamePattern::Prefix("OpenAI Codex"),
             ],
             executables: &["codex.cmd", "codex.exe"],
             install_roots: &["Programs\\codex"],
-            // A display name is not an identity: several unrelated things call
-            // themselves "ChatGPT", and the only reliable discriminator is where
-            // the vendor actually installs. A Chrome "install as web app"
-            // shortcut for chatgpt.com registers under exactly that name with a
-            // `DisplayIcon` under the browser's profile directory, which is the
-            // false positive these markers reject.
-            location_markers: &["\\Programs\\", "\\WindowsApps\\", "\\OpenAI\\"],
+            // **Not** `\WindowsApps\` and **not** `Exact("ChatGPT")` any more.
+            //
+            // This entry used to claim both, on the belief that Codex ships as
+            // an MSIX inside the ChatGPT product. It does not: `winget`'s
+            // `OpenAI.Codex` is Codex **CLI** (Apache-2.0, `github.com/openai/codex`,
+            // installed via npm), while the Appx named `OpenAI.Codex` under
+            // `WindowsApps\` is **ChatGPT Desktop**. Keeping the old markers made
+            // both entries match the same registry row, so ChatGPT Desktop was
+            // reported as Codex CLI *and* as itself. `the_three_chatgpt_lookalikes_stay_distinct`
+            // fails if that overlap returns.
+            //
+            // What remains is the location a real CLI installs to. The Chrome
+            // "install as web app" false positive is still rejected: its icon
+            // lives under the browser profile, which matches nothing here.
+            location_markers: &["\\Programs\\", "\\OpenAI\\"],
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
@@ -620,28 +641,102 @@ fn entries() -> Vec<CatalogEntry> {
         // -------------------------------------------------------------------
         CatalogEntry {
             id: SoftwareId::ChatgptDesktop,
-            winget_ids: &["OpenAI.ChatGPT"],
+            // **Intentionally empty.** Read this before "fixing" it with an id.
+            //
+            // These ids are matched against the **ID column of `winget list`**
+            // (`inventory.rs:271`), and only fall back to the display-name column
+            // (`:277`) when every id misses. So an id is useful here only if
+            // `winget list` actually prints it.
+            //
+            // Neither candidate does. Measured on a machine with the Store app
+            // installed, the three rows matching `ChatGPT` report:
+            //
+            //   ARP\User\X64\4f20b4cc28466082b25e640be9dfc8c6          1.0        ← web-app shim
+            //   MSIX\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0     26.915...  ← the real app
+            //   ARP\User\X64\ChatGPT账号工具                             2.2.33     ← unrelated tool
+            //
+            // * `OpenAI.ChatGPT` (the original value) does not exist at all —
+            //   `winget search` exits 0x8A150014.
+            // * `9PLM9XGG6VKS` is the Store *product* id, which `winget list`
+            //   never prints: the installed MSIX reports its package-family name
+            //   `MSIX\OpenAI.Codex_…` instead. Putting it here would be a no-op
+            //   dressed as a fix — it could never match.
+            //
+            // So the honest value is the empty list, and detection runs on the
+            // name + `location_markers` path, which is what genuinely works today.
+            // `chatgpt_desktop_declares_no_winget_id_and_that_is_deliberate` and
+            // `the_three_chatgpt_lookalikes_stay_distinct` pin the consequence so
+            // a future reader does not rediscover this.
+            winget_ids: &[],
             name_patterns: &[
                 NamePattern::Exact("ChatGPT"),
                 NamePattern::Prefix("ChatGPT Desktop"),
             ],
             executables: &["ChatGPT.exe"],
-            install_roots: &["Programs\\ChatGPT", "WindowsApps"],
-            // The message-store identity check from `Codex`: several unrelated
-            // things call themselves "ChatGPT" (a Chrome "install as web app"
-            // shortcut registers under exactly that name), and the vendor's
-            // install location is the only reliable discriminator.
-            location_markers: &["\\Programs\\", "\\WindowsApps\\", "\\OpenAI\\"],
+            // The Appx package is named `OpenAI.Codex`, not `ChatGPT` — measured
+            // on a machine with the Store app installed:
+            //
+            //   Name:            OpenAI.Codex
+            //   PackageFullName: OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0
+            //   InstallLocation: C:\Program Files\WindowsApps\OpenAI.Codex_...
+            //
+            // A name-based Appx probe for "*ChatGPT*" therefore returns nothing,
+            // and a bare `WindowsApps` root cannot be an identity: it is the same
+            // directory every Store app lives in. `WindowsApps\OpenAI.Codex` is
+            // the specific path, so it is named.
+            install_roots: &[
+                "Programs\\ChatGPT",
+                "WindowsApps\\OpenAI.Codex",
+                "WindowsApps",
+            ],
+            // Identity, not decoration. Three unrelated things match a naive
+            // `*ChatGPT*` search on a real machine:
+            //
+            //   ChatGPT             ARP\User\X64\4f20b4cc...  1.0            ← impostor
+            //   ChatGPT             9PLM9XGG6VKS               26.915...      ← the real app
+            //   ChatGPT账号工具     ARP\User\X64\ChatGPT账号工具  2.2.33       ← unrelated tool
+            //
+            // `Exact("ChatGPT")` alone therefore matches the first and matches
+            // the real app's *display* name — the ARP entry is what the markers
+            // must reject. A real Store app installs under `WindowsApps\` with
+            // the vendor namespace in the path; an ARP shim of the same display
+            // name does not. `\OpenAI.Codex` is the Appx namespace observed live.
+            location_markers: &[
+                "\\WindowsApps\\",
+                "\\OpenAI.Codex",
+                "\\OpenAI\\",
+                "\\Programs\\",
+            ],
             // The app is a packaged MSIX with no usable `--version`; a fabricated
             // version would be worse than none.
             version_args: None,
             version_env: &[],
             version_via_shim: false,
             install: &[
+                // The product id of the ChatGPT desktop app in the Microsoft
+                // Store. This entry previously read `OpenAI.ChatGPT`, which does
+                // not exist in the winget community source — `winget search
+                // OpenAI.ChatGPT` returns "找不到与输入条件匹配的程序包" and exit
+                // code 0x8A150014, so every ChatGPT Desktop install failed at the
+                // first step, with an error that read to a student as "this
+                // software does not exist".
+                //
+                // A Store product id, resolved by winget's *default* source
+                // resolution. Verified on winget 1.29.290: the `msstore` source
+                // is registered and non-explicit (`显式: false`), so a bare
+                // `winget install --id 9PLM9XGG6VKS -e` resolves it correctly —
+                // and conversely, pinning `--source winget` breaks it with
+                // 0x8A150014. No `--source` is passed, deliberately.
                 InstallStrategy {
-                    source: StrategySource::Winget("OpenAI.ChatGPT"),
-                    rationale: "ChatGPT 桌面版有官方 winget 包，可直接安装",
+                    source: StrategySource::Winget("9PLM9XGG6VKS"),
+                    rationale: "从 Microsoft Store 安装 ChatGPT 桌面版（官方 MSIX 包）",
                 },
+                // No second strategy: OpenAI publishes no direct-download
+                // installer for this app (it ships only through the Store), so a
+                // URL here would be a guess, and a guessed URL is worse than no
+                // fallback. A machine with the `msstore` source stripped (LTSC,
+                // Store removed by policy) has no route yet — tracked as a
+                // follow-up rather than papered over with an invented link.
             ],
         },
         CatalogEntry {
@@ -1029,7 +1124,25 @@ mod tests {
 
         let codex = cat.entry(SoftwareId::Codex);
         assert!(!codex.matches_name("Visual Studio Code"), "Codex matched VS Code");
-        assert!(codex.matches_name("ChatGPT"), "Codex missed its MSIX name");
+
+        // This assertion used to read `assert!(codex.matches_name("ChatGPT"))`
+        // with the note "Codex missed its MSIX name". That requirement is
+        // withdrawn, because the premise behind it was wrong.
+        //
+        // It assumed Codex ships as an MSIX inside the ChatGPT product, so the
+        // Appx would report the display name `ChatGPT`. Verified against the
+        // real machine: the Appx named `OpenAI.Codex` **is ChatGPT Desktop**, and
+        // winget's `OpenAI.Codex` is **Codex CLI** — a different product in a
+        // different ecosystem. So a registry row called `ChatGPT` is ChatGPT
+        // Desktop, and claiming it for Codex made both entries match one row.
+        assert!(
+            !codex.matches_name("ChatGPT"),
+            "a row called ChatGPT is ChatGPT Desktop, not Codex CLI"
+        );
+        assert!(codex.matches_name("Codex"), "Codex must match its own name");
+        assert!(codex.matches_name("OpenAI Codex"));
+        // And the desktop app keeps the name Codex gave up.
+        assert!(cat.entry(SoftwareId::ChatgptDesktop).matches_name("ChatGPT"));
     }
 
     #[test]
@@ -1064,7 +1177,13 @@ mod tests {
             let entry = cat.entry(id);
             for strategy in entry.install {
                 match &strategy.source {
-                    StrategySource::Winget(_) | StrategySource::Command(_) => {}
+                    StrategySource::Winget(id) => {
+                        assert!(
+                            !id.trim().is_empty(),
+                            "{id:?} has an empty winget package id"
+                        );
+                    }
+                    StrategySource::Command(_) => {}
                     StrategySource::OfficialInstaller(url) => {
                         assert!(
                             url.starts_with("https://"),
@@ -1201,5 +1320,334 @@ mod tests {
         assert!(jb.matches_name("PyCharm 2024.3"));
         assert!(jb.matches_name("IntelliJ IDEA Community Edition"));
         assert!(jb.matches_name("JetBrains Toolbox"));
+    }
+
+    // -----------------------------------------------------------------------
+    // ChatGPT Desktop — a named regression case
+    //
+    // The bug this pins, reproduced on a real machine:
+    //
+    //   winget search OpenAI.ChatGPT  → 找不到与输入条件匹配的程序包
+    //                                   exit -1978335212 / 0x8A150014
+    //
+    // `OpenAI.ChatGPT` is not a winget community package id. It was this
+    // entry's *only* install strategy, so every ChatGPT Desktop install failed
+    // at the first step with a message that reads to a student as "this software
+    // does not exist" — the single most common first request in the product.
+    //
+    // The real distribution is the Microsoft Store MSIX `9PLM9XGG6VKS`:
+    //
+    //   winget search --id 9PLM9XGG6VKS -e  → 找到 ChatGPT, source msstore, exit 0
+    //
+    // These assertions exist so a future catalogue or executor change cannot
+    // silently reintroduce the dead id.
+    // -----------------------------------------------------------------------
+
+    /// The dead id must never come back as an install strategy.
+    #[test]
+    fn chatgpt_desktop_never_installs_via_the_nonexistent_community_id() {
+        let cat = Catalog::builtin();
+        let entry = cat.entry(SoftwareId::ChatgptDesktop);
+
+        for strategy in entry.install {
+            // `winget_package_id()` is the id that would actually be handed to winget.
+            let id = strategy.source.winget_package_id();
+            assert_ne!(
+                id,
+                Some("OpenAI.ChatGPT"),
+                "ChatGPT Desktop is installing via `OpenAI.ChatGPT`, which does not exist in the \
+                 winget community source (exit 0x8A150014). This is the regression."
+            );
+        }
+    }
+
+    /// The Store id is the real package, and it must be paired with its source.
+    #[test]
+    fn chatgpt_desktop_uses_the_real_store_id_with_its_source() {
+        let cat = Catalog::builtin();
+        let entry = cat.entry(SoftwareId::ChatgptDesktop);
+
+        let store = entry
+            .install
+            .iter()
+            .find(|s| s.source.winget_package_id() == Some("9PLM9XGG6VKS"))
+            .expect("ChatGPT Desktop must install from the Store id 9PLM9XGG6VKS");
+
+        // It is a `Winget` strategy with *no* pinned source. Verified on winget
+        // 1.29.290: `msstore` is registered and non-explicit, so a bare
+        // `--id 9PLM9XGG6VKS` resolves correctly, while pinning
+        // `--source winget` breaks it with 0x8A150014. The type deliberately
+        // cannot express a source, so an accidental pin is impossible.
+        assert!(
+            matches!(store.source, StrategySource::Winget("9PLM9XGG6VKS")),
+            "the Store id must be installed through winget's default source resolution"
+        );
+    }
+
+    /// ChatGPT Desktop ships through the Store only, so it has exactly one
+    /// strategy — and specifically must not carry an invented fallback URL.
+    ///
+    /// This test replaces an earlier one that required a second strategy. That
+    /// requirement was withdrawn: OpenAI publishes no direct-download installer
+    /// for this app, so any URL here would be a guess, and a guessed URL that
+    /// rots is worse than an honest gap. The gap is a recorded follow-up (a
+    /// machine with the `msstore` source stripped currently has no route), not
+    /// something to paper over with a link that may not resolve.
+    ///
+    /// The `OfficialInstaller` assertion stays because that is the concrete
+    /// mistake this guards: `execute_official_installer` downloads a URL and
+    /// then *runs* it, so pointing it at a product or store page would save an
+    /// HTML document and try to execute it.
+    #[test]
+    fn chatgpt_desktop_ships_one_store_strategy_and_no_guessed_fallback() {
+        let cat = Catalog::builtin();
+        let entry = cat.entry(SoftwareId::ChatgptDesktop);
+
+        let winget: Vec<&StrategySource> = entry
+            .install
+            .iter()
+            .map(|s| &s.source)
+            .filter(|s| s.winget_package_id().is_some())
+            .collect();
+
+        assert_eq!(
+            winget.len(),
+            1,
+            "ChatGPT Desktop must install from exactly one winget id; found {}",
+            winget.len()
+        );
+        assert_eq!(winget[0].winget_package_id(), Some("9PLM9XGG6VKS"));
+        assert_eq!(
+            entry.install.len(),
+            1,
+            "no fallback is shipped: OpenAI publishes no direct-download \
+             installer, and an unverified URL would be worse than a known gap"
+        );
+        assert!(
+            !entry
+                .install
+                .iter()
+                .any(|s| matches!(s.source, StrategySource::OfficialInstaller(_))),
+            "an OfficialInstaller here would be downloaded and executed; no such \
+             installer exists for this app"
+        );
+    }
+
+    /// ChatGPT Desktop's `winget_ids` must stay empty, and here is why.
+    ///
+    /// The ids are matched against the **ID column of `winget list`**
+    /// (`inventory.rs:271`). `winget list` does not print the Store product id
+    /// for an installed Store app — it prints the MSIX package-family name:
+    ///
+    /// ```text
+    /// ChatGPT  MSIX\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0  26.915.4065.0
+    /// ```
+    ///
+    /// So neither `OpenAI.ChatGPT` (which does not exist at all — `winget search`
+    /// exits `0x8A150014`) nor `9PLM9XGG6VKS` (a Store *product* id, which never
+    /// appears in that column) can ever match. An id here would be untestable
+    /// decoration that reads like a fix.
+    ///
+    /// What actually detects this program is the name plus `location_markers`
+    /// path, which is asserted by the neighbouring lookalike test.
+    #[test]
+    fn chatgpt_desktop_declares_no_winget_id_and_that_is_deliberate() {
+        let cat = Catalog::builtin();
+        let entry = cat.entry(SoftwareId::ChatgptDesktop);
+
+        assert!(
+            entry.winget_ids.is_empty(),
+            "ChatGPT Desktop must declare no winget ids: the ID column of \
+             `winget list` contains neither `OpenAI.ChatGPT` (nonexistent) nor \
+             the Store product id. Found {:?}",
+            entry.winget_ids
+        );
+
+        // And the replacement id must not sneak back in as an install strategy
+        // or a detection id: the install route is the Store id resolved by
+        // winget's own source handling, which is a different mechanism.
+        assert_eq!(
+            entry.install[0].source.winget_package_id(),
+            Some("9PLM9XGG6VKS"),
+            "the *install* strategy uses the Store id; only the *detection* list \
+             must stay empty, because the two are matched against different things"
+        );
+    }
+
+    /// Three unrelated things answer to a naive `*ChatGPT*` search. Pin them
+    /// apart, using the real entries read off this machine.
+    ///
+    /// Observed:
+    ///
+    /// | where | what it really is |
+    /// |---|---|
+    /// | winget `OpenAI.Codex` | **Codex CLI** — a terminal agent, Apache-2.0 |
+    /// | winget `9PLM9XGG6VKS` / Appx `OpenAI.Codex` | **ChatGPT Desktop** — the MSIX app |
+    /// | ARP `ChatGPT` (DisplayIcon under Chrome's profile) | an "install as web app" shortcut |
+    /// | ARP `ChatGPT账号工具` | an unrelated third-party tool |
+    ///
+    /// The winget id and the Appx name collide *across ecosystems*: the string
+    /// `OpenAI.Codex` is ChatGPT Desktop in Appx terms and Codex CLI in winget
+    /// terms. Treating either spelling as one identity is the error this pins
+    /// shut, and it is a live one — it was committed in review earlier today.
+    #[test]
+    fn the_three_chatgpt_lookalikes_stay_distinct() {
+        use crate::modules::inventory::UninstallEntry;
+
+        let cat = Catalog::builtin();
+        let desktop = cat.entry(SoftwareId::ChatgptDesktop);
+        let codex = cat.entry(SoftwareId::Codex);
+
+        // 1. The two products are different ids with different install routes.
+        assert_ne!(desktop.id, codex.id);
+        assert!(desktop
+            .install
+            .iter()
+            .any(|s| s.source.winget_package_id() == Some("9PLM9XGG6VKS")));
+        assert!(codex
+            .install
+            .iter()
+            .any(|s| s.source.winget_package_id() == Some("OpenAI.Codex")));
+
+        // 2. The real Store app is found, by its Appx path.
+        let real = UninstallEntry {
+            display_name: "ChatGPT".into(),
+            display_version: Some("26.915.4065.0".into()),
+            install_location: Some(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0".into(),
+            ),
+            display_icon: None,
+            key: "test".into(),
+        };
+        assert!(
+            desktop.matches_registry_entry(&real),
+            "the real Store install must be recognised by its WindowsApps\\OpenAI.Codex path"
+        );
+
+        // 3. The Chrome "install as web app" impostor must NOT satisfy it.
+        //    Real DisplayIcon, read from the registry on this machine.
+        let impostor = UninstallEntry {
+            display_name: "ChatGPT".into(),
+            display_version: Some("1.0".into()),
+            install_location: None,
+            display_icon: Some(
+                r"C:\Users\35074\AppData\Local\Google\Chrome\User Data\Default\Web Applications\_crx_cadlkienfkclaiaibeoongdcgmdikeeg\ChatGPT.ico".into(),
+            ),
+            key: "test".into(),
+        };
+        assert!(
+            !desktop.matches_registry_entry(&impostor),
+            "a Chrome web-app shortcut called ChatGPT is not an installed desktop app"
+        );
+
+        // 4. The unrelated 账号工具 is rejected on name as well as path.
+        let other_tool = UninstallEntry {
+            display_name: "ChatGPT账号工具".into(),
+            display_version: Some("2.2.33".into()),
+            install_location: Some(r"D:\工具软件\ChatGPT账号工具".into()),
+            display_icon: Some(r"D:\工具软件\ChatGPT账号工具\lucky-yaoyao-codex.exe".into()),
+            key: "test".into(),
+        };
+        assert!(
+            !desktop.matches_registry_entry(&other_tool),
+            "an unrelated third-party ChatGPT tool must not satisfy ChatGPT Desktop"
+        );
+
+        // 5. And the separations hold in the other direction: neither the Store
+        //    app nor the impostor satisfies Codex CLI.
+        assert!(
+            !codex.matches_registry_entry(&real),
+            "ChatGPT Desktop must not be reported as Codex CLI"
+        );
+    }
+
+    /// Presence-only version handling: the package publishes no readable
+    /// version, so a version *floor* must not be enforced.
+    ///
+    /// Asserted at the catalogue level by checking the entry declares no
+    /// `version_args` to probe with — the observable half of the decision.
+    /// `verify::minimum_version` encodes the other half and is exhaustive by
+    /// design, so a version floor appearing there would be a deliberate change.
+    #[test]
+    fn chatgpt_desktop_declares_no_version_probe() {        let cat = Catalog::builtin();
+        let entry = cat.entry(SoftwareId::ChatgptDesktop);
+
+        assert!(
+            entry.version_args.is_none(),
+            "`winget show 9PLM9XGG6VKS` reports 版本: Unknown; probing for a version would \
+             produce a fabricated or empty one"
+        );
+    }
+
+    /// ChatGPT Desktop and Codex are different products **at the winget-source
+    /// layer**, and both call themselves "ChatGPT" on disk.
+    ///
+    /// Deliberately scoped. Measured on a real machine, the *installed MSIX* for
+    /// the ChatGPT desktop app has package family `OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0`.
+    /// So "OpenAI.Codex is never ChatGPT" would be FALSE and must not be
+    /// asserted. What *is* true, and all this test claims, is the source layer:
+    /// two distinct winget packages, with different installer types.
+    #[test]
+    fn chatgpt_desktop_and_codex_are_distinct_winget_packages() {
+        let cat = Catalog::builtin();
+        let desktop = cat.entry(SoftwareId::ChatgptDesktop);
+        let codex = cat.entry(SoftwareId::Codex);
+
+        assert_ne!(
+            desktop.id, codex.id,
+            "ChatGPT Desktop and Codex are different catalogue entries"
+        );
+        // Source layer: desktop is the Store MSIX, Codex is the CLI as a
+        // portable zip (`winget show`: 0.152.0 portable vs Unknown msstore).
+        assert!(desktop
+            .install
+            .iter()
+            .any(|s| s.source.winget_package_id() == Some("9PLM9XGG6VKS")));
+        assert!(codex
+            .install
+            .iter()
+            .any(|s| s.source.winget_package_id() == Some("OpenAI.Codex")));
+        // And the unresolvable id is used by neither.
+        for entry in [desktop, codex] {
+            for s in entry.install {
+                assert_ne!(s.source.winget_package_id(), Some("OpenAI.ChatGPT"));
+            }
+        }
+    }
+
+    /// The **property** a `winget_ids` value must satisfy, asserted instead of a
+    /// value.
+    ///
+    /// `inventory.rs:266-281` uses `winget_ids()` as the *preferred* match key
+    /// against `winget list`'s ID column, falling back to `matches_name` only
+    /// when every id misses. `OpenAI.ChatGPT` resolves against nothing, so the
+    /// preferred key always misses and detection silently depends on the name
+    /// fallback.
+    ///
+    /// The correct replacement is install-engineer's call (a hardcoded Store id
+    /// has its own portability problems), so this test deliberately does **not**
+    /// pin one. It pins the invariant that decided the bug: a declared id must not
+    /// be one that `winget search` provably cannot resolve.
+    #[test]
+    fn no_winget_id_advertises_the_unresolvable_chatgpt_id() {
+        let cat = Catalog::builtin();
+
+        // Measured: `winget search OpenAI.ChatGPT` on a real machine returns
+        // "找不到与输入条件匹配的程序包" and exits -1978335212 / 0x8A150014.
+        // It is not a package in any source, so no entry may advertise it.
+        const UNRESOLVABLE: &str = "OpenAI.ChatGPT";
+
+        for id in cat.ids() {
+            let entry = cat.entry(id);
+            for declared in entry.winget_ids() {
+                assert_ne!(
+                    declared, UNRESOLVABLE,
+                    "{:?} advertises `{UNRESOLVABLE}`, which `winget search` cannot \
+                     resolve (exit 0x8A150014). The preferred lookup key misses and \
+                     detection silently falls back to display-name matching.",
+                    id
+                );
+            }
+        }
     }
 }

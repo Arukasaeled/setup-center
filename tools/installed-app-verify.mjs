@@ -96,7 +96,7 @@ const clickByText = async (pattern) =>
 // deliberate: it reaches the software grid in one hop instead of four, and the
 // grid is where every bundled logo is rendered.
 const hops = [
-  ["dashboard", "检查这台电脑"],
+  ["dashboard", "回到首次设置"],
   ["software", "^软件\\s*\\d*$"],
 ];
 
@@ -129,7 +129,7 @@ if (beforeCount === 0) {
   console.log("# fallback: the dashboard grid rendered no marks, walking the wizard");
   await clickByText("^回到首次设置$");
   await wait(900);
-  await clickByText("^直接开始配置$");
+  await clickByText("一键配置 AI 编程环境");
   await wait(900);
   await clickByText("^开始检测$");
   await wait(2800);

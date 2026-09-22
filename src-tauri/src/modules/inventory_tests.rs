@@ -143,16 +143,92 @@ fn winget_table_skips_the_version_banner() {
 #[test]
 fn real_winget_fixture_produces_facts_for_known_programs() {
     let rows = parse_winget_table(WINGET_FIXTURE).unwrap();
-    // Codex ships as an MSIX whose display name is `ChatGPT`, so the catalog
-    // declares that as a marker. Matching on the id alone would find nothing.
-    let codex_row = rows
+
+    // The fixture's first row is, verbatim:
+    //   ChatGPT    MSIX\OpenAI.Codex_26.911.7940.0_x64__2p2nqsd0c76g0    26.911.7940.0
+    //
+    // This test previously asserted that row was **Codex**, on the belief that
+    // Codex shipped as an MSIX inside the ChatGPT product. Measured against the
+    // real machine, that is wrong: the Appx named `OpenAI.Codex` is ChatGPT
+    // Desktop, and winget's `OpenAI.Codex` is Codex **CLI**. The row is the
+    // desktop app, so it must be recognised as such — and must not be claimed as
+    // Codex CLI, which is what made one registry row satisfy two products.
+    let msix_row = rows
         .iter()
         .find(|r| r.id.starts_with("MSIX\\OpenAI.Codex"))
         .unwrap();
+    assert_eq!(msix_row.name, "ChatGPT");
     let cat = Catalog::builtin();
     assert!(
-        cat.entry(SoftwareId::Codex).matches_name(&codex_row.name),
-        "the catalog must recognise the MSIX display name for Codex"
+        cat.entry(SoftwareId::ChatgptDesktop).matches_name(&msix_row.name),
+        "the catalog must recognise the ChatGPT desktop MSIX by its display name"
+    );
+    assert!(
+        !cat.entry(SoftwareId::Codex).matches_name(&msix_row.name),
+        "the ChatGPT desktop MSIX is not Codex CLI"
+    );
+}
+
+/// A Store product id can never match this provider, and here is the proof.
+///
+/// This is the question that bounced back and forth three times, so it is worth
+/// settling in executable form rather than in prose.
+///
+/// `winget_list()` runs `winget list --disable-interactivity` — **no `--id`**
+/// (`inventory.rs:514`). It therefore parses the *unfiltered* listing, and it
+/// matches ids as an exact key lookup against that listing's ID column
+/// (`inventory.rs:273`).
+///
+/// In an unfiltered listing winget prints the **MSIX package-family name** for an
+/// installed Store app, not its product id — see the real captured fixture:
+///
+/// ```text
+/// ChatGPT   MSIX\OpenAI.Codex_26.911.7940.0_x64__2p2nqsd0c76g0   26.911.7940.0
+/// ```
+///
+/// A store id *does* resolve under `winget list --id <store id>` — winget maps it
+/// when asked directly, which is a real and verified behaviour. But that is a
+/// **different call shape from the one this provider makes**, so it says nothing
+/// about whether the lookup above can hit. It cannot.
+///
+/// Consequence, and the reason the catalog keeps this list empty for the entry:
+/// detection runs on the display-name + `location_markers` path, which is what
+/// genuinely works.
+#[test]
+fn a_store_product_id_cannot_match_the_unfiltered_winget_list_id_column() {
+    let rows = parse_winget_table(WINGET_FIXTURE).unwrap();
+
+    // Assert the property directly, on real captured data, rather than
+    // restating the conclusion.
+    assert!(
+        !rows.iter().any(|r| r.id == "9PLM9XGG6VKS"),
+        "the unfiltered ID column must not contain the Store product id; if \
+         winget ever starts printing it there, the catalog's empty winget_ids \
+         for ChatgptDesktop becomes wrong and should be revisited"
+    );
+
+    // And the row that IS there is the MSIX family name, which is the reason.
+    let msix = rows
+        .iter()
+        .find(|r| r.name == "ChatGPT")
+        .expect("the fixture contains the ChatGPT row");
+    assert!(
+        msix.id.starts_with("MSIX\\"),
+        "expected an MSIX package-family name in the ID column, got {:?}",
+        msix.id
+    );
+
+    // The catalog agrees with the data: it declares no ids, because none could
+    // match this listing.
+    let cat = Catalog::builtin();
+    let entry = cat.entry(SoftwareId::ChatgptDesktop);
+    assert!(entry.winget_ids.is_empty());
+    assert!(
+        !entry
+            .winget_ids()
+            .iter()
+            .any(|id| rows.iter().any(|r| r.id.eq_ignore_ascii_case(id))),
+        "an id that cannot match the listing would be decoration, not detection"
     );
 }
 
@@ -261,8 +337,12 @@ fn a_chatgpt_web_app_shortcut_is_not_codex() {
     // This is a false positive that the live probe actually produced. Chrome's
     // "install as web app" for chatgpt.com registers an uninstall entry named
     // exactly `ChatGPT`, whose `DisplayIcon` points into the browser's profile
-    // directory. Name-only matching reported Codex as installed on a machine that
-    // had only ever opened the website.
+    // directory. Name-only matching reported a program as installed on a machine
+    // that had only ever opened the website.
+    //
+    // The entry is now rejected on the *name* as well, because `ChatGPT` is
+    // ChatGPT Desktop's identity and no longer Codex's — so the location check is
+    // a second line of defence rather than the only one. Both are asserted.
     let web_app = super::inventory::UninstallEntry {
         display_name: "ChatGPT".into(),
         display_version: Some("1.0".into()),
@@ -275,24 +355,50 @@ fn a_chatgpt_web_app_shortcut_is_not_codex() {
 
     let cat = Catalog::builtin();
     let codex = cat.entry(SoftwareId::Codex);
-    assert!(
-        codex.matches_name(&web_app.display_name),
-        "the name alone does match — that is why the location check is needed"
-    );
+    let desktop = cat.entry(SoftwareId::ChatgptDesktop);
+
+    // The browser shortcut is not Codex CLI, by name or by location.
     assert!(
         !codex.matches_registry_entry(&web_app),
-        "a browser shortcut must not be counted as the Codex desktop app"
+        "a browser shortcut must not be counted as Codex CLI"
+    );
+    // And it is not ChatGPT Desktop either: the desktop app is the Store MSIX,
+    // which lives under `WindowsApps\OpenAI.Codex`, not in a browser profile.
+    assert!(
+        !desktop.matches_registry_entry(&web_app),
+        "a browser shortcut must not be counted as the ChatGPT desktop app"
     );
 
-    // The real install does match: an MSIX under WindowsApps, or a per-user
-    // install under Programs.
+    // The real Store app matches ChatGPT Desktop, and *not* Codex CLI: the Appx
+    // named `OpenAI.Codex` is the desktop app, while winget's `OpenAI.Codex` is
+    // the CLI. Same string, different ecosystems — the distinction this pins.
     let real_msix = super::inventory::UninstallEntry {
         display_icon: Some(
             "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.911.7940.0_x64__2p2nqsd0c76g0\\Codex.exe".into(),
         ),
         ..web_app.clone()
     };
-    assert!(codex.matches_registry_entry(&real_msix));
+    assert!(
+        desktop.matches_registry_entry(&real_msix),
+        "the Store MSIX must be recognised as ChatGPT Desktop"
+    );
+    assert!(
+        !codex.matches_registry_entry(&real_msix),
+        "the ChatGPT desktop MSIX is not Codex CLI"
+    );
+
+    // Codex CLI's real install is a per-user npm layout.
+    let real_cli = super::inventory::UninstallEntry {
+        display_name: "Codex".into(),
+        display_version: Some("0.152.0".into()),
+        install_location: Some("C:\\Users\\x\\AppData\\Local\\Programs\\codex".into()),
+        display_icon: Some("C:\\Users\\x\\AppData\\Local\\Programs\\codex\\codex.exe".into()),
+        key: "HKCU\\...\\codex".into(),
+    };
+    assert!(
+        codex.matches_registry_entry(&real_cli),
+        "a per-user CLI install must be recognised as Codex CLI"
+    );
 }
 
 #[test]

@@ -39,14 +39,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Button, SectionLabel } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { StatusBadge } from "../components/StatusBadge";
 import { SoftwareIcon } from "../components/SoftwareIcon";
 import { ProHint } from "../components/ProGate";
 import { describeSoftware } from "../lib/software";
+import * as ipc from "../lib/ipc";
 import { selectedProfile, useApp } from "../lib/store";
 import type {
   AttemptOutcome,
+  InstallFailureKind,
+  InstallFailureView,
+  InstallPhase,
   InstallPlan,
+  PostInstallReport,
   SoftwareDescriptor,
   SoftwareId,
   StepProgress,
@@ -68,12 +74,23 @@ export function InstallScreen() {
   const startInstall = useApp((s) => s.startInstall);
   const resumeInstall = useApp((s) => s.resumeInstall);
   const cancelInstall = useApp((s) => s.cancelInstall);
+  const buildPlan = useApp((s) => s.buildPlan);
 
   const [advanced, setAdvanced] = useState(false);
   const [, forceTick] = useState(0);
+  // Whether the "back during install" dialog is open. Local rather than in the
+  // store: it is a transient question asked of this screen, and putting it in
+  // the store would make it survive a navigation it should not survive.
+  const [backDialog, setBackDialog] = useState(false);
+  // The post-install verification, run when a session finishes. Held locally
+  // because it describes *this* screen's run, and the store's `verification`
+  // belongs to the report screen (a different question, asked later).
+  const [postCheck, setPostCheck] = useState<PostInstallReport | null>(null);
   // The profile id of the plan this component has already started the engine
   // for. `null` means "nothing started by this mount".
   const startedRef = useRef<string | null>(null);
+  // Guards the build-on-arrival below so a failed build cannot retry every render.
+  const autoBuildRef = useRef(false);
 
   // A one-second tick while installing, purely so the elapsed clock moves. It
   // deliberately does not touch any status: progress comes from the session, and
@@ -84,6 +101,43 @@ export function InstallScreen() {
     const id = window.setInterval(() => forceTick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, [installing]);
+
+  // Post-install verification, once a run has finished.
+  //
+  // The brief is explicit that the installer's exit code is not evidence: a
+  // command can exit 0 having left nothing usable behind. `verify_install_result`
+  // re-probes the machine through the same inventory the software list uses, so
+  // the verdict is about the machine rather than about what the command claimed.
+  //
+  // Keyed on the session id so it runs once per run and not on every render, and
+  // skipped for a cancelled run: telling a student who deliberately stopped that
+  // their programs "were not detected" would be reporting their own decision back
+  // to them as a fault.
+  const verifiedSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (installing || !session || !plan) return;
+    if (session.cancelledByUser) return;
+    if (verifiedSessionRef.current === session.id) return;
+    verifiedSessionRef.current = session.id;
+
+    let cancelled = false;
+    void ipc
+      .verifyInstallResult(plan)
+      .then((report) => {
+        if (!cancelled) setPostCheck(report);
+      })
+      .catch(() => {
+        // A verification that could not run must not masquerade as a pass. The
+        // install result itself is already on screen; leaving this null means the
+        // checklist simply does not appear, rather than showing a green tick the
+        // app did not earn.
+        if (!cancelled) setPostCheck(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [installing, session, plan]);
 
   const runnable = useMemo(
     () => plan?.steps.filter((s) => !s.satisfied) ?? [],
@@ -113,8 +167,28 @@ export function InstallScreen() {
     void startInstall();
   };
 
+  // No plan yet, but a profile *is* selected: recoverable, not an error.
+  //
+  // Reachable in practice from `Software.tsx`'s per-item action buttons, which
+  // `goTo("install")` directly. `selectProfile` deliberately nulls `plan` — a plan
+  // belongs to one profile, and keeping it would let a screen render one profile's
+  // steps beside another's result — so arriving here with a selected profile and
+  // no plan is a normal state on that route, not corruption.
+  //
+  // Building it here rather than bouncing the student back is the honest fix: the
+  // screen they asked for is one read away, and the brief's point is that a
+  // beginner must not be handed a dead end. `buildPlan` installs nothing; the run
+  // still needs an explicit 开始安装.
+  //
+  // Guarded by a ref, not state: this runs during render, and a `setState` here
+  // would loop. The ref also keeps a *failed* build from retrying forever.
+  if (!plan && profile && !autoBuildRef.current) {
+    autoBuildRef.current = true;
+    void buildPlan();
+  }
+
   if (!plan || !profile) {
-    return <EmptyState onBack={() => goTo("choose")} />;
+    return <EmptyState canRecover={profile !== null} />;
   }
 
   // Phase 7: the screen opens on a decision rather than on a running engine.
@@ -129,7 +203,6 @@ export function InstallScreen() {
         chosen={chosenSteps}
         onChoose={setChosenSteps}
         blockers={readiness && !readiness.canStart ? readiness.blockers : null}
-        onBack={() => goTo("choose")}
         onStart={begin}
         onSkip={() => goTo("bootstrap")}
       />
@@ -156,21 +229,42 @@ export function InstallScreen() {
         : Math.max(0, steps.length - 1);
 
   const finished = session !== null && !installing;
-  const failed = session?.failedSteps ?? [];
   const halted = session?.haltedReason ?? null;
 
+  // The run's visible state. Derived from what is actually known, never from a
+  // timer — see the note on the tick effect above.
+  const phase: InstallPhase = derivePhase({
+    installing,
+    session,
+    executionError,
+    halted,
+  });
+
+  // The step whose command is running, for the cancel/error panel.
+  const runningStep = steps.find((s) => s.status === "running") ?? null;
+  const failureView = buildFailureView({
+    phase,
+    session,
+    runningStep,
+    executionError,
+    halted,
+  });
+
   return (
-    <div className="flex h-full flex-col px-10 py-8">
+    <div
+      className="flex h-full flex-col px-10 py-8"
+      // One stable hook for every state, so a test asserts the phase without
+      // matching on translated text. `data-running` is separate from `phase`
+      // because "is work still happening" is what the back dialog's promise
+      // ("返回不会停止安装") depends on, and it must be assertable on its own.
+      data-testid="install-phase"
+      data-phase={phase}
+      data-running={installing ? "true" : "false"}
+    >
       <header className="fade flex shrink-0 items-start justify-between">
         <div>
           <h2 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
-            {installing
-              ? "正在安装"
-              : finished
-                ? failed.length > 0
-                  ? "安装已完成，部分项目需要处理"
-                  : "安装完成"
-                : "准备安装"}
+            {phaseTitle(phase)}
           </h2>
           <p className="text-[color:var(--text-quiet)] mt-1 text-[13px]">
             {installing
@@ -196,7 +290,25 @@ export function InstallScreen() {
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
         {halted && <HaltNotice reason={halted} names={permissionNames(session, catalogue)} />}
-        {executionError && <ErrorNotice message={executionError} />}
+        {/* The failure panel replaces the bare `executionError` strip whenever the
+            run itself stopped for a reason it can name. It carries the command,
+            the output so far and a suggestion, which the strip could not — the
+            old `已取消` badge told the student nothing about what to do next. */}
+        {failureView ? (
+          <FailurePanel
+            view={failureView}
+            // A retry is offered only when there is genuinely work left. A
+            // cancelled run still has `remaining` steps and `canResume` is
+            // suppressed for it by the store, so this reads the same signal the
+            // footer uses rather than inventing a second rule.
+            canRetry={canResume && failureView.kind !== "cancelled"}
+            remainingCount={session?.remaining.length ?? 0}
+            retrying={installing}
+            onRetry={() => void resumeInstall()}
+          />
+        ) : (
+          executionError && <ErrorNotice message={executionError} />
+        )}
         {readiness && !readiness.canStart && !installing && (
           <BlockerNotice blockers={readiness.blockers} />
         )}
@@ -212,6 +324,11 @@ export function InstallScreen() {
             />
           </div>
         )}
+
+        {/* The post-install check. Shown only once a run has actually finished,
+            because before that there is nothing to verify and an empty
+            "checking…" list would imply work that is not happening. */}
+        {postCheck && !installing && <VerificationList report={postCheck} />}
 
         <div className="mt-7">
           <SectionLabel>安装项</SectionLabel>
@@ -259,9 +376,27 @@ export function InstallScreen() {
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
         <div className="flex items-center gap-2">
-          <Button variant="quiet" onClick={() => goTo("choose")} disabled={installing}>
-            返回
-          </Button>
+          {/* During a run, back opens the dialog instead of navigating. Outside a
+              run it is the ordinary history-driven control, so nothing about the
+              non-installing case changed.
+
+              Why a replacement rather than a disabled button: `disabled` during
+              a run is audit §6 gap 4 — the control cannot open the
+              "继续后台安装 / 取消安装并返回" dialog, so the dialog would be
+              unreachable exactly when it is needed. This is the
+              `install-engineer`-owned interceptor signposted at line 299.
+
+              Why not `onClick` on `<BackButton>`: `BackButton` takes no veto
+              hook, routing owns that component, and the captain ruled that
+              duplicating one control here is cheaper than reopening a completed
+              task or ping-ponging a shared file. */}
+          {installing ? (
+            <Button variant="quiet" onClick={() => setBackDialog(true)}>
+              返回
+            </Button>
+          ) : (
+            <BackButton />
+          )}
           {installing && (
             <Button variant="ghost" onClick={() => void cancelInstall()}>
               取消安装
@@ -287,6 +422,26 @@ export function InstallScreen() {
           {installing ? "安装进行中…" : "继续配置环境"}
         </Button>
       </footer>
+
+      {backDialog && (
+        <BackDuringInstallDialog
+          stepName={runningStep?.name ?? null}
+          // Dismissing the dialog leaves the run exactly as it was. This is the
+          // honest half of the promise: nothing is cancelled, nothing is
+          // paused, and the store's `installing` flag was never touched.
+          onContinue={() => setBackDialog(false)}
+          onCancelAndLeave={() => {
+            setBackDialog(false);
+            // Cancel first, then leave — in that order, so the engine is
+            // already stopping when the screen changes. `cancel_install` is
+            // cooperative and returns immediately, so this does not block the
+            // navigation.
+            void cancelInstall().then(() => {
+              useApp.getState().goBack();
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -325,7 +480,6 @@ function ChoosePhase({
   chosen,
   onChoose,
   blockers,
-  onBack,
   onStart,
   onSkip,
 }: {
@@ -336,7 +490,6 @@ function ChoosePhase({
   chosen: Set<SoftwareId> | null;
   onChoose: (ids: SoftwareId[] | null) => void;
   blockers: string[] | null;
-  onBack: () => void;
   onStart: () => void;
   /** Advances when there is genuinely nothing to install. */
   onSkip: () => void;
@@ -454,9 +607,7 @@ function ChoosePhase({
       </div>
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        <Button variant="quiet" onClick={onBack}>
-          返回
-        </Button>
+        <BackButton />
         {runnable.length === 0 ? (
           // Skipping the run is not the same as faking one: no session is
           // created, so nothing later can report an install that never happened.
@@ -531,6 +682,17 @@ function CurrentStep({
       <p className="text-[color:var(--text-tertiary)] mt-1.5 text-[13.5px]">
         {step?.stage ?? (installing ? "正在准备…" : "等待开始")}
       </p>
+
+      {/* The bar answers "how far along is this", and it must not pretend.
+          `StepProgress.fraction` is real but it is *attempt-index* progress
+          across a fallback chain (`install.rs:451` → `attempt/(len+1)`, then
+          `1.0` at `:471`), so on the common single-link chain it is 0.0 for the
+          whole step and then jumps to 1.0. Rendering that as a percentage would
+          be a boolean dressed as a measurement — the lie this screen exists to
+          avoid. So a number is shown only when the chain genuinely has more than
+          one link; otherwise the bar is indeterminate and the honest progress
+          signal is the completed-step counter above. */}
+      <ProgressBar step={step} installing={installing} done={done} total={total} />
 
       {/* The rail: one segment per step, so "how much is left" is answered
           peripherally without reading a number. Segments reflect real statuses
@@ -834,13 +996,555 @@ function BlockerNotice({ blockers }: { blockers: string[] }) {
   );
 }
 
-function EmptyState({ onBack }: { onBack: () => void }) {
+/**
+ * Shown when there is no plan to render.
+ *
+ * Two different situations land here, and saying the same thing to both was part
+ * of what made this feel like a dead end:
+ *
+ * * **A profile is selected** — the plan is being (re)built right now, so the
+ *   honest message is "正在生成安装方案", and the student should wait a moment.
+ *   The build is triggered by the caller.
+ * * **No profile at all** — nothing can be planned until the student picks a
+ *   direction, so the screen says that and offers the way to do it.
+ *
+ * The back control is `BackButton`, which is history-driven, so it returns
+ * wherever the student actually came from rather than to a hardcoded screen.
+ */
+function EmptyState({ canRecover }: { canRecover: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-10">
-      <p className="text-[color:var(--text-tertiary)] text-[14px]">还没有生成安装方案</p>
-      <Button variant="ghost" className="mt-4" onClick={onBack}>
-        返回选择方案
-      </Button>
+    <div
+      className="flex h-full flex-col items-center justify-center px-10"
+      data-testid="install-empty"
+      data-recoverable={canRecover ? "true" : "false"}
+    >
+      <p className="text-[color:var(--text-tertiary)] text-[14px]">
+        {canRecover ? "正在生成安装方案…" : "还没有生成安装方案"}
+      </p>
+      {!canRecover && (
+        <p className="text-[color:var(--text-quiet)] mt-1.5 text-[12.5px]">
+          请先选择一个配置方案，再回来安装。
+        </p>
+      )}
+      <BackButton className="mt-4" label="返回上一步" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The install state machine
+// ---------------------------------------------------------------------------
+
+/**
+ * Which state the run is in, from what is actually known.
+ *
+ * `Idle → Preparing → Downloading → Installing → Verifying → Completed`, plus
+ * `Failed` and `Cancelled`.
+ *
+ * The stages are derived from the session rather than tracked in a second piece
+ * of React state. That is deliberate: a mirrored copy of Rust's progress would
+ * be a second source of truth, and the two would disagree exactly when it
+ * mattered — after a cancelled run, or when a session is restored from a
+ * previous launch. Deriving means the screen cannot show a phase the session
+ * does not support.
+ *
+ * `cancelled` is checked before `failed`: a run the student stopped has failed
+ * steps in it by construction (the unattempted ones are marked `cancelled`, and
+ * an in-flight step can also end non-zero), so treating `failed_steps` as
+ * authoritative would report a deliberate stop as a malfunction. That inversion
+ * is the whole reason the brief insists cancel show the *correct* reason.
+ */
+function derivePhase({
+  installing,
+  session,
+  executionError,
+  halted,
+}: {
+  installing: boolean;
+  session: ReturnType<typeof useApp.getState>["session"];
+  executionError: string | null;
+  halted: string | null;
+}): InstallPhase {
+  if (installing) {
+    if (!session || session.steps.length === 0) return "preparing";
+    const running = session.steps.find((s) => s.status === "running");
+    if (!running) return "preparing";
+    // A step whose stage names a download is the only honest source for
+    // `downloading`; there is no separate byte-level signal to read.
+    return isDownloadStage(running.stage) ? "downloading" : "installing";
+  }
+
+  if (!session) return executionError ? "failed" : "idle";
+
+  // The run is over. `cancelled` wins over `failed` — see above.
+  if (session.cancelledByUser) return "cancelled";
+  if (halted || session.failedSteps.length > 0) return "failed";
+  return "completed";
+}
+
+/** Does this step's stage text describe fetching rather than executing? */
+function isDownloadStage(stage: string): boolean {
+  return stage.includes("下载") || stage.includes("准备安装");
+}
+
+/** The heading for a phase. One place, so the wording cannot drift per branch. */
+function phaseTitle(phase: InstallPhase): string {
+  switch (phase) {
+    case "idle":
+      return "准备安装";
+    case "preparing":
+      return "正在准备安装";
+    case "downloading":
+      return "正在下载";
+    case "installing":
+      return "正在安装";
+    case "verifying":
+      return "正在检查安装结果";
+    case "completed":
+      return "安装完成";
+    case "cancelled":
+      return "安装已取消";
+    case "failed":
+      return "安装未完成";
+  }
+}
+
+/**
+ * The progress bar.
+ *
+ * ## Why it may show no number
+ *
+ * `fraction` is deliberately *not* trusted as a percentage: it is attempt-index
+ * progress across a fallback chain, so a single-link step yields 0.0 then 1.0 —
+ * a boolean, not a measurement (see `honestFraction`).
+ *
+ * An indeterminate bar reports `data-progress="indeterminate"` rather than
+ * omitting the attribute, so a test asserts the *decision* instead of inferring
+ * it from styling.
+ *
+ * ## Why this renders rarely, and why that is the honest state
+ *
+ * `run_install` is a single blocking call that returns a **complete**
+ * `ExecutionSession`; there is no streaming channel from Rust (no `emit`, no
+ * progress events). The store therefore holds `installing: true` with
+ * `session: null` for the entire run, and a live per-step percentage is not
+ * available to any renderer in this architecture.
+ *
+ * A bar that animated through a run would therefore have to be driven by a
+ * timer, which is precisely the lie `Install.tsx` refuses. So this component
+ * shows a bar only when a running step genuinely exists — which happens on a
+ * resumed session, where the store already holds a session describing the work
+ * still to do. Otherwise the honest signals are the step counter
+ * (`已完成 n / m`) and the elapsed clock, both of which are real.
+ *
+ * Surfacing true live progress needs a Rust-side change (progress events, or a
+ * polling command that reports the in-flight step). That is a larger piece of
+ * work than this release, and is recorded as a follow-up rather than faked here.
+ */
+function ProgressBar({
+  step,
+  installing,
+  done,
+  total,
+}: {
+  step: StepProgress | undefined;
+  installing: boolean;
+  done: number;
+  total: number;
+}) {
+  // A bar needs a step that is genuinely running. Without one there is nothing
+  // to be in progress *of*, and inventing one would be the timer lie.
+  if (!installing || !step || step.status !== "running") return null;
+
+  const fraction = honestFraction(step);
+
+  return (
+    <div className="mt-4">
+      <div
+        data-testid="install-progress"
+        data-progress={fraction === null ? "indeterminate" : Math.round(fraction * 100)}
+        // The counter is the honest progress signal while the bar is
+        // indeterminate, so it is exposed for assertion either way.
+        data-done={done}
+        data-total={total}
+        className="bg-[color:var(--line-subtle)] relative h-1.5 w-full overflow-hidden rounded-full"
+      >
+        {fraction === null ? (
+          // Indeterminate: a travelling segment, not a filling one. It says
+          // "working" without claiming a position it does not know. Reuses the
+          // existing `sweep` animation rather than adding a second one — the
+          // keyframes and its reduced-motion handling already exist.
+          <span className="sweep-active bg-[color:var(--status-accent)] absolute inset-y-0 w-1/3 rounded-full" />
+        ) : (
+          <span
+            className="bg-[color:var(--status-accent)] absolute inset-y-0 left-0 rounded-full transition-[width] duration-300"
+            style={{ width: `${Math.round(fraction * 100)}%` }}
+          />
+        )}
+      </div>
+      {fraction !== null && (
+        <div className="text-[color:var(--text-quiet)] tnum mt-1.5 text-right text-[12px]">
+          {Math.round(fraction * 100)}%
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The one place a percentage may be shown, and when it may not.
+ *
+ * `fraction` reaches the UI as `attempt / (chain_len + 1)` while a chain runs
+ * (`install.rs:451`) and `1.0` when it ends (`:471`). With a single-link chain —
+ * which is most programs — that is `0.0` for the entire install and then `1.0`.
+ * A bar driven by that would sit empty and then snap to full, which is a lie of
+ * the same kind as a timer.
+ *
+ * So a value is returned only when it can carry information, and `null`
+ * otherwise — the caller then renders an indeterminate bar. Clamped, because the
+ * caller uses it as a width and an out-of-range value from the backend must not
+ * produce a broken bar.
+ *
+ * When the backend can report real sub-step progress, this is the single
+ * function that changes.
+ */
+function honestFraction(step: StepProgress): number | null {
+  const fraction = step.fraction;
+  if (fraction === null || !Number.isFinite(fraction)) return null;
+
+  // The threshold, and why: `attempt / (len + 1)` on a single-link chain can
+  // only be 0.0, so any value there is a boolean dressed as a measurement.
+  // A chain long enough to produce a true intermediate value is the smallest
+  // case where the number means something.
+  if (!chainHasIntermediateSteps(step) && fraction <= 0) return null;
+
+  return Math.min(1, Math.max(0, fraction));
+}
+
+/**
+ * Does this step's fallback chain have room for a meaningful mid-value?
+ *
+ * Separate from `honestFraction` because it answers a different question — "can
+ * this fraction ever be informative" — and merging the two is what would make
+ * the single-link case regress.
+ */
+function chainHasIntermediateSteps(step: StepProgress): boolean {
+  const fraction = step.fraction;
+  return fraction !== null && fraction > 0 && fraction < 1;
+}
+
+/** The cancel / failure panel's contents. */
+function buildFailureView({
+  phase,
+  session,
+  runningStep,
+  executionError,
+  halted,
+}: {
+  phase: InstallPhase;
+  session: ReturnType<typeof useApp.getState>["session"];
+  runningStep: StepProgress | null;
+  executionError: string | null;
+  halted: string | null;
+}): InstallFailureView | null {
+  if (phase !== "failed" && phase !== "cancelled") return null;
+
+  // The command that was running, from the session's own action trace. Prefer
+  // the last action overall: when a step fails `runningStep` may already have
+  // moved on, and the *last* thing attempted is what the student needs.
+  const lastAction = session?.actions.at(-1) ?? null;
+  const command = lastAction?.command ?? null;
+  const log = lastAction?.output?.trim() ? lastAction.output : null;
+
+  if (phase === "cancelled") {
+    return {
+      kind: "cancelled",
+      reason: "用户主动取消",
+      command,
+      log,
+      suggestion: CANCELLED_SUGGESTION,
+      logPath: null,
+    };
+  }
+
+  // A halt has a reason the engine already wrote for the student.
+  if (halted) {
+    return {
+      kind: "permissionDenied",
+      reason: halted,
+      command,
+      log,
+      suggestion: "右键以管理员身份重新运行本程序。",
+      logPath: null,
+    };
+  }
+
+  const failureKind = classifyFailure(lastAction);
+  const failedStep = session?.steps.find((s) => s.status === "failed") ?? null;
+
+  return {
+    kind: failureKind,
+    reason:
+      executionError ??
+      failureReason(failureKind, failedStep?.name ?? runningStep?.name ?? null),
+    command,
+    log: log ?? lastAction?.error ?? null,
+    suggestion: suggestionFor(failureKind),
+    logPath: null,
+  };
+}
+
+const CANCELLED_SUGGESTION = "重新点击「开始安装」可以继续未完成的步骤。";
+
+/**
+ * Names the failure from the evidence in the session, never from a guess.
+ *
+ * Order matters: the executor's own classification is the most specific signal,
+ * so it is consulted before falling back to the generic non-zero exit.
+ */
+function classifyFailure(
+  lastAction: { outcome: AttemptOutcome } | null,
+): InstallFailureKind {
+  if (lastAction?.outcome === "permissionDenied") return "permissionDenied";
+  if (lastAction?.outcome === "unavailable") return "unavailable";
+  if (lastAction?.outcome === "cancelled") return "cancelled";
+  return "nonZeroExit";
+}
+
+function failureReason(kind: InstallFailureKind, name: string | null): string {
+  const subject = name ?? "该项目";
+  switch (kind) {
+    case "cancelled":
+      return "用户主动取消";
+    case "permissionDenied":
+      return "安装需要管理员权限";
+    case "unavailable":
+      return `未找到安装 ${subject} 所需的工具`;
+    case "verifyFailed":
+      return "安装执行完成，但是未检测到命令。";
+    case "nonZeroExit":
+      return `${subject} 安装失败`;
+  }
+}
+
+function suggestionFor(kind: InstallFailureKind): string {
+  switch (kind) {
+    case "cancelled":
+      return CANCELLED_SUGGESTION;
+    case "permissionDenied":
+      return "右键以管理员身份重新运行本程序。";
+    case "unavailable":
+      return "检查网络连接，或确认系统已安装 winget。";
+    case "verifyFailed":
+      return "命令可能在新的终端窗口中才生效，请重启本程序后再试。";
+    case "nonZeroExit":
+      return "检查网络连接，或稍后重试。";
+  }
+}
+
+/**
+ * The post-install checklist.
+ *
+ * This is the brief's "detect whether the command exists → read its version →
+ * report" step, and its most important property is what it does with a
+ * *zero-exit* run whose program is absent. `verify_install_result` re-probes the
+ * machine, so `ok: false` here means "the command finished and the program is
+ * not usable" — reported as a failure, never as a green tick.
+ */
+function VerificationList({ report }: { report: PostInstallReport }) {
+  if (report.checks.length === 0) return null;
+
+  const problems = report.checks.filter((c) => !c.ok);
+
+  return (
+    <div className="mt-7" data-testid="install-verification">
+      <SectionLabel>安装结果检查</SectionLabel>
+      <div className="stagger mt-2 flex flex-col gap-1.5">
+        {report.checks.map((check) => (
+          <div
+            key={check.id}
+            className={clsx(
+              "flex items-start gap-3 rounded-[10px] border px-3.5 py-2.5",
+              check.ok
+                ? "border-[color:var(--line-subtle)]/70"
+                : "border-bad/25 bg-[color:var(--status-bad)]/[0.05]",
+            )}
+            data-testid={`verify-${check.id}`}
+            data-ok={check.ok ? "true" : "false"}
+          >
+            <SoftwareIcon id={check.id} size={26} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
+                  {check.name}
+                </span>
+                {check.ok && check.version && (
+                  <span className="text-[color:var(--text-quiet)] tnum text-[12px]">
+                    版本: {check.version}
+                  </span>
+                )}
+              </div>
+              <p
+                className={clsx(
+                  "mt-0.5 text-[12.5px] leading-relaxed",
+                  check.ok
+                    ? "text-[color:var(--text-tertiary)]"
+                    : "text-[color:var(--text-secondary)]",
+                )}
+              >
+                {check.message}
+              </p>
+              {!check.ok && check.hint && (
+                <p className="text-[color:var(--text-quiet)] mt-1 text-[12px]">
+                  {check.hint}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* A one-line rollup, so the outcome is legible without reading every row.
+          Only shown when something is wrong: "全部通过" on a clean run would be
+          noise on a screen that already says 安装完成. */}
+      {problems.length > 0 && (
+        <p className="text-[color:var(--text-secondary)] mt-2.5 text-[12.5px]">
+          有 {problems.length} 项安装执行完成，但是未检测到命令。
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The panel a stopped or failed run shows.
+ *
+ * The brief asks for the reason, the running command, the log so far and a
+ * suggestion, because `已取消` alone left the student with nothing to act on.
+ * The `data-*` attributes are the test contract.
+ */
+function FailurePanel({
+  view,
+  canRetry,
+  remainingCount,
+  retrying,
+  onRetry,
+}: {
+  view: InstallFailureView;
+  /** Whether continuing the run is actually possible. */
+  canRetry: boolean;
+  remainingCount: number;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className={clsx(
+        "fade mt-4 rounded-[12px] border px-4 py-3.5",
+        view.kind === "cancelled"
+          ? "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/40"
+          : "border-bad/25 bg-[color:var(--status-bad)]/[0.06]",
+      )}
+      data-testid="install-failure-panel"
+      data-reason={view.kind === "cancelled" ? "user-cancelled" : view.kind}
+    >
+      <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
+        {view.kind === "cancelled" ? "安装已取消" : "安装未完成"}
+      </div>
+
+      <dl className="mt-2 flex flex-col gap-1 text-[12.5px] leading-relaxed">
+        <div className="flex gap-1.5">
+          <dt className="text-[color:var(--text-quiet)] shrink-0">原因:</dt>
+          <dd className="text-[color:var(--text-secondary)]">{view.reason}</dd>
+        </div>
+        {view.command && (
+          <div className="flex gap-1.5">
+            <dt className="text-[color:var(--text-quiet)] shrink-0">正在执行:</dt>
+            <dd className="text-[color:var(--text-secondary)] break-all">
+              {view.command}
+            </dd>
+          </div>
+        )}
+        {view.log && (
+          <div className="flex gap-1.5">
+            <dt className="text-[color:var(--text-quiet)] shrink-0">日志:</dt>
+            {/* Truncated: the panel is a summary, and the full file is one
+                command away. Showing everything would push the suggestion off
+                screen, which is the part the student acts on. */}
+            <dd className="text-[color:var(--text-tertiary)] max-h-24 overflow-y-auto break-all whitespace-pre-wrap">
+              {view.log.slice(-600)}
+            </dd>
+          </div>
+        )}
+        {view.suggestion && (
+          <div className="flex gap-1.5">
+            <dt className="text-[color:var(--text-quiet)] shrink-0">建议:</dt>
+            <dd className="text-[color:var(--text-secondary)]">{view.suggestion}</dd>
+          </div>
+        )}
+      </dl>
+
+      {/* The action the brief asks for alongside the diagnosis.
+          Without it the panel explains a failure and then leaves the student to
+          find their own way out, which is the corridor this screen exists to
+          close. Only offered when continuing is actually possible:
+          `canRetry` is false for a cancelled run — the student stopped it on
+          purpose, so "重试" would be an odd way to put it — and false when the
+          run has nothing left to resume. */}
+      {canRetry && (
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            variant="quiet"
+            data-testid="install-retry"
+            onClick={onRetry}
+            disabled={retrying}
+          >
+            {retrying ? "正在重试…" : `重试（还剩 ${remainingCount} 项）`}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The dialog shown when back is pressed during a run.
+ *
+ * The brief's promise is that returning does not stop the install, and that the
+ * student can choose either way. Both facts come from the store: `goBack()` does
+ * not reset `session`/`plan`/`installing`, which is what makes
+ * 「继续后台安装」 true rather than merely comforting.
+ */
+function BackDuringInstallDialog({
+  stepName,
+  onContinue,
+  onCancelAndLeave,
+}: {
+  stepName: string | null;
+  onContinue: () => void;
+  onCancelAndLeave: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+      role="dialog"
+      aria-modal="true"
+      data-testid="install-back-dialog"
+    >
+      <div className="glass w-full max-w-[420px] rounded-[16px] px-6 py-5">
+        <div className="text-[color:var(--text-strong)] text-[16px] font-semibold">
+          正在安装: {stepName ?? "当前项目"}
+        </div>
+        <p className="text-[color:var(--text-secondary)] mt-2 text-[13px] leading-relaxed">
+          返回不会停止安装。安装会在后台继续，你可以稍后回到这个页面查看进度。
+        </p>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <Button variant="ghost" onClick={onCancelAndLeave}>
+            取消安装并返回
+          </Button>
+          <Button onClick={onContinue}>继续后台安装</Button>
+        </div>
+      </div>
     </div>
   );
 }

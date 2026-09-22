@@ -9,6 +9,7 @@
 //! profiles  →  load Profile documents
 //! install   →  turn (Profile, inventory) into an InstallPlan, then execute it
 //! executor  →  run one InstallSource and record exactly what happened
+//! install_log → persist what failed, so an error outlives the window
 //! verify    →  turn (InstallPlan, inventory) into a VerificationReport
 //! config    →  localisation + post-install configuration actions
 //! bootstrap →  turn (Profile, inventory) into a *configured* environment
@@ -35,6 +36,7 @@ pub mod config;
 pub mod detect;
 pub mod executor;
 pub mod install;
+pub mod install_log;
 pub mod inventory;
 pub mod knowledge;
 pub mod license;

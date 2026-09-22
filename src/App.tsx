@@ -28,7 +28,7 @@
  * without either bloating every row or hiding it behind a modal.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { TitleBar } from "./components/TitleBar";
 import { Notice } from "./components/ui";
@@ -80,6 +80,16 @@ export default function App() {
   const dashboardOpen = useApp((s) => s.dashboardOpen);
   const theme = useApp((s) => s.theme);
   const entitlements = useApp((s) => s.entitlements);
+  /**
+   * Subscribed, not read via `getState()` inside the effect.
+   *
+   * The unreadable-licence path (rule 3) leaves `entitlements` as `null`
+   * forever, so an effect keyed only on `entitlements` would never re-run when
+   * the phase went `idle → loading → error`, and the gate would never open. The
+   * phase is the field that actually changes there, so it has to be a
+   * dependency.
+   */
+  const entitlementsPhase = useApp((s) => s.entitlementsPhase);
   const loadEntitlements = useApp((s) => s.loadEntitlements);
   const openDashboard = useApp((s) => s.openDashboard);
 
@@ -93,8 +103,35 @@ export default function App() {
    *
    * `null` means "not decided yet, we have not read the licence", which is why
    * the gate is not shown while the licence is still loading.
+   *
+   * Since 0.1.1 this starts `false`, not `null`-then-true: the gate is no longer
+   * what a brand-new customer sees first. `Welcome` is. This flag now means "the
+   * customer opened the licence panel", which the three documented rules can
+   * only *force* open in the unreadable case.
    */
-  const [gateOpen, setGateOpen] = useState<boolean | null>(null);
+  const [gateOpen, setGateOpen] = useState<boolean>(false);
+
+  /**
+   * Whether the start-up decision has been taken.
+   *
+   * A ref, not the `gateOpen` state that drove this before 0.1.1. The effect
+   * must run exactly once, but `gateOpen` no longer doubles as "have we
+   * decided": it starts `false` (the gate is closed, which is now the normal
+   * first-run state) and is legitimately set to `false` again when the customer
+   * dismisses the gate. Using it as the guard would re-run the decision on every
+   * render after a dismissal.
+   */
+  const decisionMade = useRef(false);
+
+  /**
+   * `true` when the gate was opened by rule 3 rather than by the customer.
+   *
+   * Rule 3 (a licence that could not be read) is the one case that still forces
+   * the gate open on its own, because hiding an unreadable PRO state is exactly
+   * what the rule exists to prevent. Everything else opens the gate from
+   * `Welcome`, and in that case the customer can close it again.
+   */
+  const [forcedGate, setForcedGate] = useState(false);
 
   useEffect(() => {
     void loadStatus();
@@ -106,7 +143,17 @@ export default function App() {
     if (useApp.getState().entitlementsPhase === "idle") void loadEntitlements();
   }, [loadStatus, loadResumable, loadEntitlements]);
 
-  // Decide the gate once the licence question has an answer.
+  /**
+   * Whether the gate may be closed without answering.
+   *
+   * It may when there is a real surface to go back to — the unreadable case
+   * (rule 3) can force the gate open on a cold start where `Welcome` is behind
+   * it and nothing else is. Distinguishing the two is what keeps rule 3 honest
+   * without trapping a customer who merely wanted to look.
+   */
+  const canDismissGate = !forcedGate;
+
+  // Decide the entry surface once the licence question has an answer.
   //
   // The order here is the whole rule: a licence beats the flag. Someone who
   // chose FREE months ago and has since activated a key is PRO, and must not be
@@ -117,22 +164,51 @@ export default function App() {
   // environment; someone who already answered the gate has either walked it or
   // declined to, and re-offering it would make the gate look like it did not
   // take. "重新规划" on the dashboard is how they re-enter the wizard on purpose.
+  //
+  // What 0.1.1 changed, and what deliberately did NOT change:
+  //
+  //   * CHANGED: a customer with *neither* a licence nor an answer now sees
+  //     `Welcome`, not the gate. Before this, the gate preempted both surfaces,
+  //     so a first-run student was asked "解锁 PRO?" before they knew what the
+  //     app was (audit §2). The gate is now reached FROM Welcome, on purpose,
+  //     by the customer who has a code.
+  //   * UNCHANGED — rule 1: an active licence still goes straight to the
+  //     dashboard and never sees the gate.
+  //   * UNCHANGED — rule 2: an already-answered customer is never shown the gate
+  //     again; they go to the dashboard.
+  //   * UNCHANGED — rule 3: a licence read *error* is not treated as "no
+  //     licence". This is the one case where the gate is still forced open on
+  //     its own, because leaving the customer on Welcome with an unreadable
+  //     licence would hide the fact that their PRO state could not be read —
+  //     and asking a paying customer to activate again is the exact outcome the
+  //     rule exists to prevent. The gate renders its "unreadable" state with a
+  //     retry.
   useEffect(() => {
-    if (gateOpen !== null) return;
+    if (decisionMade.current) return;
+
     const answered = readEntryChoice() !== null;
     if (entitlements) {
+      decisionMade.current = true;
       const active = entitlements.state === "active";
-      setGateOpen(!active && !answered);
+      // Rule 1 and rule 2: a licence or an answer both mean "do not ask".
       if (active || answered) openDashboard();
-    } else if (useApp.getState().entitlementsPhase === "error") {
-      // The licence could not be read. The gate shows, but the gate itself
-      // renders the "unreadable" state rather than pretending there is no
-      // licence — asking a paying customer to activate again on a read error is
-      // the one outcome worth avoiding.
-      setGateOpen(!answered);
-      if (answered) openDashboard();
+      // Otherwise: stay on Welcome. `gateOpen` is left `false` — the customer
+      // opens the gate themselves from Welcome's activation entry.
+    } else if (entitlementsPhase === "error") {
+      decisionMade.current = true;
+      if (answered) {
+        // Rule 2 still wins over the unreadable state: someone who already
+        // answered is not asked again just because the file could not be read.
+        openDashboard();
+      } else {
+        // Rule 3: the licence could not be read, so the gate shows — but only
+        // for a customer who has not already answered. It renders the
+        // "unreadable" panel rather than pretending there is no licence.
+        setForcedGate(true);
+        setGateOpen(true);
+      }
     }
-  }, [gateOpen, entitlements, openDashboard]);
+  }, [entitlements, entitlementsPhase, openDashboard]);
 
   // Theme lives on `<html>` rather than in a React context because the webview
   // paints its own background before React mounts, and `tauri.conf.json` sets
@@ -158,19 +234,25 @@ export default function App() {
       <TitleBar />
 
       <main className="relative flex-1 overflow-hidden">
-        {gateOpen === true ? (
-          // The gate replaces both surfaces, not just the wizard. A customer who
-          // reaches a working machine through the wizard still has to answer the
-          // licence question, and answering it twice in two different places is
-          // how the two answers drift apart.
+        {gateOpen ? (
+          // The gate is a *panel over* whatever surface was showing, not a
+          // replacement for the whole app. Since 0.1.1 it is opened from
+          // `Welcome` (the "已有激活码" entry) rather than being the cold-start
+          // screen, so `onDismiss` closes it back onto that surface. On the one
+          // path where it is still forced open — an unreadable licence with no
+          // recorded answer (rule 3) — there is no surface worth revealing and
+          // no dismiss is offered, so the customer must answer it either way.
           <ActivationGate
             onDone={() => {
               setGateOpen(false);
-              // Choosing FREE lands on the dashboard rather than the wizard: the
-              // dashboard is the surface a student returns to, and the wizard is
-              // the first-run path they have just declined to walk.
+              // Answering the gate lands on the dashboard rather than the
+              // wizard: the dashboard is the surface a student returns to, and
+              // the wizard is the first-run path. A customer who opened the gate
+              // from Welcome and chose FREE has made their first-run decision,
+              // so the dashboard is where that decision puts them.
               openDashboard();
             }}
+            onDismiss={canDismissGate ? () => setGateOpen(false) : undefined}
           />
         ) : dashboardOpen ? (
           // No `key` here on purpose: the dashboard keeps its scroll position and
@@ -182,7 +264,14 @@ export default function App() {
           // entrance animation and guaranteeing no stale local state leaks across
           // a navigation.
           <div key={screen} className="fade h-full">
-            {screen === "welcome" && <WelcomeScreen />}
+            {/* `onOpenLicense` opens the gate as a *panel over* this surface,
+                not as a `goTo`. Putting the gate in `navStack` would give it a
+                history entry and let a back button "return" to a decision, which
+                is exactly what it must not do. `App` owns the flag; `Welcome`
+                just asks for it. */}
+            {screen === "welcome" && (
+              <WelcomeScreen onOpenLicense={() => setGateOpen(true)} />
+            )}
             {screen === "goal" && <GoalScreen />}
             {screen === "detect" && <DetectScreen />}
             {screen === "software" && <SoftwareScreen />}
@@ -198,7 +287,7 @@ export default function App() {
           would claim the student is on a step, which is the linear framing the
           dashboard exists to replace. Suppressed while the gate is up, since the
           gate is a decision rather than a step. */}
-      {gateOpen !== true && !dashboardOpen && screen !== "welcome" && (
+      {!gateOpen && !dashboardOpen && screen !== "welcome" && (
         <ProgressRail current={screen} />
       )}
 

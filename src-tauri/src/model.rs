@@ -950,6 +950,12 @@ pub struct McpBootstrap {
 #[serde(rename_all = "camelCase")]
 pub enum InstallSource {
     /// `winget install --id <id>` — the preferred path.
+    ///
+    /// No `--source` is passed: winget's default resolution handles both
+    /// community package ids and Microsoft Store product ids (`9PLM9XGG6VKS`),
+    /// because the `msstore` source is registered and non-explicit. Verified on
+    /// winget 1.29.290 — pinning `--source winget` for a store id breaks it with
+    /// 0x8A150014, so leaving the source unset is the working case.
     Winget { package_id: String },
     /// Official installer, downloaded at runtime from the vendor and passed to
     /// the OS. Used only where winget has no package or ships something stale

@@ -65,6 +65,11 @@ pub fn run() {
             commands::resumable_install,
             commands::last_install_session,
             commands::verify_installation,
+            // Post-install verification + install.log (0.1.1)
+            commands::verify_install_result,
+            commands::install_log_path,
+            commands::read_install_log,
+            commands::install_log_exists,
             commands::planned_config_actions,
             commands::generate_report,
             commands::save_report,

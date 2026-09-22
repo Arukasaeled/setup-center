@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Button, ScoreReadout, SectionLabel, StatusMark } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { selectedProfile, useApp } from "../lib/store";
 import type { CheckResult, PackageVerification } from "../lib/types";
 
@@ -162,9 +163,7 @@ export function DoneScreen() {
       </div>
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        <Button variant="quiet" onClick={() => goTo("install")}>
-          返回
-        </Button>
+        <BackButton />
         <div className="flex items-center gap-2.5">
           <Button
             variant="ghost"

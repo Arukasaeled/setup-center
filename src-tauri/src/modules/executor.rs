@@ -187,6 +187,12 @@ fn run_winget(package_id: &str, cancel: &CancelFlag) -> ExecResult {
             // attempted it. A surprising winget failure is usually a version
             // characteristic, and without this the log cannot show it.
             let version_note = format!("winget {version}\n");
+            // No `--source`: winget's default resolution is correct for both
+            // community package ids and Microsoft Store product ids. Verified on
+            // winget 1.29.290 — `msstore` is registered and non-explicit, so
+            // `--id 9PLM9XGG6VKS` resolves; pinning `--source winget` instead
+            // breaks it with 0x8A150014. Passing no source is the working case,
+            // not an omission.
             let args = [
                 "install",
                 "--id",
@@ -697,7 +703,7 @@ pub fn classify(subject: &str, exit_code: i32, output: String) -> ExecResult {
     // intermediate version of this function did) broke the most common
     // real-world case: running a plan a second time.
     if failure_evidence {
-        let reason = if lower.contains("no package found") || lower.contains("未找到与输入") {
+        let reason = if is_no_package_found(&lower) {
             // The message names the wrong-package case, but the code is still
             // appended: the hex HRESULT is how this failure is looked up, and
             // dropping it here (as an earlier version did) removed the one detail a
@@ -717,7 +723,7 @@ pub fn classify(subject: &str, exit_code: i32, output: String) -> ExecResult {
         return (AttemptOutcome::Succeeded, Some(exit_code), output, None);
     }
 
-    let reason = if lower.contains("no package found") || lower.contains("未找到与输入") {
+    let reason = if is_no_package_found(&lower) {
         format!(
             "{subject}：软件源中没有找到对应的包（退出码 {}）",
             format_exit_code(exit_code)
@@ -727,6 +733,26 @@ pub fn classify(subject: &str, exit_code: i32, output: String) -> ExecResult {
     };
 
     (AttemptOutcome::Failed, Some(exit_code), output, Some(reason))
+}
+
+/// Does this winget output mean "no such package"?
+///
+/// Matched on both the English and the Chinese wording, because winget
+/// localises its output and the app must give the specific reason on a student's
+/// machine in either language.
+///
+/// The Chinese form was wrong until it was observed on a real run: the check
+/// looked for `未找到与输入`, but winget actually prints
+/// `找不到与输入条件匹配的程序包。` — a different first character (`找`, not
+/// `未`). The mismatch meant a dead package id fell through to the generic
+/// "安装失败" on a Chinese-locale machine, which is the exact error this was
+/// written to explain. Both real spellings are accepted; substring matching on
+/// the stable middle of the sentence tolerates the rest.
+fn is_no_package_found(lower: &str) -> bool {
+    lower.contains("no package found")
+        || lower.contains("no packages found")
+        || lower.contains("找不到与输入")
+        || lower.contains("未找到与输入")
 }
 
 /// Renders an exit code the way a human can act on it.
@@ -1001,9 +1027,84 @@ mod tests {
         }
     }
 
+    /// A package that is already installed and has no upgrade available.
+    ///
+    /// Recorded from a real run on this machine:
+    /// `winget install --id 9PLM9XGG6VKS -e --silent ...` → exit `0x8A15002B`
+    /// (`-1978335189`) with exactly the narration below.
+    ///
+    /// This is a **success** for our purposes: the app is present, which is the
+    /// desired end state. It used to be reported as `PermissionDenied`, because
+    /// `0x8a15002b` is in the elevation marker list and `permission` is checked
+    /// before `already_installed`. The student was therefore told
+    /// "需要管理员权限。请右键以管理员身份运行后重试" — advice that cannot possibly
+    /// help, since nothing is missing and nothing needs elevation. Telling
+    /// someone to do something useless is the failure mode the brief forbids.
     #[test]
-    fn no_package_found_is_retryable() {
-        // Distinguishing this from a permission error is what lets the chain
+    fn already_installed_with_no_upgrade_is_success_not_permission_denied() {
+        let output = "找到已安装的现有包。正在尝试升级已安装的包...\n\
+                      找不到可用的升级。\n\
+                      配置的源中没有可用的较新的包版本。";
+
+        let (outcome, code, _, error) = classify("ChatGPT 桌面版", -1978335189, output.into());
+
+        assert_eq!(
+            outcome,
+            AttemptOutcome::Succeeded,
+            "already-installed is the desired end state; error was {error:?}"
+        );
+        assert_eq!(code, Some(-1978335189));
+        assert!(
+            error.is_none(),
+            "a success must carry no error message, got {error:?}"
+        );
+    }
+
+    /// The same code, in the case it actually does mean elevation.
+    ///
+    /// `0x8A15002B` is overloaded — winget returns it both for "no applicable
+    /// upgrade" and for a genuine access denial. Classification therefore cannot
+    /// key on the code alone; it must read the output, which is exactly what the
+    /// narration-marker approach is for. This test pins the elevation half so
+    /// fixing the already-installed half cannot silently break it.
+    #[test]
+    fn the_same_code_with_a_real_access_denial_is_still_permission_denied() {
+        let output = "尝试更新包时发生意外错误: 0x8A15002B : Access is denied.";
+
+        let (outcome, _, _, error) = classify("X", -1978335189, output.into());
+
+        assert_eq!(outcome, AttemptOutcome::PermissionDenied);
+        assert!(error.unwrap().contains("管理员权限"));
+    }
+
+    /// The installed-package narration must not be mistaken for a failure.
+    ///
+    /// `正在尝试升级已安装的包` contains `已安装`, and the failure markers are
+    /// checked *before* the already-installed ones — so the wording of this
+    /// benign outcome sits one step away from being read as a failed install.
+    #[test]
+    fn the_upgrade_narration_is_not_failure_evidence() {
+        let output = "找到已安装的现有包。正在尝试升级已安装的包...\n找不到可用的升级。";
+        let lower = output.to_lowercase();
+
+        for marker in [
+            "installer failed",
+            "安装程序失败",
+            "installation failed",
+            "安装失败",
+            "failed with exit code",
+            "error 0x",
+            "错误 0x",
+        ] {
+            assert!(
+                !lower.contains(marker),
+                "benign upgrade narration must not match the failure marker {marker:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_package_found_is_retryable() {        // Distinguishing this from a permission error is what lets the chain
         // advance to the vendor installer instead of stopping.
         let (outcome, _, _, error) =
             classify("OpenAI.Codex", 1, "No package found matching input criteria.".into());
@@ -1050,11 +1151,70 @@ mod tests {
         );
     }
 
+    /// The exact Chinese wording winget prints on this machine.
+    ///
+    /// Captured from a real run, not invented:
+    /// `winget install --id OpenAI.ChatGPT -e ...` → `找不到与输入条件匹配的程序包。`
+    /// The classifier previously matched `未找到与输入`, which never occurs, so
+    /// on a Chinese-locale machine the dead-id case produced the generic
+    /// "安装失败" instead of naming the real cause. This pins the observed
+    /// string so the gap cannot come back.
+    #[test]
+    fn the_real_chinese_no_package_wording_is_classified() {
+        let (outcome, code, _, error) = classify(
+            "ChatGPT 桌面版",
+            -1978335212,
+            "找不到与输入条件匹配的程序包。".into(),
+        );
+
+        assert_eq!(outcome, AttemptOutcome::Failed);
+        assert_eq!(code, Some(-1978335212));
+
+        let error = error.expect("a reason must be produced");
+        assert!(
+            error.contains("软件源中没有找到对应的包"),
+            "the specific reason must be given, not a generic failure: {error}"
+        );
+        assert!(
+            error.contains("0x8A150014"),
+            "and the hex code must survive for lookup: {error}"
+        );
+    }
+
+    #[test]
+    fn both_english_spellings_of_no_package_are_classified() {
+        for text in [
+            "No package found matching input criteria.",
+            "No packages found matching input criteria.",
+        ] {
+            let (outcome, _, _, error) = classify("X", -1978335212, text.into());
+            assert_eq!(outcome, AttemptOutcome::Failed);
+            assert!(
+                error.unwrap().contains("软件源中没有找到对应的包"),
+                "{text} must be classified as a missing package"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unrelated_failure_is_not_misclassified_as_a_missing_package() {
+        // Over-matching would be its own bug: a permission or disk failure must
+        // not be reported as "the package id is wrong", or the student retries
+        // the one thing that cannot help.
+        let (outcome, _, _, error) = classify("X", 1603, "fatal error during installation".into());
+        assert_eq!(outcome, AttemptOutcome::Failed);
+        let error = error.unwrap();
+        assert!(
+            !error.contains("软件源中没有找到对应的包"),
+            "a non-package failure must not claim the package is missing: {error}"
+        );
+        assert!(error.contains("安装失败"));
+    }
+
     #[test]
     fn format_exit_code_leaves_small_codes_alone() {
         assert_eq!(format_exit_code(0), "0");
-        assert_eq!(format_exit_code(1603), "1603");
-        // The boundary: 0x7FFFFFFF is the largest positive i32.
+        assert_eq!(format_exit_code(1603), "1603");        // The boundary: 0x7FFFFFFF is the largest positive i32.
         assert_eq!(format_exit_code(2147483647), "2147483647");
         assert_eq!(format_exit_code(-1), "-1 / 0xFFFFFFFF");
     }

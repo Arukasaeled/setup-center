@@ -33,6 +33,7 @@ import type {
   MachineFacts,
   Profile,
   ProfileCapabilityView,
+  PostInstallReport,
   RenderedReport,
   RuntimeStatus,
   SoftwareDescriptor,
@@ -237,6 +238,39 @@ export const executionReadiness = (plan: InstallPlan) =>
 
 export const verifyInstallation = (plan: InstallPlan) =>
   call<VerificationReport>("verify_installation", { plan });
+
+/**
+ * Post-install verification: re-probes the machine and reports what is actually
+ * usable, per program.
+ *
+ * Prefer this over `verifyInstallation` after a run. The two answer different
+ * questions: `verifyInstallation` grades a plan against a scan, this reports the
+ * outcome of the run that just happened, including the case the brief singles
+ * out — the command finished and the program is not there. Neither consults the
+ * installer's exit code, which is the point.
+ */
+export const verifyInstallResult = (plan: InstallPlan) =>
+  call<PostInstallReport>("verify_install_result", { plan });
+
+// ---------------------------------------------------------------------------
+// install.log
+// ---------------------------------------------------------------------------
+
+/** Absolute path of `install.log`, for the "打开日志" affordance. */
+export const installLogPath = () => call<string>("install_log_path");
+
+/**
+ * The tail of `install.log`.
+ *
+ * An empty string means no log has been written yet — the normal state before
+ * the first failure — not an error. Callers should treat it as "nothing to
+ * show" rather than as a broken read.
+ */
+export const readInstallLog = (lines?: number) =>
+  call<string>("read_install_log", { lines });
+
+/** Whether an `install.log` exists at all. */
+export const installLogExists = () => call<boolean>("install_log_exists");
 
 export const plannedConfigActions = (profileId: string) =>
   call<ConfigAction[]>("planned_config_actions", { profileId });

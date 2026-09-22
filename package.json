@@ -1,7 +1,7 @@
 {
   "name": "ai-student-setup",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Setup Center - desktop environment and toolchain configurator",
   "scripts": {

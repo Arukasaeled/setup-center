@@ -5,6 +5,10 @@ dist-ssr/
 
 # Rust / Tauri
 src-tauri/target/
+# Isolated release-build target dir (CARGO_TARGET_DIR=target-v3): ~2 GB of
+# regenerable artifacts. Deleted in the 0.1.1 closeout; ignored so a future
+# isolated build cannot be swept into history by `git add -A`.
+src-tauri/target-v3/
 src-tauri/gen/
 
 # Editor

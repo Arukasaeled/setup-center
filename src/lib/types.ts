@@ -391,6 +391,92 @@ export interface StepProgress {
   detail: string | null;
 }
 
+/**
+ * The screen-level install state, shown to the student as a visible phase.
+ *
+ * Distinct from [`StepStatus`], which is per-program. This is the *run*: what the
+ * whole screen is doing right now. The brief asks for the state to be visible
+ * rather than implied by a spinner, so the UI renders it directly (and exposes it
+ * as `data-phase` for tests).
+ *
+ * `cancelled` is a member in its own right, **not** a flavour of `failed`. The
+ * brief's list names `Failed` and stops there, but a run the student stopped is
+ * neither a success nor a failure, and rendering it as a failure would tell them
+ * something untrue about their machine — that something is broken, rather than
+ * that they changed their mind. Keeping them separate is what lets the cancel
+ * panel show the correct reason.
+ */
+export type InstallPhase =
+  | "idle"
+  | "preparing"
+  | "downloading"
+  | "installing"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+/**
+ * Why a run stopped, when the student stopped it or it failed.
+ *
+ * Deliberately a closed set rather than free text: the UI picks the wording and
+ * the suggestion from the kind, and a new failure mode must be added here to be
+ * renderable — which is what stops a new case from silently showing a generic
+ * message.
+ */
+export type InstallFailureKind =
+  | "nonZeroExit"
+  | "unavailable"
+  | "permissionDenied"
+  | "cancelled"
+  | "verifyFailed";
+
+/** What the cancel / error panel shows. */
+export interface InstallFailureView {
+  kind: InstallFailureKind;
+  /** `用户主动取消`, or the failure in one line. */
+  reason: string;
+  /** The command that was running, when there was one. */
+  command: string | null;
+  /** Captured output so far, truncated by Rust. */
+  log: string | null;
+  /** A remedy, when one applies. */
+  suggestion: string | null;
+  /** Where `install.log` was written, so the student can find it. */
+  logPath: string | null;
+}
+
+/**
+ * One program's post-install verdict.
+ *
+ * Mirrors `commands::PostInstallCheck`. `ok` is the verdict that matters, and it
+ * comes from re-probing the machine — never from the installer's exit code.
+ */
+export interface PostInstallCheck {
+  id: SoftwareId;
+  name: string;
+  ok: boolean;
+  /** What the machine reported, when it reported anything. */
+  version: string | null;
+  /** One line for the student. */
+  message: string;
+  hint: string | null;
+}
+
+/** The result of verifying an install that has just finished. */
+export interface PostInstallReport {
+  checks: PostInstallCheck[];
+  /** Programs that failed verification despite the run finishing. */
+  failures: SoftwareId[];
+  /**
+   * `true` when everything verified.
+   *
+   * `false` is the case worth surfacing: the command finished and the program is
+   * still not usable. The student's terminal may have reported success.
+   */
+  verifiedAll: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Execution (stage 3)
 // ---------------------------------------------------------------------------

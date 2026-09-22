@@ -12,8 +12,8 @@
 use crate::model::*;
 use crate::modules::{
     bootstrap::{self, run as bootstrap_run},
-    catalog, capability, config, detect, executor, install, inventory, knowledge, license, machine,
-    verify,
+    catalog, capability, config, detect, executor, install, install_log, inventory, knowledge,
+    license, machine, verify,
 };
 use crate::state::AppState;
 
@@ -370,6 +370,11 @@ async fn run_install_blocking(
     // AppData with nothing referencing them.
     executor::clean_downloads();
 
+    // Persist what failed before handing the session back. Deliberately after
+    // `finish_session`'s data is complete and before the UI can show the result:
+    // if the student closes the window the moment they see the error, the log
+    // must already be on disk.
+    install_log::log_session_failures(&result);
     state.finish_session(result.clone());
     Ok(result)
 }
@@ -427,6 +432,9 @@ pub async fn resume_install(state: State<'_, AppState>) -> AppResult<ExecutionSe
     .map_err(|e| AppError::Internal(format!("安装线程异常结束：{e}")))?;
 
     executor::clean_downloads();
+    // Same reason as the fresh-run path: the log must exist before the student
+    // can act on the failure.
+    install_log::log_session_failures(&result);
     state.finish_session(result.clone());
     Ok(result)
 }
@@ -452,6 +460,165 @@ pub fn resumable_install(state: State<'_, AppState>) -> Option<ExecutionSession>
 #[tauri::command]
 pub fn last_install_session(state: State<'_, AppState>) -> Option<ExecutionSession> {
     state.last_session()
+}
+
+/// Where `install.log` lives, so the UI can tell the student where to look.
+#[tauri::command]
+pub fn install_log_path() -> String {
+    install_log::log_path().to_string_lossy().to_string()
+}
+
+/// The tail of `install.log`, for the failure and cancellation panels.
+///
+/// Returns an empty string when no log exists yet, which is the normal state
+/// before the first failure — not an error the UI should render as one.
+#[tauri::command]
+pub fn read_install_log(lines: Option<usize>) -> String {
+    install_log::tail(lines.unwrap_or(40))
+}
+
+/// The path that the most recent run's log was written to, if any.
+///
+/// Exposed separately from [`read_install_log`] so the failure panel can offer
+/// "打开日志" without reading the whole file into the UI first.
+#[tauri::command]
+pub fn install_log_exists() -> bool {
+    install_log::log_path().exists()
+}
+
+/// One program's post-install verdict, in the shape the install screen shows.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostInstallCheck {
+    pub id: SoftwareId,
+    pub name: String,
+    /// True only when the program is genuinely present *and* usable.
+    pub ok: bool,
+    /// The version the machine reported, when it reported one.
+    pub version: Option<String>,
+    /// The one-line verdict.
+    pub message: String,
+    /// A remedy, when there is one.
+    pub hint: Option<String>,
+}
+
+/// What the install screen needs after a run: per-program verification, and
+/// whether anything needs the student's attention.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostInstallReport {
+    pub checks: Vec<PostInstallCheck>,
+    /// Programs that failed verification despite the run finishing.
+    pub failures: Vec<SoftwareId>,
+    /// True when the run's own exit codes were all zero but something is missing.
+    ///
+    /// Surfaced separately because it is the confusing case: the student's
+    /// terminal said the install succeeded, and the program is not there. The UI
+    /// needs to say that explicitly rather than show a green tick.
+    pub verified_all: bool,
+}
+
+/// Verifies an install that has just finished, by re-reading the machine.
+///
+/// The brief is explicit that the installer's exit code is not evidence: a
+/// command can exit 0 having installed nothing usable. This re-probes the
+/// machine through the same merged inventory the software list uses, so a
+/// program that is present but not on `PATH`, or present at an old version, is
+/// reported honestly rather than as a success.
+#[tauri::command]
+pub fn verify_install_result(
+    plan: InstallPlan,
+    state: State<'_, AppState>,
+) -> PostInstallReport {
+    let ids: Vec<SoftwareId> = plan.steps.iter().map(|s| s.id).collect();
+    let inv = inventory::scan(&catalog::Catalog::builtin(), &ids);
+    state.cache_scan(&inv);
+    let scan = SoftwareScan {
+        scanned_at: inv.scanned_at.clone(),
+        inventory: inv,
+    };
+    let report = verify::verify_plan(&plan, &scan);
+
+    let checks: Vec<PostInstallCheck> = report
+        .packages
+        .iter()
+        .map(|package| {
+            let present_ok = package.present.confidence.is_ok();
+            let version_ok = package.version.confidence.is_ok();
+            let ok = package.passed;
+
+            let message = if ok {
+                match package.version.observed.as_deref() {
+                    Some(v) => format!("安装完成，版本: {v}"),
+                    None => "安装完成".to_string(),
+                }
+            } else if !present_ok {
+                // The case the brief names: the command finished, the program
+                // is not there. Never reported as success.
+                "安装执行完成，但是未检测到命令。".to_string()
+            } else if !version_ok {
+                package
+                    .version
+                    .hint
+                    .clone()
+                    .unwrap_or_else(|| "安装完成，但版本需要确认。".to_string())
+            } else {
+                package
+                    .on_path
+                    .hint
+                    .clone()
+                    .unwrap_or_else(|| "安装完成，但需要检查 PATH。".to_string())
+            };
+
+            PostInstallCheck {
+                id: package.id,
+                name: package.name.clone(),
+                ok,
+                // Prefer the version check's observation; fall back to the
+                // presence check's, which carries the path when no version came
+                // back — still useful, and better than showing nothing.
+                version: package
+                    .version
+                    .observed
+                    .clone()
+                    .filter(|v| v != "未安装，跳过" && v != "无法确认")
+                    .or_else(|| package.present.observed.clone()),
+                message,
+                hint: package
+                    .version
+                    .hint
+                    .clone()
+                    .or_else(|| package.present.hint.clone())
+                    .or_else(|| package.on_path.hint.clone()),
+            }
+        })
+        .collect();
+
+    let failures: Vec<SoftwareId> = checks
+        .iter()
+        .filter(|c| !c.ok)
+        .map(|c| c.id)
+        .collect();
+
+    // Persist the case the brief calls out: the installer exited 0 and the
+    // program is still not usable. Recorded here rather than in the run's own
+    // log pass because the verification outcome only exists now.
+    for check in checks.iter().filter(|c| !c.ok) {
+        if let Some(step) = plan.steps.iter().find(|s| s.id == check.id) {
+            install_log::log_verify_failure(
+                step.id.key(),
+                &check.name,
+                &install::describe_source(&step.source),
+                &check.message,
+            );
+        }
+    }
+
+    PostInstallReport {
+        verified_all: failures.is_empty(),
+        failures,
+        checks,
+    }
 }
 
 /// Runs the verification pass over a plan.

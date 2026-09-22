@@ -31,6 +31,7 @@
 import { useEffect } from "react";
 import clsx from "clsx";
 import { Button, SectionLabel } from "../components/ui";
+import { BackButton } from "../components/BackButton";
 import { useApp } from "../lib/store";
 import type { EnvironmentPlan, GoalView } from "../lib/types";
 
@@ -63,9 +64,15 @@ export function GoalScreen() {
   };
 
   if (!goals) {
+    // The list has not arrived yet (or its load failed and left `goals` null —
+    // `loadGoals` records the error on `goalPlanError` rather than throwing).
+    // Either way this is a screen a student can be sitting on with nothing to
+    // press, so it carries the same way out as the loaded state. A root would
+    // not need one; this is not a root.
     return (
-      <div className="flex h-full items-center justify-center px-10">
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-10">
         <div className="text-[color:var(--text-quiet)] text-[13px]">正在读取可选方向…</div>
+        <BackButton to="welcome" />
       </div>
     );
   }
@@ -108,9 +115,18 @@ export function GoalScreen() {
       </div>
 
       <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        <span className="text-[color:var(--text-quiet)] text-[12.5px]">
-          可以随时回到这里换方向
-        </span>
+        <div className="flex items-center gap-4">
+          {/* This screen had no way out at all: a student who reached it and
+              changed their mind had to quit the app. `welcome` is passed
+              explicitly rather than left to history because the goal question is
+              only ever asked once, from 开始 — there is no second route in, so
+              the destination is a fact about the flow and not a guess about how
+              the student arrived. */}
+          <BackButton to="welcome" />
+          <span className="text-[color:var(--text-quiet)] text-[12.5px]">
+            可以随时回到这里换方向
+          </span>
+        </div>
         <Button disabled={!selectedGoalId || goalPlanPhase === "loading"} onClick={() => void start()}>
           开始检测
         </Button>

@@ -82,7 +82,47 @@ export type DetectPhase =
 interface AppStore {
   // --- Navigation -----------------------------------------------------------
   screen: Screen;
+  /**
+   * Where "返回" came from.
+   *
+   * A real history stack, not a hardcoded previous step, because the wizard is
+   * no longer walked in one direction only: a student can reach 已装软件 from
+   * 检测 *or* from the dashboard, and a back button that always said
+   * "goTo('detect')" would be right in one case and wrong in the other. The
+   * stack is what makes "return to the page I came from" expressible at all.
+   *
+   * Semantics (these are the contract; `goTo`/`goBack` implement exactly this):
+   *  - `goTo(next)` pushes the *current* screen, then switches.
+   *  - Self-navigation (`goTo(screen)` while already there) is a no-op: it
+   *    neither switches nor pushes.
+   *  - The stack holds no duplicates of the current screen: consecutive
+   *    equal entries are impossible, so repeated back presses always walk
+   *    distinct pages rather than sticking.
+   *  - `goBack()` pops the last entry and restores it.
+   *  - `goBack()` on an empty stack is a **no-op**: it does not navigate, does
+   *    not fall through to `welcome`, and does not open the dashboard.
+   *  - The stack is capped at `NAV_STACK_LIMIT`; the oldest entry is dropped
+   *    when it overflows, which bounds memory in a long session.
+   *  - Crucially, every other field in this store — goal, chosenSteps,
+   *    inventory, plan, entitlements, selectedItemId, profileId, session —
+   *    survives both `goTo` and `goBack` untouched. Navigation is not a reset.
+   */
+  navStack: Screen[];
   goTo: (screen: Screen) => void;
+  /** Returns to the previous screen. No-op when there is no previous screen. */
+  goBack: () => void;
+  /** `true` when there is a previous screen, so a back button may be rendered. */
+  canGoBack: () => boolean;
+  /**
+   * The wizard screen the dashboard was entered from, or `null` when it was
+   * entered cold (launch, gate, or licence-active).
+   *
+   * Recorded by `openDashboard` so the dashboard's "回到首次设置" can mean
+   * *that* page rather than a guess. The dashboard is itself a ROOT and renders
+   * no back button; this is the exit, not a back, and the two are deliberately
+   * separate so a root never pretends to have a previous page.
+   */
+  dashboardOrigin: Screen | null;
 
   // --- Dashboard (stage 5) --------------------------------------------------
   /**
@@ -92,6 +132,10 @@ interface AppStore {
    * machine, and a student moves between them rather than through them: finishing
    * a run returns to the dashboard, and "重新规划" enters the wizard. Keeping the
    * switch explicit here means no screen has to infer which world it is in.
+   *
+   * `openDashboard` records the wizard screen it was called from into
+   * `dashboardOrigin` before flipping this, so the dashboard can offer a
+   * meaningful exit without the wizard having to be the one that remembers.
    */
   dashboardOpen: boolean;
   openDashboard: () => void;
@@ -324,9 +368,87 @@ function refusalOrError(
   return { [errorField]: describeError(err) };
 }
 
+/**
+ * How deep the navigation history may go.
+ *
+ * The wizard has eight screens and a student can bounce between them, so 50 is
+ * far more than a real session needs — it exists to bound memory rather than to
+ * be reached. Dropping the *oldest* entry on overflow is the right end to lose:
+ * the entries a back press is about to use are the newest ones.
+ */
+const NAV_STACK_LIMIT = 50;
+
+/**
+ * The empty history, as a shared constant.
+ *
+ * Zustand's `set` merges by default, so `set({ screen })` leaves `navStack`
+ * alone — that is what makes back-preservation work. The one place this constant
+ * matters is `useApp.setState`, which some screens call directly: giving them a
+ * stable empty array keeps the store's initial value from being a fresh `[]`
+ * that two callers could develop independently.
+ */
+export const NO_HISTORY: readonly Screen[] = Object.freeze([]);
+
 export const useApp = create<AppStore>((set, get) => ({
   screen: "welcome",
-  goTo: (screen) => set({ screen }),
+
+  // -------------------------------------------------------------------------
+  // Navigation
+  //
+  // `goTo` is the only writer of `screen` in the wizard, and every navigation
+  // goes through it so the history cannot be bypassed. The three rules it
+  // implements are the ones documented on `navStack` above; the short version is
+  // "push where you were, then move, and never move nowhere".
+  //
+  // Nothing else is touched. That is deliberate and is the whole point of the
+  // requirement: a student who picks a goal, narrows the install set and then
+  // presses 返回 to check something must find the goal still chosen, the set
+  // still narrowed and the plan still built when they come forward again. Every
+  // field in this store therefore survives a navigation; any future `set` added
+  // here that clears flow state is a bug, not a convenience.
+  // -------------------------------------------------------------------------
+  navStack: [...NO_HISTORY],
+
+  goTo: (next) => {
+    const current = get().screen;
+
+    // Already there: neither switch nor push. Pushing would be the classic
+    // "back button that does nothing" — the stack would fill with the same
+    // screen and each press would return to it.
+    if (current === next) return;
+
+    set((state) => ({
+      screen: next,
+      // The guard is belt-and-braces: `current === next` already rules out a
+      // duplicate of the screen being left. It also keeps the stack honest if a
+      // future caller reaches `goTo` from somewhere other than `screen`.
+      navStack:
+        state.navStack[state.navStack.length - 1] === current
+          ? state.navStack
+          : [...state.navStack, current].slice(-NAV_STACK_LIMIT),
+    }));
+  },
+
+  goBack: () => {
+    const stack = get().navStack;
+
+    // The empty-stack case is a NO-OP by contract, and it is worth being
+    // explicit about why rather than falling through to a default screen:
+    //   * `welcome` would be a lie — the student did not come from there.
+    //   * the dashboard would be a worse lie, and it would bypass the gate.
+    // A root screen renders no back button, so this path is only reachable from
+    // programmatic callers (a keyboard shortcut, a test). Doing nothing is the
+    // only truthful answer when there is no previous page.
+    if (stack.length === 0) return;
+
+    const previous = stack[stack.length - 1];
+    set({
+      screen: previous,
+      navStack: stack.slice(0, -1),
+    });
+  },
+
+  canGoBack: () => get().navStack.length > 0,
 
   // -------------------------------------------------------------------------
   // Dashboard
@@ -334,9 +456,34 @@ export const useApp = create<AppStore>((set, get) => ({
   // Opening the dashboard closes the wizard surface and vice versa. They are two
   // views of one machine, so having both visible would mean two "current"
   // answers to the same question.
+  //
+  // `dashboardOrigin` records *which* wizard screen we were on. The dashboard is
+  // a root and renders no back button — a root with a back button claims a page
+  // it does not have — but it still needs a meaningful exit, and guessing
+  // `welcome` for a student who was halfway through 安装 would throw away the
+  // very state this release is protecting. Recording it here rather than
+  // passing it in keeps every existing `openDashboard()` call site working.
+  //
+  // A cold start (launch, gate, licence-active) has no wizard screen to return
+  // to, so the origin stays `null` and the dashboard's exit falls back to the
+  // wizard's first screen.
+  dashboardOrigin: null,
   dashboardOpen: false,
-  openDashboard: () => set({ dashboardOpen: true }),
-  closeDashboard: () => set({ dashboardOpen: false, selectedItemId: null }),
+  openDashboard: () => {
+    const state = get();
+    set({
+      dashboardOpen: true,
+      // Only recorded when the wizard was actually showing. `dashboardOpen`
+      // already true means this is a re-entry (a licence reload, an effect
+      // re-run) and overwriting would lose the real origin.
+      dashboardOrigin:
+        state.dashboardOpen || state.screen === "welcome"
+          ? state.dashboardOrigin
+          : state.screen,
+    });
+  },
+  closeDashboard: () =>
+    set({ dashboardOpen: false, selectedItemId: null, dashboardOrigin: null }),
 
   section: "overview",
   setSection: (section) => set({ section }),
@@ -538,7 +685,14 @@ export const useApp = create<AppStore>((set, get) => ({
         ipc.machineFacts(),
       ]);
       set({
-        capabilities,
+        // `call<T>` is a type assertion, not a runtime guarantee: a missing command
+        // or a transport fault makes the promise *resolve* with `undefined` rather
+        // than reject, so the `catch` below never runs. `capabilities` is declared
+        // non-optional (`CapabilityStatus[]`), so nothing upstream guards it either.
+        // An `undefined` here used to blank the whole dashboard while
+        // `capabilitiesPhase` still reported "done" — the exact outcome the comment
+        // in the `catch` branch promises must not happen. Coerce at the boundary.
+        capabilities: capabilities ?? [],
         catalogue,
         machine,
         capabilitiesPhase: "done",

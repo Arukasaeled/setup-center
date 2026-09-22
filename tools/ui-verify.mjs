@@ -374,7 +374,7 @@ await shot("01-welcome");
 // and asking second left a student facing results about a machine they had no
 // frame for. This screenshot is the evidence that the goal row shows what a
 // direction needs before the student commits to it.
-await page.getByRole("button", { name: /直接开始配置/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="②"]').click();
 await page.waitForTimeout(900);
 await shot("01b-goal");
 
@@ -558,7 +558,7 @@ await shot("06c-install-halted");
 // moves when a program is declined, and the narrowed selection is what the engine
 // is actually handed.
 await bootToWizard();
-await page.getByRole("button", { name: /直接开始配置/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="②"]').click();
 await page.waitForTimeout(700);
 await page.getByRole("button", { name: /开始检测/ }).click();
 await page.waitForTimeout(2600);
@@ -638,7 +638,7 @@ await page.waitForTimeout(1600);
  */
 async function walkToBootstrap(profileName, setMode) {
   await bootToWizard();
-  await page.getByRole("button", { name: /直接开始配置/ }).click();
+  await page.locator('[data-testid="welcome-entry"][data-entry="②"]').click();
   // The goal screen sits between the welcome screen and detection. Skipped
   // through with the default direction, since this helper is about reaching the
   // bootstrap branches rather than about the goal choice.
@@ -742,7 +742,7 @@ await shot("09-report");
 // dashboard; the 回到首次设置 click below puts us back on the welcome screen so
 // the rest of this block keeps exercising its original entry route.
 await bootToWizard();
-await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="①"]').click();
 await page.waitForTimeout(2600);
 await shot("10-dashboard-overview");
 
@@ -818,7 +818,7 @@ await page.evaluate(() => window.__setAdvisorStale(true));
 // reached the same way as everywhere else in this file. The stale advisor mode
 // is read live, so it survives the navigation.
 await bootToWizard();
-await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="①"]').click();
 await page.waitForTimeout(2600);
 
 const staleRace = await page.evaluate(() => {
@@ -835,7 +835,7 @@ await page.evaluate(() => window.__setAdvisorStale(false));
 // Same reason as above: reload without the gate walk lands on the dashboard, so
 // the welcome screen this clicks through has to be reached via `bootToWizard`.
 await bootToWizard();
-await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="①"]').click();
 await page.waitForTimeout(2600);
 
 // Selecting a capability must populate the right-hand explanation pane. The
@@ -1092,7 +1092,7 @@ await shot("13d-dashboard-license-deactivated");
 // above are repeated here.
 await page.evaluate(() => window.__setLicenseMode("freeMismatch"));
 await bootToWizard();
-await page.getByRole("button", { name: /检查这台电脑/ }).click();
+await page.locator('[data-testid="welcome-entry"][data-entry="①"]').click();
 await page.waitForTimeout(2600);
 // The sidebar item reads 版本与授权. The regex accepts both that and the older
 // bare 版本 so this assertion tracks the "which section holds the licence"
@@ -1440,8 +1440,13 @@ const licenseDeactivated = textAt("13d-dashboard-license-deactivated");
 const licenseMismatch = textAt("13e-dashboard-license-mismatch");
 
 const checks = [
-  ["welcome headline", welcome.includes("配置这台电脑")],
-  ["welcome cta", welcome.includes("检查这台电脑")],
+  // Labels updated for the 0.1.1 first-run redesign. The Welcome screen now
+  // states the product name and what it is for, rather than the old
+  // "配置这台电脑" headline and "检查这台电脑" door. Asserted as the brief's
+  // own wording so a copy change that loses the beginner framing fails here.
+  ["welcome headline", welcome.includes("Setup Center")],
+  ["welcome subtitle", welcome.includes("帮你快速配置 AI 编程环境")],
+  ["welcome cta", welcome.includes("检查电脑环境")],
 
   // --- Goal selection (phase 5) ---------------------------------------------
   // The screen the phase exists to add. It is asserted on the *ordering* claim
@@ -1476,7 +1481,7 @@ const checks = [
   ["detect: no false blocking claim", !/不可写/.test(detect)],
 
   // --- The Software Intelligence Layer's screen -----------------------------
-  ["software: headline answers the stage-2 question", software.includes("这台电脑已经有什么")],
+  ["software: headline answers the stage-2 question", software.includes("软件与安装方案")],
   ["software: real inventory, not the old placeholders", software.includes("检查了") && /已安装/.test(software)],
   ["software: installed programs are listed with versions", /版本 \d/.test(software)],
   ["software: provider corroboration is visible", ["注册表", "PATH", "winget"].some((p) => software.includes(p))],

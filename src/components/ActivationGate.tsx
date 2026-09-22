@@ -1,14 +1,29 @@
 /**
- * The first-run activation gate.
+ * The activation gate.
  *
  * ## When it appears
  *
- * `App.tsx` renders this instead of the wizard when the customer has neither a
- * licence nor a recorded first-run choice. The rules, in precedence order:
+ * Since 0.1.1 this is **not** the cold-start surface. A brand-new customer sees
+ * `Welcome` first and reaches this gate *from* Welcome (the "已有激活码" entry),
+ * because the gate's headline is a licensing question and asking it before the
+ * customer knows what the product is made the product open on a paywall it does
+ * not have. Welcome states the job; this screen answers the licencing question
+ * for the customer who has one.
+ *
+ * The three rules below still decide *whether* there is anything to ask, and
+ * they are unchanged and load-bearing:
  *
  * 1. A licence exists and is active → never shown. PRO wins over any flag.
- * 2. The customer has already answered (chose FREE) → never shown again.
- * 3. Neither → shown.
+ *    `App.tsx` acts on this by opening the dashboard directly.
+ * 2. The customer has already answered (chose FREE) → never shown again. Also
+ *    acted on by `App.tsx`.
+ * 3. The licence read fails → the gate *is* reachable, and it renders its
+ *    "unreadable" state rather than pretending there is no licence.
+ *
+ * Rules 1 and 2 are evaluated by `App.tsx` at startup (it owns the cold-start
+ * decision, since it is what chooses a surface). This component keeps the same
+ * three rules in its own rendering so that arriving here by *any* route — the
+ * Welcome entry, a gated action, or the unreadable path — behaves identically.
  *
  * ## What it is not
  *
@@ -29,8 +44,12 @@
  *
  * ## Layout
  *
- * Deliberately not a wizard step: no progress rail, no back button. It is a
- * decision, and the only two ways out are the two buttons.
+ * Deliberately not a wizard step: it is not keyed to a `Screen`, carries no
+ * progress rail and has no history entry. It is a decision, and the two ways out
+ * are its two buttons. Since it is no longer the cold-start surface it does
+ * offer a quiet way back to wherever it was opened from — that is an *exit from
+ * a panel*, not a wizard back button, and it is why `<BackButton/>` is not used
+ * here: there is no previous `Screen` to pop on the cold path.
  */
 
 import { useEffect, useState } from "react";
@@ -39,7 +58,22 @@ import { Button } from "./ui";
 import { useApp } from "../lib/store";
 import { writeFreeChoice } from "../lib/entry";
 
-export function ActivationGate({ onDone }: { onDone: () => void }) {
+export function ActivationGate({
+  onDone,
+  onDismiss,
+}: {
+  onDone: () => void;
+  /**
+   * Closes the gate without answering it, for the case where the customer
+   * opened it from `Welcome` and changed their mind.
+   *
+   * Optional on purpose: when the gate is the *only* thing that can be shown
+   * (rules 1-3 above leave nothing else to render), there is no screen to go
+   * back to and this must not be offered — a dismiss that revealed a blank
+   * surface would be worse than no dismiss at all.
+   */
+  onDismiss?: () => void;
+}) {
   const entitlements = useApp((s) => s.entitlements);
   const phase = useApp((s) => s.entitlementsPhase);
   const error = useApp((s) => s.entitlementsError);
@@ -80,6 +114,32 @@ export function ActivationGate({ onDone }: { onDone: () => void }) {
       <div className="gate-halo" aria-hidden />
 
       <div className="relative w-full max-w-[480px]">
+        {onDismiss && (
+          // A quiet exit, top-left, aligned with the card rather than the window
+          // so it reads as part of the panel. Deliberately not the shared
+          // `<BackButton/>`: that returns to a previous *Screen*, and on the
+          // cold path there is none — this closes a panel over the surface that
+          // is already there.
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={leaving}
+            data-testid="gate-dismiss"
+            className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-primary)] mb-4 inline-flex items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[12.5px] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" aria-hidden>
+              <path
+                d="M10 3.5L5.5 8L10 12.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            返回
+          </button>
+        )}
+
         <header className="rise text-center">
           <div className="text-[color:var(--text-quiet)] text-[11.5px] font-medium tracking-[0.14em] uppercase">
             Setup Center
