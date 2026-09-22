@@ -1,0 +1,37 @@
+{
+  "id": "claude-desktop-zh-cn",
+  "name": "Claude Desktop 中文界面",
+  "description": "将 Claude Desktop 的界面切换为简体中文（含前端 bundle 与主进程菜单）。",
+  "target": "claude-desktop",
+  "category": "界面",
+  "author": "javaht",
+  "source": "https://github.com/javaht/claude-desktop-zh-cn",
+  "license": "MIT",
+  "version": "1.4.7",
+  "compatibility": {
+    "desktop": [],
+    "codeStable": [],
+    "codeExperimental": [],
+    "note": "上游全仓不发布已验证版本清单，安装脚本也无 MinVersion/MaxVersion 门；靠『打完补丁自校验，结构变了就报错』（README『版本变化』章节）。因此所有版本在本中心一律按未验证处理。"
+  },
+  "installMethod": "调用上游 install-windows.bat → scripts\\install_windows.ps1（会弹 UAC 提权）",
+  "requiresAdmin": true,
+  "riskLevel": "high",
+  "backupRequired": true,
+  "rollbackSupported": true,
+  "verifySupported": true,
+  "free": true,
+  "modifies": [
+    "resources\\zh-CN.json 等语言资源（新增）",
+    "resources\\*.json 前端语言注册",
+    "resources\\app.asar（仅模式 2）",
+    "claude.exe 内嵌 app.asar 完整性哈希（仅模式 2）",
+    "用户语言配置（写为 zh-CN）",
+    "resources\\.zh-cn-backups\\（上游自建备份）"
+  ],
+  "requires": ["Claude Desktop 已安装", "Windows PowerShell", "UAC 管理员授权"],
+  "evidence": "implemented",
+  "layers": [],
+  "upstreamNote": "模式 1 = Cowork 兼容，不改 app.asar / claude.exe；模式 2 = 修改 app.asar 并改写完整性哈希，会使 Authenticode 变为 HashMismatch，Cowork 沙箱可能拒绝启动；模式 3 = Frida 运行时注入（实验，不适用于普通用户）。",
+  "installer": "external-windows-bat"
+}

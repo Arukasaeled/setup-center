@@ -66,6 +66,7 @@ export type Section =
   | "software"
   | "config"
   | "history"
+  | "plugins"
   | "license"
   | "about";
 

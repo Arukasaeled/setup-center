@@ -1,0 +1,30 @@
+{
+  "id": "ccstatusline-zh",
+  "name": "ccstatusline 中文",
+  "description": "ccstatusline 状态栏组件的中文本地化，用于 Claude Code 终端状态行。",
+  "target": "claude-code",
+  "category": "效率",
+  "author": "huangguang1999（上游作者 Matthew Breedlove）",
+  "source": "https://github.com/huangguang1999/ccstatusline-zh",
+  "license": "MIT",
+  "version": "见上游 package.json",
+  "compatibility": {
+    "desktop": [],
+    "codeStable": [],
+    "codeExperimental": [],
+    "note": "npm 包形态的本地化 fork，通过 settings.json 的 statusLine 配置接入，不修改 Claude Code 二进制。"
+  },
+  "installMethod": "npm 安装 + settings.json 的 statusLine 配置（Layer 3）",
+  "requiresAdmin": false,
+  "riskLevel": "low",
+  "backupRequired": true,
+  "rollbackSupported": true,
+  "verifySupported": true,
+  "free": true,
+  "modifies": ["~/.claude/settings.json（statusLine 键）", "全局 npm 包目录"],
+  "requires": ["Claude Code 已安装", "Node.js 与 npm"],
+  "evidence": "sourceFound",
+  "layers": ["config"],
+  "upstreamNote": "LICENSE 署名上游原作者 Matthew Breedlove，本仓库为中文本地化 fork。依赖 Node，安装链与前两者不同。",
+  "installer": "claude-code-layers"
+}

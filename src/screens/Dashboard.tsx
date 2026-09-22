@@ -52,6 +52,7 @@ import {
   LicenseSection,
   UpgradePrompt,
 } from "../components/ActivationPanel";
+import { PluginsSection } from "../components/PluginsSection";
 import type {
   CapabilityStatus,
   Confidence,
@@ -74,6 +75,7 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "software", label: "软件", hint: "这台电脑装了什么" },
   { id: "config", label: "配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
+  { id: "plugins", label: "插件", hint: "Claude 中文与效率增强" },
   // "版本与授权" rather than "版本". The section manages the version, the
   // licence, activation and device binding, and `ActivationGate` already
   // promises the customer they can "随时可以在「版本与授权」中升级" — a label
@@ -173,6 +175,7 @@ export function Dashboard() {
           {section === "software" && <SoftwareSection />}
           {section === "config" && <ConfigSection />}
           {section === "history" && <HistorySection />}
+          {section === "plugins" && <PluginsSection />}
           {section === "license" && <LicenseSection />}
           {section === "about" && <AboutSection />}
         </section>

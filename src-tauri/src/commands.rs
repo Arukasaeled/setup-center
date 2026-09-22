@@ -13,7 +13,7 @@ use crate::model::*;
 use crate::modules::{
     bootstrap::{self, run as bootstrap_run},
     catalog, capability, config, detect, executor, install, install_log, inventory, knowledge,
-    license, machine, verify,
+    license, machine, plugins, verify,
 };
 use crate::state::AppState;
 
@@ -1647,6 +1647,66 @@ pub struct LicenseDeviceView {
     /// Whether the stored activation belongs to this machine.
     pub bound_here: bool,
     pub state: license::LicenseState,
+}
+
+/// The plugin catalogue resolved against this machine.
+///
+/// A read that *does* probe: each row's verdict — "可安装" / "版本未验证" /
+/// "目标未安装" — depends on the Claude actually present, not on what the
+/// manifest remembered. The probes are `CREATE_NO_WINDOW` children, so
+/// refreshing the screen never flashes a console.
+#[tauri::command]
+pub async fn plugin_views(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<plugins::PluginView>> {
+    Ok(plugins::pipeline::views(&state.plugins))
+}
+
+/// The two Claude targets, for the status line above the plugin list
+/// ("Claude Desktop 已安装 ✓" from brief item 12).
+#[tauri::command]
+pub async fn plugin_targets() -> Vec<plugins::TargetState> {
+    plugins::pipeline::targets()
+}
+
+/// Runs one pipeline invocation (`dryRun` | `install` | `verify` | `rollback`)
+/// and returns the complete stage record.
+///
+/// `mode` arrives as a string because that is what the button knows, and is
+/// parsed here: an unknown mode must be a rejected command, never a silent
+/// fallback to a dry run the caller believed was a write. A dry run shares the
+/// install path and stops before `apply`, so what the preview reports is what
+/// the install would actually touch.
+#[tauri::command]
+pub async fn run_plugin(
+    state: State<'_, AppState>,
+    id: String,
+    mode: String,
+    allow_unverified: bool,
+) -> AppResult<plugins::PluginRun> {
+    let mode = match mode.as_str() {
+        "dryRun" => plugins::RunMode::DryRun,
+        "install" => plugins::RunMode::Install,
+        "verify" => plugins::RunMode::Verify,
+        "rollback" => plugins::RunMode::Rollback,
+        other => return Err(AppError::Internal(format!("unknown plugin run mode: {other}"))),
+    };
+    let entry = state
+        .plugins
+        .get(&id)
+        .ok_or_else(|| AppError::Internal(format!("plugin not in catalogue: {id}")))?;
+    // Deliberately not gated by `require_install_rights`: `PluginEntry::free`
+    // is documented as unrelated to the PRO tier, and no brief places the
+    // plugin pipeline behind the licence. Gating it here would refuse paying
+    // nothing for a free feature.
+    Ok(plugins::pipeline::run(
+        entry,
+        mode,
+        &plugins::pipeline::RunOptions {
+            allow_unverified,
+            ..Default::default()
+        },
+    ))
 }
 
 impl From<&knowledge::ConceptKnowledge> for ConceptView {

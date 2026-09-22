@@ -41,9 +41,9 @@ pub mod inventory;
 pub mod knowledge;
 pub mod license;
 pub mod machine;
+pub mod plugins;
 pub mod profiles;
 pub mod verify;
-
 // The Software Intelligence Layer's tests live in their own file because they
 // are the largest single body of tests in the crate, they depend on checked-in
 // fixtures, and keeping them next to `inventory.rs` would triple the size of the

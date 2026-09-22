@@ -1,0 +1,30 @@
+{
+  "id": "claude-code-skills-zh",
+  "name": "Claude Code 技能中文包",
+  "description": "一批 Claude Code skill 的简体中文本地化，按 skill 目录分发。",
+  "target": "claude-code",
+  "category": "Agent",
+  "author": "laolaoshiren",
+  "source": "https://github.com/laolaoshiren/claude-code-skills-zh",
+  "license": "MIT",
+  "version": "见上游",
+  "compatibility": {
+    "desktop": [],
+    "codeStable": [],
+    "codeExperimental": [],
+    "note": "纯 SKILL.md 文档集合，不含二进制补丁，与 Claude Code 版本无关。"
+  },
+  "installMethod": "复制 skill 目录到 ~/.claude/skills/，不修改二进制",
+  "requiresAdmin": false,
+  "riskLevel": "low",
+  "backupRequired": true,
+  "rollbackSupported": true,
+  "verifySupported": true,
+  "free": true,
+  "modifies": ["~/.claude/skills/<skill-name>/SKILL.md"],
+  "requires": ["Claude Code 已安装"],
+  "evidence": "sourceFound",
+  "layers": ["plugin"],
+  "upstreamNote": "上游仓库由多份 SKILL.md 组成，无 plugin.json 聚合入口；接入前需确认其 skill 目录约定。",
+  "installer": "claude-code-layers"
+}

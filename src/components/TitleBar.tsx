@@ -57,6 +57,7 @@ const SECTION_TITLES: Record<Section, string> = {
   software: "软件",
   config: "配置",
   history: "历史",
+  plugins: "插件",
   // Matches the sidebar's label exactly. These two name the same page, and a
   // title bar saying 版本 above a sidebar item saying 版本与授权 is the kind of
   // disagreement that makes a user think they are on the wrong screen.

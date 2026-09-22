@@ -31,6 +31,10 @@ import type {
   LicenseDeviceView,
   LocalizationTargetView,
   MachineFacts,
+  PluginRun,
+  PluginRunMode,
+  PluginTargetState,
+  PluginView,
   Profile,
   ProfileCapabilityView,
   PostInstallReport,
@@ -373,3 +377,31 @@ export const licenseDevice = () => call<LicenseDeviceView>("license_device");
 // ---------------------------------------------------------------------------
 
 export const runtimeStatus = () => call<RuntimeStatus>("runtime_status");
+
+// ---------------------------------------------------------------------------
+// Claude enhancement plugins
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalogue resolved against this machine.
+ *
+ * A read that probes: each row's verdict depends on the Claude actually
+ * installed, so this is not a pure catalogue lookup and takes a moment.
+ */
+export const pluginViews = () => call<PluginView[]>("plugin_views");
+
+/** The two Claude targets, for the status line above the plugin list. */
+export const pluginTargets = () => call<PluginTargetState[]>("plugin_targets");
+
+/**
+ * Runs one pipeline invocation and returns the complete stage record.
+ *
+ * `dryRun` shares the install path and stops before any write, so the preview
+ * reports exactly what an install would touch. An unknown mode is rejected by
+ * the command rather than falling back to a dry run.
+ */
+export const runPlugin = (
+  id: string,
+  mode: PluginRunMode,
+  allowUnverified = false,
+) => call<PluginRun>("run_plugin", { id, mode, allowUnverified });

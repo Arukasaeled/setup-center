@@ -33,7 +33,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "resources": ["profiles/*.json", "localization/*.json", "knowledge/software/*.yaml", "knowledge/concept/*.yaml"],
+    "resources": ["profiles/*.json", "localization/*.json", "knowledge/software/*.yaml", "knowledge/concept/*.yaml", "plugins/*.json"],
     "windows": {
       "nsis": {
         "installMode": "currentUser",

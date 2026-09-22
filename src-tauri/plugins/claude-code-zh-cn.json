@@ -1,0 +1,40 @@
+{
+  "id": "claude-code-zh-cn",
+  "name": "Claude Code 中文界面",
+  "description": "将 Claude Code 的界面切换为简体中文，按四层能力分层安装，默认只启用不碰二进制的 Layer 1–3。",
+  "target": "claude-code",
+  "category": "界面",
+  "author": "KongBai1145",
+  "source": "https://github.com/KongBai1145/claude-code-zh-cn",
+  "license": "MIT",
+  "version": "2.5.0",
+  "compatibility": {
+    "desktop": [],
+    "codeStable": ["2.1.92", "2.1.97", "2.1.104", "2.1.107", "2.1.110", "2.1.112"],
+    "codeExperimental": [
+      "2.1.113", "2.1.114", "2.1.116", "2.1.117", "2.1.118", "2.1.119", "2.1.120",
+      "2.1.121", "2.1.122", "2.1.123", "2.1.124", "2.1.126", "2.1.128", "2.1.129",
+      "2.1.131", "2.1.132", "2.1.133", "2.1.136", "2.1.137", "2.1.138", "2.1.139",
+      "2.1.140", "2.1.141", "2.1.142", "2.1.143", "2.1.144", "2.1.145", "2.1.146",
+      "2.1.148", "2.1.150", "2.1.152", "2.1.153"
+    ],
+    "note": "上游 plugin/support-window.json 原文：npm 形态 2.1.92–2.1.112 为 stable；Windows native 形态 2.1.113–2.1.153 为 experimental（显式排除 2.1.115/125/127/130/134/135/147/149/151），需 node-lief。上游声明『不代表 future latest 自动稳定』。"
+  },
+  "installMethod": "Setup Center 直接写入 ~/.claude 用户配置（Layer 1–3）；Layer 4 需已验证版本",
+  "requiresAdmin": false,
+  "riskLevel": "low",
+  "backupRequired": true,
+  "rollbackSupported": true,
+  "verifySupported": true,
+  "free": true,
+  "modifies": [
+    "~/.claude/plugins/claude-code-zh-cn/（Layer 1+2：manifest、hooks、output-styles、翻译负载）",
+    "~/.claude/settings.json（Layer 3：深合并 language=Chinese，只补不覆盖）",
+    "cli.js 或 native binary（Layer 4，默认不启用）"
+  ],
+  "requires": ["Claude Code 已安装（Layer 4 另需 node 与 node-lief）"],
+  "evidence": "implemented",
+  "layers": ["plugin", "hook", "config", "cliPatch"],
+  "upstreamNote": "Layer 1–3 只写 ~/.claude，Claude Code 更新不影响它们；Layer 4 改二进制，每次更新都需重新应用，且仅对上表已验证版本开放。",
+  "installer": "claude-code-layers"
+}

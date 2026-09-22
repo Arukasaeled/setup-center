@@ -8,7 +8,7 @@
 use crate::model::{EnvironmentReport, ExecutionSession, SoftwareId, SoftwareInventory, SoftwareScan};
 use crate::modules::bootstrap::run::BootstrapSession;
 use crate::modules::executor::CancelFlag;
-use crate::modules::{config, knowledge, profiles};
+use crate::modules::{config, knowledge, plugins, profiles};
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -23,6 +23,12 @@ pub struct AppState {
     /// re-read per command because the knowledge base is consulted on every
     /// dashboard row.
     pub knowledge: knowledge::Knowledge,
+    /// Claude 增强插件目录（`plugins/*.json`）。
+    ///
+    /// 与 profiles/knowledge 同样的加载方式与同样的理由：**加一个插件是加一个
+    /// 数据文件**，不是改代码。而且每行 Claude 详情都要问"这个 target 有哪些增强"，
+    /// 每次重读五个 JSON 属于浪费。
+    pub plugins: plugins::PluginCatalog,
     cache: Mutex<Cache>,
 }
 
@@ -59,11 +65,15 @@ impl AppState {
         let profiles_dir = resource_dir.as_ref().map(|d| d.join("profiles"));
         let localization_dir = resource_dir.as_ref().map(|d| d.join("localization"));
         let knowledge_dir = resource_dir.as_ref().map(|d| d.join("knowledge"));
+        let plugins_dir = resource_dir.as_ref().map(|d| d.join("plugins"));
 
         Self {
             profiles: profiles::ProfileStore::load(profiles_dir.as_deref()),
             localization: config::LocalizationStore::load(localization_dir.as_deref()),
             knowledge: knowledge::Knowledge::load(knowledge_dir.as_deref()),
+            // 目录缺席时是空目录而非错误 —— `cargo test` 下资源本就不在，这条
+            // 与 profiles/knowledge 的既有约定一致，不能让单测依赖打包产物。
+            plugins: plugins::PluginCatalog::load(&plugins_dir.unwrap_or_default()),
             cache: Mutex::new(Cache::default()),
         }
     }

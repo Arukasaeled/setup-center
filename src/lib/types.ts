@@ -1074,3 +1074,142 @@ export interface LicenseDeviceView {
   /** Snake case, for the same reason as `Entitlements.state` above. */
   state: "inactive" | "active" | "device_mismatch";
 }
+
+// ---------------------------------------------------------------------------
+// Claude enhancement plugins
+// ---------------------------------------------------------------------------
+
+/**
+ * Kebab-case, and deliberately not camelCase: `PluginTarget` in
+ * `modules/plugins/mod.rs` carries its own `rename_all = "kebab-case"`, so the
+ * binary sends `"claude-desktop"` while every other plugin enum camelCases.
+ * Writing `"claudeDesktop"` against a plain `string` field type-checks and then
+ * never matches at run time — the exact failure mode `Entitlements.state`
+ * documents above.
+ */
+export type PluginTarget = "claude-desktop" | "claude-code" | "both";
+
+export type RiskLevel = "low" | "medium" | "high";
+
+export type CompatStatus =
+  | "verified"
+  | "unverified"
+  | "incompatible"
+  | "targetMissing"
+  | "unknownVersion";
+
+export type EvidenceStage =
+  | "sourceFound"
+  | "implemented"
+  | "tested"
+  | "realWorldVerified";
+
+export type CodeLayer = "plugin" | "hook" | "config" | "cliPatch";
+
+export type PluginRunMode = "dryRun" | "install" | "verify" | "rollback";
+
+export type PluginRunStatus = "succeeded" | "refused" | "failed";
+
+/**
+ * Upstream's verified versions, matched by prefix — the same granularity the
+ * upstream declares, rather than a semver range nobody promised.
+ */
+export interface CompatRange {
+  desktop: string[];
+  codeStable: string[];
+  codeExperimental: string[];
+  /** The upstream compatibility statement, quoted verbatim for the user. */
+  note: string;
+}
+
+/** One row of `plugins/*.json`. Every field is data; none is hard-coded in Rust. */
+export interface PluginEntry {
+  id: string;
+  name: string;
+  description: string;
+  target: PluginTarget;
+  category: string;
+  author: string;
+  /** Upstream repository — shown because we are asking the user to run someone else's code. */
+  source: string;
+  license: string;
+  /** The plugin's own version, not Claude's. */
+  version: string;
+  compatibility: CompatRange;
+  installMethod: string;
+  requiresAdmin: boolean;
+  riskLevel: RiskLevel;
+  backupRequired: boolean;
+  rollbackSupported: boolean;
+  verifySupported: boolean;
+  /** Free of charge — explicitly unrelated to the PRO tier. */
+  free: boolean;
+  modifies: string[];
+  requires: string[];
+  evidence: EvidenceStage;
+  layers: CodeLayer[];
+  upstreamNote: string;
+  installer: string;
+}
+
+/** One observable pipeline stage; `key` is the stable testid (`backup`, `apply`, …). */
+export interface StageOutcome {
+  key: string;
+  label: string;
+  status: "ok" | "warn" | "fail" | "skipped";
+  detail: string;
+}
+
+/** The full record of one pipeline run. */
+export interface PluginRun {
+  pluginId: string;
+  mode: PluginRunMode;
+  status: PluginRunStatus;
+  /** One-sentence verdict for the user. */
+  reason: string;
+  stages: StageOutcome[];
+  /** Paths actually written; empty = the original files were never touched. */
+  modified: string[];
+  backup: string | null;
+  restored: boolean;
+  /** Whether the UI should offer "重新检测" after a failure or refusal. */
+  offerRetry: boolean;
+}
+
+/** One Claude target as installed on this machine (brief item 12's status line). */
+export interface PluginTargetState {
+  target: PluginTarget;
+  installed: boolean;
+  version: string | null;
+  root: string | null;
+  running: boolean;
+  /** Third-party localisation traces already present. */
+  localized: boolean;
+  /** A non-null `note` with `installed: false` means "could not tell", not "absent". */
+  note: string | null;
+}
+
+/**
+ * Catalogue entry resolved against this machine.
+ *
+ * The entry's fields are `#[serde(flatten)]`ed into the top level, so this is
+ * an intersection rather than a nested object.
+ */
+export type PluginView = PluginEntry & {
+  resolvedTarget: PluginTarget;
+  compat: CompatStatus;
+  compatReason: string;
+  targetInstalled: boolean;
+  targetVersion: string | null;
+  /** A record exists in plugin-state.json, i.e. this plugin is installed. */
+  active: boolean;
+  /** The Claude version it was installed against. */
+  installedForVersion: string | null;
+  /** Claude updated since install; the plugin needs re-applying. */
+  stale: boolean;
+  /** Why the install button is disabled; null = installable. */
+  blockedReason: string | null;
+  backup: string | null;
+  /** `[layer, usable, why]` per offered layer (Claude Code only; empty otherwise). */
+  layerNotes: [CodeLayer, boolean, string][];
+};

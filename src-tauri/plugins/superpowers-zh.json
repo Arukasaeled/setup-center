@@ -1,0 +1,30 @@
+{
+  "id": "superpowers-zh",
+  "name": "Superpowers 中文",
+  "description": "superpowers 这套 Claude Code 技能集的简体中文本地化，含中文 skill 文档与 hook。",
+  "target": "claude-code",
+  "category": "Agent",
+  "author": "jnMetaCode",
+  "source": "https://github.com/jnMetaCode/superpowers-zh",
+  "license": "MIT",
+  "version": "见上游 plugin.json",
+  "compatibility": {
+    "desktop": [],
+    "codeStable": [],
+    "codeExperimental": [],
+    "note": "上游未声明 Claude Code 版本窗口；仅提供 plugin.json / marketplace.json / hooks.json，走官方插件机制，不修改二进制。"
+  },
+  "installMethod": "官方插件机制（plugin.json + hooks.json + skills/），不修改二进制",
+  "requiresAdmin": false,
+  "riskLevel": "low",
+  "backupRequired": true,
+  "rollbackSupported": true,
+  "verifySupported": true,
+  "free": true,
+  "modifies": ["~/.claude/plugins/superpowers-zh/（插件目录）"],
+  "requires": ["Claude Code 已安装"],
+  "evidence": "sourceFound",
+  "layers": ["plugin", "hook"],
+  "upstreamNote": "含 skills/*/SKILL.md、hooks.json、superpowers-zh.js、marketplace.json。安装管线尚未接入本中心。",
+  "installer": "claude-code-layers"
+}

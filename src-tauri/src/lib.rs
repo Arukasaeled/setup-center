@@ -102,6 +102,10 @@ pub fn run() {
             commands::license_device,
             commands::activate_license,
             commands::deactivate_license,
+            // Claude enhancement plugins (catalogue + install pipeline)
+            commands::plugin_views,
+            commands::plugin_targets,
+            commands::run_plugin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");
