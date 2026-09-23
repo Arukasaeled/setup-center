@@ -215,7 +215,71 @@ export type SoftwareId =
   | "qwen_code"
   | "kimi_cli"
   | "cc_switch"
-  | "crush";
+  | "crush"
+  // 0.1.2 — AI chat clients and AIGC creation tools. Same rule as above: this
+  // union is the second half of a contract whose first half is `SoftwareId` in
+  // `model.rs`, and the two must name the same ids in the same order (the
+  // catalog-order test in Rust depends on that agreement).
+  | "doubao"
+  | "cherry_studio"
+  | "chatbox"
+  | "jianying_pro"
+  | "capcut"
+  | "comfyui"
+  // Gemini's desktop app — the entry this revision adds. Distinct from
+  // `gemini` above, which is the CLI.
+  | "gemini_desktop";
+
+/**
+ * Runtime mirror of the union above, in the same order.
+ *
+ * The union is erased at build time, so anything that needs to *enumerate* ids
+ * (the icon-coverage assertion in `tools/ui-verify.mjs`) needs a value. Without
+ * this the check could only compare the two icon lists against each other, which
+ * is exactly the hole it exists to close: an id added to the product but wired
+ * to no icon would be invisible to it.
+ *
+ * Order matches `SoftwareId::ALL` in `model.rs`; a Rust test asserts the two
+ * agree, and this list is kept beside the union so the two are edited together.
+ */
+export const SOFTWARE_IDS = [
+  "vscode",
+  "git",
+  "python",
+  "node",
+  "claude_desktop",
+  "claude_code",
+  "codex",
+  "chatgpt_desktop",
+  "docker",
+  "cursor",
+  "windsurf",
+  "wsl",
+  "msvc_build_tools",
+  "cmake",
+  "npm",
+  "pnpm",
+  "uv",
+  "rust",
+  "java",
+  "gemini",
+  "opencode",
+  "continue",
+  "lm_studio",
+  "jetbrains",
+  "windows_terminal",
+  "qwen_code",
+  "kimi_cli",
+  "cc_switch",
+  "crush",
+  "doubao",
+  "cherry_studio",
+  "chatbox",
+  "jianying_pro",
+  "capcut",
+  "comfyui",
+  "gemini_desktop",
+] as const satisfies readonly SoftwareId[];
 
 export type DetectionMethod =
   | "path"

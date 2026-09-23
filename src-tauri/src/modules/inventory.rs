@@ -274,10 +274,37 @@ pub fn winget_provider(cat: &catalog::Catalog) -> Facts {
                 // Fall back to the display-name column, which is localised but
                 // still matchable. Never the *source* column: that one is the
                 // literal string "winget" in both locales and carries nothing.
+                //
+                // ## Why this needs `location_markers` too
+                //
+                // A bare `matches_name` here was a real false positive, measured
+                // on the reference machine. `winget list` reports two rows both
+                // named exactly `ChatGPT`:
+                //
+                //   ARP\User\X64\4f20b4cc…   1.0            ← Chrome "install as
+                //                                              web app" shortcut
+                //   MSIX\OpenAI.Codex_26.915… 26.915.4065.0  ← the real Store app
+                //
+                // The registry provider already rejects the Chrome shim, because
+                // it applies `location_markers` to `DisplayIcon`. The winget
+                // provider did not, so the *same* program was reported absent by
+                // one provider and present by another, and the merge took the
+                // optimistic half: the app claimed ChatGPT was installed on a
+                // machine that had only ever opened chatgpt.com.
+                //
+                // The winget row carries no `DisplayIcon`, but its **id** encodes
+                // the same identity: an MSIX row is `MSIX\<PackageFamilyName>_<ver>`
+                // and an ARP shim is `ARP\User\X64\<opaque>`. So the id is the
+                // haystack the markers are matched against — the structural
+                // equivalent of the registry's icon path, and not a name check in
+                // disguise.
+                //
+                // Entries with no markers keep the old name-only behaviour, which
+                // is why this changes nothing for the ~20 unambiguous programs.
                 .or_else(|| {
                     by_id
                         .values()
-                        .find(|row| entry.matches_name(&row.name))
+                        .find(|row| entry.matches_winget_row(&row.name, &row.id))
                 });
 
             let evidence = match hit {

@@ -180,6 +180,23 @@ export function SoftwareScreen() {
     return { kind: "needs-licence" };
   };
 
+  /**
+   * The engine's one-line reason for a failed step, for the row to show inline.
+   *
+   * Deliberately the *same* `stage` string the install screen renders, rather
+   * than a rephrasing: two explanations of one failure is two things that can
+   * disagree, and the student would have no way to tell which to believe.
+   *
+   * Returns `null` unless the step genuinely failed, so a row that succeeded
+   * cannot pick up a stale sentence from an earlier run — `planStepById` is
+   * keyed by program and a later successful attempt overwrites the entry.
+   */
+  const failureReasonFor = (item: SoftwareInfo): string | null => {
+    const step = planStepById.get(item.id);
+    if (!step || step.status !== "failed") return null;
+    return step.stage || null;
+  };
+
   return (
     <div className="flex h-full flex-col px-10 py-8">
       <header className="fade shrink-0">
@@ -232,6 +249,7 @@ export function SoftwareScreen() {
                 catalogue={catalogue}
                 strategyById={strategyById}
                 actionFor={actionFor}
+                failureReasonFor={failureReasonFor}
               />
             )}
             {missing.length > 0 && (
@@ -241,6 +259,7 @@ export function SoftwareScreen() {
                 catalogue={catalogue}
                 strategyById={strategyById}
                 actionFor={actionFor}
+                failureReasonFor={failureReasonFor}
               />
             )}
             {unknown.length > 0 && (
@@ -250,6 +269,7 @@ export function SoftwareScreen() {
                 catalogue={catalogue}
                 strategyById={strategyById}
                 actionFor={actionFor}
+                failureReasonFor={failureReasonFor}
               />
             )}
 
@@ -395,12 +415,21 @@ function Group({
   catalogue,
   strategyById,
   actionFor,
+  failureReasonFor,
 }: {
   label: string;
   items: SoftwareInfo[];
   catalogue: SoftwareDescriptor[];
   strategyById: Map<string, InstallStrategy>;
   actionFor: (item: SoftwareInfo) => RowAction;
+  /**
+   * Why the last attempt at this program failed, or `null`.
+   *
+   * Passed down rather than looked up in the row because the map it comes from
+   * belongs to the screen's session, and a row that reached into the store for
+   * it would be reading state the screen has already narrowed for it.
+   */
+  failureReasonFor: (item: SoftwareInfo) => string | null;
 }) {
   return (
     <div className="rise">
@@ -415,6 +444,7 @@ function Group({
             catalogue={catalogue}
             strategy={strategyById.get(item.id) ?? null}
             action={actionFor(item)}
+            failureReason={failureReasonFor(item)}
           />
         ))}
       </div>
@@ -442,11 +472,14 @@ function SoftwareRow({
   catalogue,
   strategy,
   action,
+  failureReason,
 }: {
   item: SoftwareInfo;
   catalogue: SoftwareDescriptor[];
   strategy: InstallStrategy | null;
   action: RowAction;
+  /** Why the last attempt failed, shown inline on a `重试` row. */
+  failureReason: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -510,6 +543,26 @@ function SoftwareRow({
               </span>
             )}
           </div>
+
+          {/* Why the last attempt failed, in the row itself.
+              
+              Brief §八 asks the failed state to carry 查看原因 next to 重试. The
+              reason is the engine's own `stage` string — the same sentence the
+              install screen shows — so this is not a second explanation that
+              could disagree, and it needs no click to read. A row that says only
+              重试 makes the student press it blind, which is the "先点卡片再猜"
+              failure §八 names.
+
+              Only rendered when there is something to say. An empty line would
+              shift the layout for every healthy row. */}
+          {action.kind === "retry" && failureReason && (
+            <div
+              data-testid="row-failure-reason"
+              className="text-[color:var(--status-warn)] mt-1 text-[11.5px] leading-relaxed"
+            >
+              上次未完成：{failureReason}
+            </div>
+          )}
         </div>
 
         <SourceMarks sources={item.sources} />
@@ -931,7 +984,22 @@ function describeMethod(
   strategy: InstallStrategy | null,
   descriptor: SoftwareDescriptor | undefined,
 ): string {
-  if (descriptor && !descriptor.installable) return "本工具不提供安装，需自行获取";
+  if (descriptor && !descriptor.installable) {
+    // ## Reworded in 0.1.2 because the old sentence was a product bug
+    //
+    // It used to read "本工具不提供安装，需自行获取". For a beginner — the one
+    // audience this product has — that sentence does not say "this program needs
+    // a manual download"; it says **"this tool doesn't work"**. It was also the
+    // single most common complaint about the previous build, and it appeared on
+    // entries that had a working `winget` package the whole time (Docker, Cursor,
+    // MSVC, CMake, Java, Rust, uv, pnpm). Those were promoted to installable above
+    // this change; what is left here is genuinely manual.
+    //
+    // So the replacement leads with the reason and names who does the step, and
+    // it never implies the tool is broken. `needsManualStep` keeps the two cases
+    // distinguishable in the data rather than in prose.
+    return "需你手动安装（本工具仅检测，不代装此类软件）";
+  }
 
   if (strategy?.preferred) {
     if (strategy.preferred.startsWith("winget")) return "winget 自动安装";
@@ -1047,14 +1115,15 @@ function strategyMap(strategies: InstallStrategy[]): Map<string, InstallStrategy
 /**
  * The last run's per-step results, keyed by program. Empty before any run.
  *
- * Typed structurally (`stepId`/`status`) rather than as `StepProgress[]` because
- * the only field this screen reads is `status` — it needs to know that a program
- * *failed*, not how far it got. Narrowing the parameter keeps the 重试 rule
- * expressed in terms of what it actually depends on.
+ * Typed structurally (`stepId`/`status`/`stage`) rather than as `StepProgress[]`
+ * because these are the only fields this screen reads: the `重试` rule needs the
+ * *status*, and the failed row's one-line explanation needs the *stage*. Reading
+ * the two through a narrowed parameter keeps that dependency visible, and means
+ * adding a field to `StepProgress` cannot silently change what this screen does.
  */
 function stepMap(
-  steps: { stepId: SoftwareId; status: string }[] | undefined,
-): Map<string, { stepId: SoftwareId; status: string }> {
+  steps: { stepId: SoftwareId; status: string; stage: string }[] | undefined,
+): Map<string, { stepId: SoftwareId; status: string; stage: string }> {
   if (!steps) return new Map();
   return new Map(steps.map((s) => [s.stepId as string, s]));
 }

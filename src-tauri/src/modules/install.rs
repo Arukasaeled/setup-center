@@ -260,9 +260,69 @@ pub fn execute_plan(
         plan.profile_id.clone(),
         plan_timestamp(),
     );
-    execute_steps(catalog, plan, &mut session, cancel, &plan.steps.iter().map(|s| s.id).collect::<Vec<_>>());
+    execute_steps(
+        catalog,
+        plan,
+        &mut session,
+        cancel,
+        &plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
+        &no_progress,
+    );
     session
 }
+
+/// Like [`execute_plan`], but reports each step change to `sink` as it happens.
+///
+/// This is the entry point the Tauri command uses. It exists alongside
+/// `execute_plan` rather than replacing it so the engine keeps a plain
+/// no-observer form for its own tests — the observed run and the unobserved run
+/// are the *same* `execute_steps`, differing only in the sink.
+pub fn execute_plan_observed(
+    catalog: &Catalog,
+    plan: &InstallPlan,
+    cancel: &CancelFlag,
+    sink: ProgressSink<'_>,
+) -> ExecutionSession {
+    let mut session = ExecutionSession::new(
+        format!("session-{}", plan_timestamp().replace([':', '.'], "-")),
+        plan.profile_id.clone(),
+        plan_timestamp(),
+    );
+    execute_steps(
+        catalog,
+        plan,
+        &mut session,
+        cancel,
+        &plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
+        sink,
+    );
+    session
+}
+
+/// Observer for per-step progress, called as each step's state changes.
+///
+/// ## Why a callback rather than a channel
+///
+/// The engine is deliberately free of Tauri: `install.rs` knows nothing about
+/// webviews, and its tests drive it directly. A callback keeps that property —
+/// the command layer supplies a closure that emits to the frontend, and the
+/// engine stays a plain function a unit test can call with [`no_progress`].
+///
+/// ## Why it is called at every mutation
+///
+/// The 0.1.1 complaint was "点安装以后等待很久，但不知道发生了什么": the UI had no
+/// idea what the engine was doing. `StepProgress` was already computed for every
+/// step, but only ever handed back *after* the whole run finished. Calling this
+/// at each state change is what turns a silent multi-minute wait into a
+/// sequence the student can watch.
+///
+/// The sink receives `&StepProgress` and must copy what it needs: the engine
+/// mutates its own value immediately afterwards, so holding the reference past
+/// the call would read a later state.
+pub type ProgressSink<'a> = &'a (dyn Fn(&StepProgress) + 'a);
+
+/// A sink that discards everything, for callers with no observer.
+pub fn no_progress(_: &StepProgress) {}
 
 /// Continues an interrupted session.
 ///
@@ -286,7 +346,27 @@ pub fn resume_plan(
     session.actions = previous.actions.clone();
 
     let remaining = previous.remaining.clone();
-    execute_steps(catalog, plan, &mut session, cancel, &remaining);
+    execute_steps(catalog, plan, &mut session, cancel, &remaining, &no_progress);
+    session
+}
+
+/// Like [`resume_plan`], but reports each step change to `sink` as it happens.
+pub fn resume_plan_observed(
+    catalog: &Catalog,
+    plan: &InstallPlan,
+    previous: &ExecutionSession,
+    cancel: &CancelFlag,
+    sink: ProgressSink<'_>,
+) -> ExecutionSession {
+    let mut session = ExecutionSession::new(
+        previous.id.clone(),
+        previous.profile_id.clone(),
+        previous.started_at.clone(),
+    );
+    session.actions = previous.actions.clone();
+
+    let remaining = previous.remaining.clone();
+    execute_steps(catalog, plan, &mut session, cancel, &remaining, sink);
     session
 }
 
@@ -297,8 +377,25 @@ fn execute_steps(
     session: &mut ExecutionSession,
     cancel: &CancelFlag,
     todo: &[SoftwareId],
+    sink: ProgressSink<'_>,
 ) {
     let total = plan.steps.len() as u32;
+
+    // A step is announced the moment the engine commits to running it, before
+    // its first command runs. This is the update that unblocks the UI: it tells
+    // the student which program is being worked on and how many remain, which is
+    // all they need to know the run is alive. Without it the screen would sit on
+    // whatever it showed before the click for the length of the whole run.
+    //
+    // Every push to `session.steps` is paired with a `sink` call, and they are
+    // kept adjacent on purpose: a step the engine recorded but never announced
+    // would render as a row that never leaves "等待开始", which is precisely the
+    // class of lie this phase exists to remove.
+    let announce = |session: &ExecutionSession| {
+        if let Some(step) = session.steps.last() {
+            sink(step);
+        }
+    };
 
     for (index, step) in plan.steps.iter().enumerate() {
         let mut progress = StepProgress {
@@ -331,6 +428,7 @@ fn execute_steps(
                 session.remaining.push(step.id);
             }
             session.steps.push(progress);
+            announce(session);
             continue;
         }
 
@@ -342,6 +440,7 @@ fn execute_steps(
             progress.status = StepStatus::Skipped;
             progress.stage = "已检测到，无需安装".into();
             session.steps.push(progress);
+            announce(session);
             continue;
         }
 
@@ -350,14 +449,23 @@ fn execute_steps(
             progress.stage = "已取消".into();
             session.remaining.push(step.id);
             session.steps.push(progress);
+            announce(session);
             continue;
         }
 
         progress.status = StepStatus::Running;
         session.steps.push(progress);
         let position = session.steps.len() - 1;
+        announce(session);
 
         run_chain(catalog, step, &mut session.actions, &mut session.steps[position], cancel);
+
+        // The step's final state, now that the chain has been walked and the
+        // completion rule applied. Announced before the post-run verification
+        // pass below, which may upgrade a `Failed` step to
+        // `SucceededWithWarning` — that upgrade is announced separately so the
+        // student sees "安装未完成" turn into "已安装".
+        sink(&session.steps[position]);
 
         let status = session.steps[position].status;
         match status {
@@ -399,12 +507,23 @@ fn execute_steps(
             fraction: None,
             detail: None,
         });
+        announce(session);
         if !session.remaining.contains(&step.id) {
             session.remaining.push(step.id);
         }
     }
 
     finalize_session(catalog, plan, session);
+
+    // The verification pass can reclassify a step (a `Failed` install whose
+    // program the re-scan now finds). Those steps were announced once already,
+    // so the corrected state is announced again — otherwise the student would be
+    // told the install failed and never told it actually succeeded.
+    for step in session.steps.iter() {
+        if step.status == StepStatus::SucceededWithWarning {
+            sink(step);
+        }
+    }
 }
 
 /// Walks one step's fallback chain, recording every attempt.
@@ -424,7 +543,16 @@ fn run_chain(
     let mut chain: Vec<Fallback> = Vec::with_capacity(spec.chain.len() + 1);
     chain.push(Fallback {
         source: step.source.clone(),
-        rationale: spec.chain[0].rationale.clone(),
+        // Empty for a detect-only program (MSVC, CMake, Docker, Cursor, WSL …),
+        // whose plan source is `ConfigurationOnly` and whose chain is empty by
+        // construction. Indexing here panicked the engine instead of running the
+        // step — the same shape as the `install_strategies` crash, reached
+        // through a different door: a `programmer` profile run, not a click.
+        rationale: spec
+            .chain
+            .first()
+            .map(|f| f.rationale.clone())
+            .unwrap_or_else(|| "此软件需要你手动完成安装".to_string()),
     });
     for link in spec.chain.iter().skip(1) {
         chain.push(link.clone());
@@ -697,31 +825,78 @@ mod tests {
     #[test]
     fn a_profile_naming_a_detect_only_program_plans_it_without_crashing() {
         // The latent panic this guards: an empty install chain indexed as
-        // `chain[0]` blows up the planner. A campus profile that mentions Docker
-        // is a completely reasonable thing for a school to write, and it must
+        // `chain[0]` blows up the planner. A campus profile that mentions WSL is
+        // a completely reasonable thing for a school to write, and it must
         // produce a plan rather than a crash.
+        //
+        // ## Why the subject changed from Docker to WSL in 0.1.2
+        //
+        // Docker became installable, so it stopped being an empty-chain case and
+        // this test quietly stopped testing anything — it would have passed while
+        // the panic it exists to prevent walked straight through. WSL is the
+        // remaining entry that is genuinely detect-only, which is what makes it
+        // the right subject. This is the failure mode to watch for whenever a
+        // program is promoted: *the guard's subject must still be able to fail.*
         let cat = Catalog::builtin();
-        let p = profile_with(vec![SoftwareId::Docker, SoftwareId::Git]);
+        let p = profile_with(vec![SoftwareId::Wsl, SoftwareId::Git]);
         let plan = build_plan(&cat, &p, &empty_scan());
 
         assert_eq!(plan.steps.len(), 2);
-        let docker = plan
+        let wsl = plan
             .steps
             .iter()
-            .find(|s| s.id == SoftwareId::Docker)
+            .find(|s| s.id == SoftwareId::Wsl)
             .unwrap();
         assert!(
-            matches!(docker.source, InstallSource::ConfigurationOnly),
+            matches!(wsl.source, InstallSource::ConfigurationOnly),
             "an unmanaged program must not claim an install source"
         );
         assert!(
-            !docker.fallback_plan.is_empty(),
+            !wsl.fallback_plan.is_empty(),
             "the UI needs something to explain the situation"
         );
         assert!(
-            docker.fallback_plan[0].contains("手动"),
+            wsl.fallback_plan[0].contains("手动"),
             "the explanation must tell the student who does it: {:?}",
-            docker.fallback_plan
+            wsl.fallback_plan
+        );
+    }
+
+    #[test]
+    fn the_engine_survives_running_a_detect_only_step() {
+        // The *runtime* counterpart of the planner test above, and the regression
+        // for a real shipped crash.
+        //
+        // `run_chain` builds its chain by pushing `spec.chain[0].rationale`, an
+        // unchecked index that panics on an empty chain. The planner test did not
+        // catch it because planning never calls `run_chain` — so a `programmer`
+        // profile (the one profile naming MSVC and CMake, both detect-only at the
+        // time) planned fine and then tore down the app the moment the engine ran.
+        //
+        // This walks the same path the engine walks and asserts that an empty
+        // chain produces a *reported* outcome rather than a panic.
+        let cat = Catalog::builtin();
+        let p = profile_with(vec![SoftwareId::Wsl]);
+        let plan = build_plan(&cat, &p, &empty_scan());
+        let step = plan.steps.iter().find(|s| s.id == SoftwareId::Wsl).unwrap();
+
+        let mut actions = Vec::new();
+        let mut progress = StepProgress {
+            step_id: SoftwareId::Wsl,
+            name: SoftwareId::Wsl.display_name().to_string(),
+            status: StepStatus::Running,
+            index: 0,
+            total: 1,
+            stage: String::new(),
+            fraction: None,
+            detail: None,
+        };
+        let cancel = CancelFlag::new();
+        run_chain(&cat, step, &mut actions, &mut progress, &cancel);
+
+        assert!(
+            !actions.is_empty(),
+            "a detect-only step must still record an attempt, so the student is told why nothing happened"
         );
     }
 

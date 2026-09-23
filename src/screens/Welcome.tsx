@@ -47,11 +47,12 @@
  * structure's promise that checking is free.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../components/ui";
 import { ActivationCard } from "../components/ActivationPanel";
 import { useApp } from "../lib/store";
 import { isTauri } from "../lib/ipc";
+import type { GoalView } from "../lib/types";
 
 export function WelcomeScreen({
   /**
@@ -76,6 +77,22 @@ export function WelcomeScreen({
   const scanInstalled = useApp((s) => s.scanInstalled);
   const openDashboard = useApp((s) => s.openDashboard);
   const entitlements = useApp((s) => s.entitlements);
+  const goals = useApp((s) => s.goals);
+  const loadGoals = useApp((s) => s.loadGoals);
+  const selectGoal = useApp((s) => s.selectGoal);
+
+  /**
+   * Loads the direction list so the task cards have real content.
+   *
+   * Fired on mount rather than on click because the cards *are* the first thing
+   * on this screen: waiting for a click would mean the entry a new student is
+   * meant to take is the one thing not yet on screen. Failure is silent — the
+   * cards simply do not render and the numbered entries below still work, which
+   * is the whole reason those entries were kept.
+   */
+  useEffect(() => {
+    if (!goals) void loadGoals();
+  }, [goals, loadGoals]);
 
   /**
    * ① Reads the machine and shows the overview. Changes nothing.
@@ -108,6 +125,24 @@ export function WelcomeScreen({
     void loadProfiles();
   };
 
+  /**
+   * Takes a task card: records the direction and enters the flow already aimed.
+   *
+   * ## Why this still goes through the goal screen
+   *
+   * The card answers "what do you want to do", but the student has not yet seen
+   * *what that costs* — which programs, how long, whether admin is needed. The
+   * goal screen is where that is shown, and `selectGoal` starts resolving it as
+   * the screen mounts, so the student arrives to a direction already chosen and
+   * a preview already loading. Skipping straight to detection would remove the
+   * one screen that explains the choice before anything is installed.
+   */
+  const chooseDirection = (goalId: string) => {
+    selectGoal(goalId);
+    goTo("goal");
+    void loadProfiles();
+  };
+
   // PRO customers get a different third entry: the thing that would otherwise
   // sit there asking them to buy something they already own. The PRO/FREE choice
   // is derived here rather than delegated, because `UpgradePrompt` legitimately
@@ -130,11 +165,56 @@ export function WelcomeScreen({
           </p>
         </header>
 
+        {/* The task entry (0.1.2, brief §五).
+            
+            This leads the screen because the earlier build led with functions
+            ("check", "configure") and a beginner cannot act on either: they do
+            not yet know whether checking is worth doing or what configuring
+            would install. "你想做什么？" is answerable by someone who has never
+            written a line of code, and each card then *shows* the programs its
+            answer needs, so the choice is informed before it is made.
+
+            Rendered only when the goal list has arrived. While it is loading, or
+            if it failed, the block is absent rather than empty — the numbered
+            entries below are a complete alternative path, so this section can
+            legitimately not exist. */}
+        {goals && goals.goals.length > 0 && (
+          <section data-testid="welcome-tasks" className="rise rise-1 mt-6">
+            <h2 className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
+              你想做什么？
+            </h2>
+            <p className="text-[color:var(--text-tertiary)] mt-1 text-[12px] leading-relaxed">
+              选一个最接近的，下一步会告诉你需要装什么、大概要多久。
+            </p>
+            <div className="stagger mt-3 grid grid-cols-2 gap-2">
+              {goals.goals.map((goal) => (
+                <TaskCard
+                  key={goal.id}
+                  goal={goal}
+                  onClick={() => chooseDirection(goal.id)}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={configure}
+              className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-3 text-[12px] transition-colors duration-150"
+            >
+              已经知道自己需要什么？浏览全部软件 →
+            </button>
+          </section>
+        )}
+
         {/* The three entries, numbered so the screen reads as a short menu rather
             than as three competing buttons. The numbers are the brief's own
             ordering and they carry real information here: a beginner genuinely
-            does not know that checking is the cheaper first move. */}
-        <div className="rise rise-1 mt-7 flex flex-col gap-2.5">
+            does not know that checking is the cheaper first move.
+
+            Kept below the task cards on purpose (brief §五: "不要强制用户使用
+            profile"). A student who already knows they want to inspect the
+            machine, or who wants the straight-through install, must not be
+            forced through a direction they do not have. */}
+        <div className="rise rise-1 mt-6 flex flex-col gap-2.5">
           <Entry
             index="①"
             title="检查电脑环境"
@@ -203,6 +283,56 @@ export function WelcomeScreen({
 
       {!isTauri() && <BrowserPreviewNotice />}
     </div>
+  );
+}
+
+/**
+ * One task card: a direction, in the student's own words.
+ *
+ * ## Why a card here when `Goal.tsx` deliberately uses a list
+ *
+ * `Goal.tsx`'s header explains that six *expanded* cards make a decision into a
+ * comparison task. This is the same six options, but the constraint that made it
+ * a list does not apply: these cards carry only a name and a one-line tagline,
+ * so the whole set is readable at a glance, and the expanded detail — what it
+ * installs, how long, whether admin is needed — appears on the goal screen one
+ * click later. The list-vs-cards rule was about not showing six explanations at
+ * once, not about the number six.
+ *
+ * ## What it shows, and what it deliberately does not
+ *
+ * Name and tagline only. The brief's §五 sketch also lists example programs
+ * ("Claude / Codex / Qwen / VS Code …"); this reads those off the goal's *plan*
+ * rather than hard-coding them, because a hard-coded list is a second source of
+ * truth that would drift the moment a profile changed. The plan is not resolved
+ * until the goal is selected, so the honest thing to show at this point is the
+ * tagline — which is exactly what the goal table provides for this purpose.
+ */
+function TaskCard({
+  goal,
+  onClick,
+}: {
+  goal: GoalView;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={`welcome-task-${goal.id}`}
+      onClick={onClick}
+      className={
+        "border-[color:var(--line-subtle)] hover:border-[color:var(--line-default)] " +
+        "hover:bg-[color:var(--surface-hover)] flex flex-col items-start gap-1 " +
+        "rounded-[10px] border px-3 py-2.5 text-left transition-colors duration-150"
+      }
+    >
+      <span className="text-[color:var(--text-primary)] text-[13px] font-medium">
+        {goal.name}
+      </span>
+      <span className="text-[color:var(--text-tertiary)] text-[11.5px] leading-relaxed">
+        {goal.tagline}
+      </span>
+    </button>
   );
 }
 

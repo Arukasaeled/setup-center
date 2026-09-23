@@ -695,3 +695,146 @@ fn the_execution_engine_never_names_a_software_product() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Progress reporting (0.1.2)
+//
+// The UI's 0.1.1 complaint was that an install ran for minutes with nothing
+// shown. The engine had always computed `StepProgress` per step; what was
+// missing was any way to get those values to the frontend *while* the run was
+// happening. These tests assert the observer contract directly, because a sink
+// that is only exercised through a real webview would be verified by nothing.
+// ---------------------------------------------------------------------------
+
+/// Collects every step update the engine reports, in order.
+///
+/// Keyed by step id and keeping the *last* status seen, so the resulting map is
+/// what the UI would finish a run displaying.
+fn collect(
+    cat: &Catalog,
+    plan: &InstallPlan,
+    cancel: &CancelFlag,
+) -> Vec<StepProgress> {
+    use std::cell::RefCell;
+    let seen: RefCell<Vec<StepProgress>> = RefCell::new(Vec::new());
+    let _ = install::execute_plan_observed(cat, plan, cancel, &|step| {
+        seen.borrow_mut().push(step.clone());
+    });
+    seen.into_inner()
+}
+
+#[test]
+fn an_observed_run_reports_every_step_at_least_once() {
+    // The core promise of the channel: no step is silently skipped in the
+    // report. A step the engine recorded but never announced would render as a
+    // row frozen at "等待开始" for the whole run — the exact silent-wait symptom
+    // this change exists to remove.
+    let cat = catalog();
+    let plan = plan_with_step(
+        SoftwareId::Git,
+        InstallSource::Winget {
+            package_id: IMPOSSIBLE_PACKAGE.into(),
+        },
+        true,
+    );
+
+    let seen = collect(&cat, &plan, &CancelFlag::new());
+
+    assert!(
+        !seen.is_empty(),
+        "an observed run must report at least one update"
+    );
+    let final_of_git = seen
+        .iter()
+        .filter(|p| p.step_id == SoftwareId::Git)
+        .last()
+        .expect("Git must appear in the report");
+    assert_eq!(final_of_git.status, StepStatus::Skipped);
+    // `total` must be present on every update, because the UI renders
+    // "已完成 N / total 步骤" from it and a missing total would print "N / 0".
+    assert!(
+        seen.iter().all(|p| p.total >= 1),
+        "every update must carry a usable total"
+    );
+}
+
+#[test]
+fn an_observed_satisfied_step_reports_before_any_execution() {
+    // A satisfied step performs no work at all, so its *only* honest report is
+    // the skip. If the engine announced nothing here, a plan where everything
+    // was already present would produce a screen that never moves.
+    let cat = catalog();
+    let plan = plan_with_step(
+        SoftwareId::Git,
+        InstallSource::Winget {
+            package_id: IMPOSSIBLE_PACKAGE.into(),
+        },
+        true,
+    );
+
+    let seen = collect(&cat, &plan, &CancelFlag::new());
+
+    assert_eq!(seen.len(), 1, "a satisfied step reports exactly once");
+    assert_eq!(seen[0].status, StepStatus::Skipped);
+    assert_eq!(seen[0].step_id, SoftwareId::Git);
+    assert_eq!(seen[0].total, 1);
+    assert_eq!(seen[0].index, 0);
+}
+
+#[test]
+fn an_observed_cancelled_run_still_reports_the_untouched_steps() {
+    // Cancellation is where an unreported step is most damaging: the student
+    // pressed 取消 and must be able to see that the remaining programs were not
+    // attempted, rather than watching rows that never resolve.
+    let cat = catalog();
+    let plan = plan_with_step(
+        SoftwareId::Git,
+        InstallSource::Winget {
+            package_id: IMPOSSIBLE_PACKAGE.into(),
+        },
+        false,
+    );
+    let cancel = CancelFlag::new();
+    cancel.cancel();
+
+    let seen = collect(&cat, &plan, &cancel);
+
+    assert!(
+        !seen.is_empty(),
+        "a cancelled run must still report what it did not do"
+    );
+    assert_eq!(
+        seen.last().map(|p| p.status),
+        Some(StepStatus::Cancelled),
+        "the pre-cancelled step must report as cancelled"
+    );
+}
+
+#[test]
+fn the_unobserved_and_observed_runs_agree_on_the_final_session() {
+    // The observer must be a pure addition. If attaching it changed the
+    // session, every existing execution test would be validating a run shape
+    // that production no longer produces this closely.
+    let cat = catalog();
+    let plan = plan_with_step(
+        SoftwareId::Git,
+        InstallSource::Winget {
+            package_id: IMPOSSIBLE_PACKAGE.into(),
+        },
+        true,
+    );
+
+    let plain = install::execute_plan(&cat, &plan, &CancelFlag::new());
+    let observed = install::execute_plan_observed(&cat, &plan, &CancelFlag::new(), &install::no_progress);
+
+    assert_eq!(plain.steps.len(), observed.steps.len());
+    for (a, b) in plain.steps.iter().zip(observed.steps.iter()) {
+        assert_eq!(a.step_id, b.step_id);
+        assert_eq!(a.status, b.status);
+        assert_eq!(a.stage, b.stage);
+    }
+    assert_eq!(plain.remaining, observed.remaining);
+    assert_eq!(plain.failed_steps, observed.failed_steps);
+    assert_eq!(plain.actions.len(), observed.actions.len());
+}
+

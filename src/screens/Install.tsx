@@ -70,6 +70,8 @@ export function InstallScreen() {
   const canResume = useApp((s) => s.canResume);
   const chosenSteps = useApp((s) => s.chosenSteps);
   const setChosenSteps = useApp((s) => s.setChosenSteps);
+  const liveProgress = useApp((s) => s.liveProgress);
+  const watchInstallProgress = useApp((s) => s.watchInstallProgress);
   const goTo = useApp((s) => s.goTo);
   const startInstall = useApp((s) => s.startInstall);
   const resumeInstall = useApp((s) => s.resumeInstall);
@@ -93,7 +95,7 @@ export function InstallScreen() {
   const autoBuildRef = useRef(false);
 
   // A one-second tick while installing, purely so the elapsed clock moves. It
-  // deliberately does not touch any status: progress comes from the session, and
+  // deliberately does not touch any status: progress comes from the engine, and
   // a fake progress bar that advances on a timer is exactly the lie this screen
   // is built to avoid.
   useEffect(() => {
@@ -101,6 +103,37 @@ export function InstallScreen() {
     const id = window.setInterval(() => forceTick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, [installing]);
+
+  /**
+   * Subscribes to the engine's live step updates while this screen is mounted.
+   *
+   * Mounted rather than started on submit, so the listener is already attached
+   * before the first event can fire. Attaching it at click time would race the
+   * engine's first emission — the "announced" update for step 0 happens almost
+   * immediately, and losing it would leave the first row stuck on "等待开始" for
+   * the duration of the download.
+   *
+   * The cleanup detaches, which is what stops a student who leaves and re-enters
+   * this screen from having two listeners and receiving every update twice.
+   * `watchInstallProgress` clears the map on attach, so re-entry also cannot
+   * show a previous run's rows.
+   */
+  useEffect(() => {
+    let detach: (() => void) | undefined;
+    let cancelled = false;
+    void watchInstallProgress().then((fn) => {
+      // The effect may already have been torn down while the async attach was in
+      // flight (React strict mode double-invokes, and a fast navigation does
+      // this too). Attaching a listener that nobody will ever detach would leak
+      // one update per event for the life of the window.
+      if (cancelled) fn();
+      else detach = fn;
+    });
+    return () => {
+      cancelled = true;
+      detach?.();
+    };
+  }, [watchInstallProgress]);
 
   // Post-install verification, once a run has finished.
   //
@@ -143,6 +176,40 @@ export function InstallScreen() {
     () => plan?.steps.filter((s) => !s.satisfied) ?? [],
     [plan],
   );
+
+  /**
+   * The steps to render: the finished session's record, overlaid with whatever
+   * the live channel has reported.
+   *
+   * ## Position is load-bearing
+   *
+   * This sits *above* the `choosing` early return below, with the other hooks.
+   * Putting it after that return — where the value is first used — is a Rules of
+   * Hooks violation: the choose phase would render with one fewer hook than the
+   * running phase, and React would tear the component down with "change in the
+   * order of Hooks". The real-app harness caught exactly that.
+   *
+   * ## The overlay order, and why it is this way round
+   *
+   * The live map wins where it has a value, because it is the *newer* reading.
+   * During a run Rust has not returned a session yet — that is the whole reason
+   * the event channel exists — so before 0.1.2 this list was empty for the
+   * entire install and the screen had nothing to say. Layering live progress on
+   * top fills that gap without changing what is shown once the run ends.
+   *
+   * When the run finishes, `session.steps` is the authoritative record and it
+   * agrees with the live map by construction (both come from the same engine
+   * calls), so preferring either gives the same answer.
+   *
+   * Before anything starts, both are empty and the list falls back to the plan —
+   * which is the honest pre-run state ("等待开始" for each program).
+   */
+  const steps = useMemo(() => {
+    const merged = new Map<SoftwareId, StepProgress>();
+    for (const s of session?.steps ?? []) merged.set(s.stepId, s);
+    for (const [id, s] of liveProgress) merged.set(id, s);
+    return [...merged.values()];
+  }, [session, liveProgress]);
 
   // The choose phase holds until the student commits *in this mount*.
   //
@@ -209,7 +276,6 @@ export function InstallScreen() {
     );
   }
 
-  const steps = session?.steps ?? [];
   const done = steps.filter(
     (s) => s.status === "succeeded" || s.status === "skipped",
   ).length;
@@ -502,6 +568,36 @@ function ChoosePhase({
   // run and the checkbox must show the truth about what will happen.
   const selected = new Set(runnable.filter((s) => chosen === null || chosen.has(s.id)).map((s) => s.id));
 
+  /**
+   * The estimate for the *current selection*, or `null` when there is none.
+   *
+   * ## Why this is not `plan.estimatedMinutes`
+   *
+   * That number is a property of the **profile**, computed once when the plan was
+   * built — and the brief's §十四 is exactly about this: a student who unchecks
+   * everything must not still be told "预计 10 分钟", because that describes a run
+   * that cannot happen. The previous build printed the profile's figure next to
+   * the live count, so the two contradicted each other the moment anything was
+   * toggled.
+   *
+   * ## Why proportional rather than exact
+   *
+   * `InstallStep` carries no per-program duration — the profile states one total,
+   * and Rust does not model a per-program cost. Inventing one here would be a
+   * second, unsourced estimate that drifts from the profile's own. Scaling by the
+   * fraction of the runnable set that is selected is the only figure derivable
+   * from real data, and it is stated as 约 (approximately) because that is what it
+   * is.
+   *
+   * Rounding is to the nearest minute with a floor of 1: a selected run that
+   * rounds to 0 would read as "no time at all", which is worse than a small
+   * underestimate.
+   */
+  const estimateMinutes =
+    selected.size === 0 || plan.estimatedMinutes <= 0 || runnable.length === 0
+      ? null
+      : Math.max(1, Math.round((plan.estimatedMinutes * selected.size) / runnable.length));
+
   const toggle = (id: SoftwareId) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -521,10 +617,17 @@ function ChoosePhase({
         <p className="text-[color:var(--text-quiet)] mt-1 text-[13px]">
           {runnable.length === 0 ? (
             `${profileName} 需要的程序都已经在这台电脑上了。`
+          ) : selected.size === 0 ? (
+            // Brief §十四. Nothing is selected, so there is no work to estimate:
+            // printing the profile's own "预计 10 分钟" here would describe a run
+            // that cannot happen and would be read as "it will take 10 minutes
+            // anyway". The count is still stated, because it is the thing the
+            // student needs in order to undo their last click.
+            "请选择要配置的软件。不想装的可以取消勾选，之后随时可以再来装。"
           ) : (
             <>
               {profileName} · 已选 {selected.size} 项
-              {plan.estimatedMinutes > 0 && ` · 预计 ${plan.estimatedMinutes} 分钟`}
+              {estimateMinutes !== null && ` · 预计约 ${estimateMinutes} 分钟`}
               。不想装的可以取消勾选，之后随时可以再来装。
             </>
           )}

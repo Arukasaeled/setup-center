@@ -39,6 +39,7 @@ import type {
   SoftwareDescriptor,
   SoftwareId,
   SoftwareInventory,
+  StepProgress,
   VerificationReport,
 } from "./types";
 
@@ -291,6 +292,36 @@ interface AppStore {
   chosenSteps: Set<SoftwareId> | null;
   /** Replaces the selection. `null` restores "install everything in the plan". */
   setChosenSteps: (ids: SoftwareId[] | null) => void;
+  /**
+   * Live per-step progress, keyed by program.
+   *
+   * ## Why this is separate from `session`
+   *
+   * `session` is the *finished* record: Rust hands it back once, when the run is
+   * over. It cannot describe a run in progress, because during the run there is
+   * no session object yet — that was the 0.1.1 dead end. This map is fed by the
+   * `install://progress` event instead, so it exists exactly when `session` does
+   * not.
+   *
+   * Keyed by `SoftwareId` rather than kept as a list so a later update to the
+   * same step *replaces* the earlier one. The engine emits several updates for a
+   * single step (announced → running → finished), and appending them would make
+   * the UI render the same program three times.
+   *
+   * A `Map` rather than a plain object because the ids are a closed set and a
+   * `Map` keeps insertion order — the list renders in the order the engine
+   * worked, without the UI having to sort by `index`.
+   */
+  liveProgress: Map<SoftwareId, StepProgress>;
+  /**
+   * Attaches the progress listener and returns its detach function.
+   *
+   * Called once by the install screen while it is on screen. A no-op when the
+   * listener cannot be attached (browser preview, or a Tauri version without
+   * events), so the screen still works — it simply shows the coarser
+   * session-level state it had before 0.1.2.
+   */
+  watchInstallProgress: () => Promise<() => void>;
   /** Begin executing the current plan. */
   startInstall: () => Promise<void>;
   /** Continue an interrupted run. */
@@ -912,9 +943,38 @@ export const useApp = create<AppStore>((set, get) => ({
   executionError: null,
   canResume: false,
   chosenSteps: null,
+  liveProgress: new Map<SoftwareId, StepProgress>(),
 
   setChosenSteps: (ids) => {
     set({ chosenSteps: ids === null ? null : new Set(ids) });
+  },
+
+  /**
+   * Attaches the live-progress listener.
+   *
+   * ## Why the map is cleared here
+   *
+   * A new run must not inherit the previous run's rows. `liveProgress` is keyed
+   * by program, so without the clear a second install of the same profile would
+   * briefly show the *old* run's final statuses — a failed step would appear
+   * finished before the new run had touched it. Clearing on attach (rather than
+   * on submit) is safe because the screen attaches before it offers the button.
+   *
+   * The returned detach function is what the caller uses on unmount, so a
+   * screen that is left and re-entered never accumulates duplicate listeners
+   * firing two updates per event.
+   */
+  watchInstallProgress: async () => {
+    set({ liveProgress: new Map<SoftwareId, StepProgress>() });
+    return ipc.onInstallProgress((progress) => {
+      // Replace, not append: the engine emits several updates per step and the
+      // map's value must always be the latest known state of that program. The
+      // new Map is required because zustand compares by reference — mutating
+      // the existing one would not re-render.
+      const next = new Map(get().liveProgress);
+      next.set(progress.stepId, progress);
+      set({ liveProgress: next });
+    });
   },
 
   checkReadiness: async () => {

@@ -266,7 +266,23 @@ pub fn install_strategies(profile_id: String, state: State<'_, AppState>) -> App
                 id: *id,
                 name: id.display_name().to_string(),
                 purpose: id.purpose().to_string(),
-                preferred: install::describe_source(&spec.chain[0].source),
+                // An empty chain is a real catalog state, not an error: the
+                // entry is *detected but not managed* (MSVC, CMake, Docker,
+                // Cursor, WSL …). Indexing `chain[0]` unconditionally panicked
+                // here with "index out of bounds: the len is 0 but the index is
+                // 0" — and because this is a `#[tauri::command]`, the panic tore
+                // down the whole app instead of failing one screen. The
+                // `programmer` profile is the only profile that names such a
+                // program (MSVC + CMake), so *only* 程序员版 crashed on click.
+                //
+                // The empty string is the wire form of "no managed method"; the
+                // frontend already reads that as "detect only" through
+                // `descriptor.installable`, so no UI change is needed.
+                preferred: spec
+                    .chain
+                    .first()
+                    .map(|f| install::describe_source(&f.source))
+                    .unwrap_or_default(),
                 fallbacks: spec
                     .chain
                     .iter()
@@ -328,10 +344,33 @@ pub fn execution_readiness(
 pub async fn run_install(
     plan: InstallPlan,
     state: State<'_, AppState>,
+    window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
     // Before the session is opened and before a single byte is downloaded.
     require_install_rights()?;
-    run_install_blocking(plan, state).await
+    run_install_blocking(plan, state, window).await
+}
+
+/// The event name every install progress update is emitted on.
+///
+/// One name for both a fresh run and a resume, because the UI renders the same
+/// thing either way and separate channels would be two listeners that could
+/// drift. The `://` makes it read as a sub-resource of the install run rather
+/// than another unrelated app event, which keeps it greppable.
+pub const INSTALL_PROGRESS_EVENT: &str = "install://progress";
+
+/// Emits one step update to the frontend.
+///
+/// A send failure is deliberately swallowed: a progress update that cannot be
+/// delivered is not a reason to abort an installation the student asked for.
+/// The run's real outcome still reaches them as the command's return value, so
+/// the worst case of a lost event is a screen that updates one step late —
+/// never a wrong result. This is also why the engine takes a callback rather
+/// than an `AppHandle`: deciding to ignore a failed send is a *transport*
+/// concern, and it belongs here instead of inside the installation logic.
+fn emit_progress(window: &tauri::Window, step: &StepProgress) {
+    use tauri::Emitter;
+    let _ = window.emit(INSTALL_PROGRESS_EVENT, step);
 }
 
 /// The actual work, kept separate so the async command stays a thin wrapper.
@@ -343,6 +382,7 @@ pub async fn run_install(
 async fn run_install_blocking(
     plan: InstallPlan,
     state: State<'_, AppState>,
+    window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
     let catalog = catalog::Catalog::builtin();
     let session = ExecutionSession::new(
@@ -360,7 +400,11 @@ async fn run_install_blocking(
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        install::execute_plan(&catalog, &plan, &flag)
+        // The window is moved into the closure because it runs on another
+        // thread; a borrowed `&Window` could not outlive the awaited call.
+        install::execute_plan_observed(&catalog, &plan, &flag, &|step| {
+            emit_progress(&window, step);
+        })
     })
     .await
     .map_err(|e| AppError::Internal(format!("安装线程异常结束：{e}")))?;
@@ -384,7 +428,10 @@ async fn run_install_blocking(
 /// Returns the previous session unchanged when there is nothing to resume, so
 /// the UI cannot accidentally re-run a finished plan by pressing "继续".
 #[tauri::command]
-pub async fn resume_install(state: State<'_, AppState>) -> AppResult<ExecutionSession> {
+pub async fn resume_install(
+    state: State<'_, AppState>,
+    window: tauri::Window,
+) -> AppResult<ExecutionSession> {
     // Gated like a fresh run. A resumed install downloads and executes exactly
     // the same steps, so leaving this open would make the licence a formality:
     // interrupt once, then press 继续.
@@ -426,7 +473,9 @@ pub async fn resume_install(state: State<'_, AppState>) -> AppResult<ExecutionSe
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        install::resume_plan(&catalog, &plan, &previous, &flag)
+        install::resume_plan_observed(&catalog, &plan, &previous, &flag, &|step| {
+            emit_progress(&window, step);
+        })
     })
     .await
     .map_err(|e| AppError::Internal(format!("安装线程异常结束：{e}")))?;
@@ -1791,6 +1840,24 @@ pub struct KnowledgeStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The progress event name is duplicated in TypeScript, so it is guarded.
+    ///
+    /// `src/lib/ipc.ts` cannot import a Rust constant, and a mismatch between
+    /// the two would be silent in the worst way: Rust would emit on a channel
+    /// nobody listens to and the install screen would fall back to the 0.1.1
+    /// behaviour of showing nothing for the whole run. That is the exact defect
+    /// this phase exists to fix, so it must not be reintroducible by a rename.
+    #[test]
+    fn the_progress_event_name_matches_the_frontend_listener() {
+        const IPC_TS: &str = include_str!("../../src/lib/ipc.ts");
+        let expected = format!("export const INSTALL_PROGRESS_EVENT = \"{}\"", INSTALL_PROGRESS_EVENT);
+        assert!(
+            IPC_TS.contains(&expected),
+            "src/lib/ipc.ts must declare {expected:?}; the Rust emitter and the \
+             frontend listener have drifted apart"
+        );
+    }
 
     // -----------------------------------------------------------------------
     // The enforcement boundary

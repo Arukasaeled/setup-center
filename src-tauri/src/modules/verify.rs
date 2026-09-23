@@ -69,7 +69,21 @@ fn minimum_version(id: SoftwareId) -> Option<&'static str> {
         // Installable, but no version floor worth enforcing: every supported
         // Windows 10/11 build ships a Terminal whose new features arrive by
         // Store update, so "too old" would never be actionable.
-        | SoftwareId::WindowsTerminal => None,
+        | SoftwareId::WindowsTerminal
+        // The 0.1.2 AIGC batch. All are end-user creative/chat applications that
+        // auto-update themselves and have no API or file-format contract this
+        // tool depends on, so there is no version a student could be "too old"
+        // for in a way that would block their work. Enforcing a floor here would
+        // produce an upgrade prompt with nothing behind it.
+        | SoftwareId::Doubao
+        | SoftwareId::CherryStudio
+        | SoftwareId::Chatbox
+        | SoftwareId::JianyingPro
+        | SoftwareId::CapCut
+        | SoftwareId::ComfyUi
+        // Gemini Desktop is the same class as the batch above: a self-updating
+        // chat client with no contract this tool depends on.
+        | SoftwareId::GeminiDesktop => None,
     }
 }
 

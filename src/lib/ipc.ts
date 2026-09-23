@@ -79,6 +79,85 @@ export function isTauri(): boolean {
   );
 }
 
+/**
+ * The event Rust emits one `StepProgress` on per step change.
+ *
+ * Mirrors `commands::INSTALL_PROGRESS_EVENT`. It is a literal here rather than a
+ * shared import because the Rust constant cannot cross the boundary; the two
+ * are kept in step by `tools/check-event-channel.mjs`, which reads both files
+ * and fails if they diverge.
+ */
+export const INSTALL_PROGRESS_EVENT = "install://progress";
+
+/**
+ * Subscribes to live install progress. Resolves to an unsubscribe function.
+ *
+ * ## Why this exists
+ *
+ * Until 0.1.2 the install command was a single `await` that resolved only when
+ * the entire run had finished, so the UI had nothing to show for the minutes in
+ * between — the complaint that drove this phase. Rust now emits a
+ * `StepProgress` at every step transition; this is the receiving end.
+ *
+ * ## Failure behaviour, on both sides of the subscription
+ *
+ * A listener that cannot be attached is not an error the student should see.
+ * The command still returns the complete session, so the outcome is always
+ * correct — only the live detail is lost, and the screen degrades to the
+ * pre-0.1.2 behaviour rather than breaking. That is why this resolves to a no-op
+ * unsubscribe instead of throwing: a progress channel must never be able to
+ * take down the install flow it exists to describe.
+ *
+ * **The detach needs the same protection as the attach, and getting it wrong is
+ * easier than it looks.** `@tauri-apps/api/event`'s own `unlisten` reaches
+ * straight into `window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener(...)`
+ * with no guard, and it is declared `async` — so it *rejects* rather than
+ * throwing synchronously. In a webview that global is always installed by the
+ * runtime, but in a test harness or a partially-initialised page it is not. A
+ * `try/catch` around the call catches nothing (the rejection escapes as an
+ * unhandled promise error), and the failure lands in a React effect *cleanup*,
+ * where it surfaces as a page error on a screen that is working perfectly. The
+ * project's own `ui-verify.mjs` reproduces exactly that, which is how this was
+ * found.
+ *
+ * So the returned detach funnels the call through a resolved promise and catches
+ * the rejection. It is also safe to call more than once: React may invoke a
+ * cleanup twice across a StrictMode remount, and a detach that misbehaves the
+ * second time is the same bug one step later.
+ */
+export async function onInstallProgress(
+  handler: (progress: StepProgress) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<StepProgress>(INSTALL_PROGRESS_EVENT, (event) => {
+      handler(event.payload);
+    });
+
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      // The library's `unlisten` is `async () => _unlisten(...)`, i.e. it
+      // *returns a promise* rather than throwing synchronously. A bare
+      // `try { unlisten() } catch {}` therefore catches nothing — the rejection
+      // escapes as an unhandled promise error. It has to be awaited, and the
+      // await has to be inside the try, which means this detach is async-fire-
+      // and-forget rather than a plain function.
+      void Promise.resolve()
+        .then(() => unlisten())
+        .catch(() => {
+          // A detach failure must not become a visible page error. The listener
+          // goes away with the webview regardless.
+        });
+    };
+  } catch {
+    // See above: losing the listener must not fail the caller.
+    return () => {};
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Environment
 // ---------------------------------------------------------------------------

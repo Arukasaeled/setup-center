@@ -29,8 +29,10 @@
  * | brand colour          | git python node docker cmake claude  | `<img>` as-is    |
  * | brand colour (square) | npm pnpm uv                          | `<img>` as-is    |
  * | brand gradient        | codex gemini                         | `<img>` as-is    |
- * | brand colour (raster) | vscode wsl                           | `<img>` as-is    |
+ * | brand colour (raster) | vscode wsl doubao cherry_studio      | `<img>` as-is    |
+ * |                       | chatbox capcut                       |                  |
  * | `currentColor`        | cursor windsurf lmstudio opencode    | CSS mask, themed |
+ * | `#F2FF59` (pale)      | comfyui                              | CSS mask, themed |
  * | white or black glyph  | continue rust java jetbrains chatgpt | CSS mask, themed |
  *
  * **Why the stencil groups must be masked, not tinted.** A document loaded
@@ -92,6 +94,11 @@ import jetbrainsUrl from "../assets/software/jetbrains.svg";
 import kimiCliUrl from "../assets/software/kimi_cli.png";
 import crushUrl from "../assets/software/crush.png";
 import ccSwitchUrl from "../assets/software/cc_switch.png";
+import doubaoUrl from "../assets/software/doubao.png";
+import cherryStudioUrl from "../assets/software/cherry_studio.png";
+import chatboxUrl from "../assets/software/chatbox.png";
+import comfyuiUrl from "../assets/software/comfyui.svg";
+import capcutUrl from "../assets/software/capcut.png";
 
 interface Mark {
   url: string;
@@ -118,6 +125,9 @@ const MARKS: Partial<Record<SoftwareId, Mark>> = {
   // `naturalWidth === 0` failure among 17 marks.
   chatgpt_desktop: { url: chatgptUrl, stencil: true },
   gemini: { url: geminiUrl },
+  // The desktop app and the CLI are two products under one brand, so they share
+  // the vendor's starburst rather than inventing a second mark for the app.
+  gemini_desktop: { url: geminiUrl },
   lm_studio: { url: lmstudioUrl, stencil: true },
   opencode: { url: opencodeUrl, stencil: true },
   // Ships `fill="white"`: legible on dark, invisible on light. Stencil.
@@ -133,6 +143,42 @@ const MARKS: Partial<Record<SoftwareId, Mark>> = {
   kimi_cli: { url: kimiCliUrl },
   crush: { url: crushUrl },
   cc_switch: { url: ccSwitchUrl },
+
+  // --- AIGC (0.1.2) --------------------------------------------------------
+  // The four whose vendor publishes a distributable mark. Each is the
+  // vendor's own file, taken from the vendor's own repository or CDN:
+  //
+  // - `doubao`       https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/192x192.png
+  //                  (the 192px variant of the favicon set the official page
+  //                  links; the `.ico` at www.doubao.com/favicon.ico answers
+  //                  with an anti-bot HTML page, so the CDN path was used)
+  // - `cherry_studio` https://raw.githubusercontent.com/CherryHQ/cherry-studio/HEAD/build/icons/1024x1024.png
+  //                  (NOT `build/logo.png`, which is the same artwork flattened
+  //                  onto an opaque #FF5F5F plate — it measures fully opaque at
+  //                  all four corners and would render as a red square)
+  // - `chatbox`      https://raw.githubusercontent.com/Bin-Huang/chatbox/HEAD/assets/icon.png
+  //                  (NOT `assets/icon.svg`, which is a filter-only shell that
+  //                  paints nothing legible)
+  // - `comfyui`      https://raw.githubusercontent.com/Comfy-Org/ComfyUI_frontend/HEAD/apps/website/public/affiliates/brand/comfy-amplified-logo-mark.svg
+  //                  (the square brand mark, not the 204x57 wordmark)
+  //
+  // The three raster marks were downscaled to 256px through Chromium's canvas
+  // (no sharp/jimp in this repo) and audited pixel-by-pixel afterwards: every
+  // one has alpha 0 at all four corners, which `colorType === 6` alone does not
+  // prove. `comfyui` is a stencil because its brand colour is #F2FF59 — legible
+  // on the dark surface, near-invisible on paper white.
+  doubao: { url: doubaoUrl },
+  cherry_studio: { url: cherryStudioUrl },
+  chatbox: { url: chatboxUrl },
+  comfyui: { url: comfyuiUrl, stencil: true },
+  // `capcut` comes from CapCut's own PWA manifest
+  // (`https://sf16-web-tos-buz.capcutcdn-us.com/obj/capcut-web-buz-tx/pwa/512.png`),
+  // which is the vendor's published 512px icon — the site itself is JS-rendered
+  // and exposes no `<link rel="icon">` in its HTML. The source is an indexed
+  // palette PNG (colorType 3) whose transparency lives in a `tRNS` chunk, so
+  // `colorType === 6` would have reported it as "not transparent" when it is
+  // 34% clear; it was audited by decoding PLTE + tRNS instead.
+  capcut: { url: capcutUrl },
 
   // --- Runtimes ------------------------------------------------------------
   python: { url: pythonUrl },
@@ -174,6 +220,20 @@ export const NO_BRAND_ASSET: SoftwareId[] = [
   // above forbids substituting a third-party icon or redrawing one. So this is
   // a recorded decision rather than an oversight.
   "qwen_code",
+  // --- 0.1.2 AIGC batch: the one that remains --------------------------------
+  // An earlier revision put all six AIGC ids here with the rationale that "each
+  // of these vendors ships its mark inside an application binary ... rather than
+  // as a published, distributable image file". That rationale was wrong, and
+  // five of the six moved to `MARKS` above.
+  //
+  // 剪映 is the genuine holdout, and the reason is checkable rather than
+  // rhetorical: `jianying.com`, `capcut.cn` and `lv.ulikecam.com` are
+  // JS-rendered and expose no logo in their HTML and no PWA manifest, and the
+  // single mark reachable from the vendor's own domain is a 48x48 **BMP**-format
+  // `favicon.ico` — below the resolution of every other asset here and in a
+  // format the browser cannot render as a crisp 28px mark. Its international
+  // sibling `capcut` *does* publish a 512px PNG and is no longer on this list.
+  "jianying_pro",
 ];
 
 /**

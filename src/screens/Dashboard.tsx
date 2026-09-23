@@ -1012,7 +1012,11 @@ function SoftwareGrid({
   // Built from the data rather than hard-coded so a renamed or added category
   // in Rust appears here automatically. A hard-coded list would let a tab select
   // a group that no longer exists and silently show an empty grid.
-  const order = ["development", "editor", "aiTool", "runtime"];
+  //
+  // `aiCreative` was added in 0.1.2 with the AIGC entries. It is listed *after*
+  // `aiTool` deliberately: a student looking for a coding assistant should reach
+  // "AI 工具" first, and the video/image tools are the second question.
+  const order = ["development", "editor", "aiTool", "aiCreative", "runtime"];
   const tabs: CategoryTab[] = [
     { key: "", label: "全部", count: items.length },
     ...order
@@ -1606,7 +1610,7 @@ function SoftwareDetail({
                 ? "无法确认"
                 : descriptor.installable
                   ? "未安装"
-                  : "未安装（需自行获取）"
+                  : "未安装（需你手动安装）"
           }
           confidence={status}
         />
@@ -1618,7 +1622,7 @@ function SoftwareDetail({
         />
         <DetailRow
           label="管理方式"
-          value={descriptor.installable ? "本工具可安装" : "仅检测，需自行安装"}
+          value={descriptor.installable ? "本工具可一键安装" : "仅检测（需你手动安装）"}
         />
         {/* The category, when knowledge supplies one, gives the row context the
             catalog's own grouping does not — "编程语言" against "开发工具". */}

@@ -360,10 +360,60 @@ pub enum SoftwareId {
     /// different, unrelated project, which is exactly why the profile must name
     /// the scope.
     Crush,
+    // -----------------------------------------------------------------------
+    // 0.1.2 — AI chat clients and AIGC creation tools.
+    //
+    // These are the entries the product's own audience kept asking for. A
+    // student who wants 豆包 or 剪映 is not being served by a catalogue that only
+    // knows compilers, and the brief's instruction was explicit: expand into
+    // AI- and AIGC-related software rather than more developer tooling.
+    //
+    // Every `winget` id below was verified live with `winget show` (the version
+    // output at the time is recorded in `catalog.rs`). Two candidates were
+    // *rejected* rather than guessed at:
+    //
+    // * **即梦AI** (`XPFFCMLPD8RSBG`) — `winget search` lists it, but
+    //   `winget show` on that id fails with `0x8a150039 : REST 源返回的数据无效`.
+    //   The Store entry is malformed upstream, so an install would fail at the
+    //   first step with an error that reads to a student as "this app is broken".
+    //   Excluded until the upstream entry resolves.
+    // * **TapNow** — not in `winget` at all (`winget search tapnow` finds
+    //   nothing), though it *is* installed on the reference machine as an ARP
+    //   entry (`TapNow 0.4.23`). No unattended route exists, so listing it would
+    //   mean inventing a package id.
+    // -----------------------------------------------------------------------
+    /// 豆包 — ByteDance's AI assistant desktop client.
+    Doubao,
+    /// Cherry Studio — multi-model desktop client (OpenAI/Claude/Gemini/local).
+    CherryStudio,
+    /// Chatbox — lightweight multi-model chat client.
+    Chatbox,
+    /// 剪映专业版 — ByteDance's video editor, the mainstream Chinese AIGC
+    /// creation tool for students.
+    JianyingPro,
+    /// CapCut — the international build of the same editor.
+    CapCut,
+    /// ComfyUI Desktop — node-based image-generation workflow tool, the standard
+    /// local front end for Stable Diffusion-style models.
+    ComfyUi,
+    /// Google's *desktop* Gemini app — distinct from [`SoftwareId::Gemini`],
+    /// which is the `@google/gemini-cli` command-line agent.
+    ///
+    /// The two are separate entries for the same reason ChatGPT and Codex are:
+    /// a student who wants "the Gemini app" is not served by a row named
+    /// "Gemini CLI" that installs an npm package. The desktop app installs
+    /// through the vendor's own Windows installer.
+    ///
+    /// The catalog routes this through `winget` id `Google.GoogleDesktop`
+    /// (verified live with `winget show`, which reports version `152.0.7933.0`
+    /// and tag `google-gemini`). That version matches the `GeminiSetup.exe` the
+    /// user downloaded from Google's own site byte-for-byte at the version
+    /// field, which is how the id was confirmed rather than guessed at.
+    GeminiDesktop,
 }
 
 impl SoftwareId {
-    pub const ALL: [SoftwareId; 29] = [
+    pub const ALL: [SoftwareId; 36] = [
         SoftwareId::Vscode,
         SoftwareId::Git,
         SoftwareId::Python,
@@ -393,6 +443,14 @@ impl SoftwareId {
         SoftwareId::KimiCli,
         SoftwareId::CcSwitch,
         SoftwareId::Crush,
+        // 0.1.2 — AI chat clients and AIGC creation tools.
+        SoftwareId::Doubao,
+        SoftwareId::CherryStudio,
+        SoftwareId::Chatbox,
+        SoftwareId::JianyingPro,
+        SoftwareId::CapCut,
+        SoftwareId::ComfyUi,
+        SoftwareId::GeminiDesktop,
     ];
 
     /// Stable key used in JSON profiles and in the report.
@@ -427,6 +485,13 @@ impl SoftwareId {
             SoftwareId::KimiCli => "kimi_cli",
             SoftwareId::CcSwitch => "cc_switch",
             SoftwareId::Crush => "crush",
+            SoftwareId::Doubao => "doubao",
+            SoftwareId::CherryStudio => "cherry_studio",
+            SoftwareId::Chatbox => "chatbox",
+            SoftwareId::JianyingPro => "jianying_pro",
+            SoftwareId::CapCut => "capcut",
+            SoftwareId::ComfyUi => "comfyui",
+            SoftwareId::GeminiDesktop => "gemini_desktop",
         }
     }
 
@@ -462,6 +527,13 @@ impl SoftwareId {
             SoftwareId::KimiCli => "月之暗面的命令行编程助手",
             SoftwareId::CcSwitch => "在多个 AI 编程工具之间切换配置",
             SoftwareId::Crush => "Charm 出品的终端编程助手",
+            SoftwareId::Doubao => "豆包",
+            SoftwareId::CherryStudio => "Cherry Studio",
+            SoftwareId::Chatbox => "Chatbox",
+            SoftwareId::JianyingPro => "剪映专业版",
+            SoftwareId::CapCut => "CapCut",
+            SoftwareId::ComfyUi => "ComfyUI",
+            SoftwareId::GeminiDesktop => "Gemini",
         }
     }
 
@@ -501,6 +573,13 @@ impl SoftwareId {
             SoftwareId::CcSwitch => "一键切换 Claude Code / Codex 等工具的配置",
             SoftwareId::Crush => "命令行里的 AI 编程助手，界面漂亮",
             SoftwareId::Jetbrains => "PyCharm / IDEA 等专业 IDE",
+            SoftwareId::Doubao => "字节跳动的 AI 助手，日常问答与写作",
+            SoftwareId::CherryStudio => "一个客户端接入多家 AI 模型",
+            SoftwareId::Chatbox => "轻量的多模型聊天客户端",
+            SoftwareId::JianyingPro => "剪视频、做字幕，AI 一键成片",
+            SoftwareId::CapCut => "剪映国际版，功能与剪映一致",
+            SoftwareId::ComfyUi => "节点式 AI 绘画，本地出图",
+            SoftwareId::GeminiDesktop => "Google 官方桌面聊天客户端",
         }
     }
 
@@ -520,6 +599,7 @@ impl SoftwareId {
             | SoftwareId::Codex
             | SoftwareId::ChatgptDesktop
             | SoftwareId::Gemini
+            | SoftwareId::GeminiDesktop
             | SoftwareId::OpenCode
             | SoftwareId::QwenCode
             | SoftwareId::KimiCli
@@ -529,6 +609,14 @@ impl SoftwareId {
             SoftwareId::Docker | SoftwareId::Wsl | SoftwareId::WindowsTerminal => {
                 SoftwareCategory::Runtime
             }
+            // Creation tools, kept apart from the coding assistants above: a
+            // student after 剪映 is not looking through a list of CLI agents.
+            SoftwareId::Doubao
+            | SoftwareId::CherryStudio
+            | SoftwareId::Chatbox
+            | SoftwareId::JianyingPro
+            | SoftwareId::CapCut
+            | SoftwareId::ComfyUi => SoftwareCategory::AiCreative,
             SoftwareId::Python
             | SoftwareId::Node
             | SoftwareId::Git
@@ -554,6 +642,12 @@ impl SoftwareId {
     /// publish a winget package that installs without a browser round-trip;
     /// `LmStudio` does not, because its package is a moving target and the first
     /// run requires a multi-GB model choice the student must make themselves.
+    ///
+    /// Note the asymmetry with [`CatalogEntry::is_installable`], which is derived
+    /// from the catalog's `install` list. This function is the *policy* statement
+    /// and that one is the *data*; `entries_without_a_strategy_are_exactly_the_ones_declared_detect_only`
+    /// asserts the two never disagree, so a program cannot drift into being
+    /// installable in one place and not the other.
     pub fn installable(self) -> bool {
         matches!(
             self,
@@ -582,6 +676,47 @@ impl SoftwareId {
                 // exact harm the brief forbids.
                 | SoftwareId::QwenCode
                 | SoftwareId::Crush
+                // 0.1.2 — promoted from detect-only to installable.
+                //
+                // Each of these had a working, vendor-published `winget` package
+                // all along; they were listed as detect-only because the original
+                // design argued that an installer which needs a reboot (Docker) or
+                // a firmware setting (WSL) is worse than one that explains itself.
+                // That reasoning does not survive contact with a product whose
+                // promise is 一键安装: the screen showed a package id and then
+                // refused to use it, which reads as "this tool doesn't work".
+                // Docker still warns about the reboot — in its rationale, where a
+                // warning belongs — instead of blocking the install.
+                //
+                // Every id below was verified live with `winget show` before being
+                // added (versions recorded in `catalog.rs`). WSL is deliberately
+                // *not* here: it is a Windows optional feature rather than a
+                // package, and `wsl --install` changes boot configuration.
+                | SoftwareId::Docker
+                | SoftwareId::Cursor
+                | SoftwareId::MsvcBuildTools
+                | SoftwareId::Cmake
+                | SoftwareId::Java
+                | SoftwareId::Rust
+                | SoftwareId::Uv
+                | SoftwareId::Pnpm
+                // 0.1.2 — the AIGC batch. All six ship as signed vendor
+                // installers available from `winget`, verified live; two of them
+                // (剪映, 豆包) were already present on the reference machine, so
+                // their declared ids were observed in `winget list` rather than
+                // only in `winget search` — which is the stronger evidence.
+                | SoftwareId::Doubao
+                | SoftwareId::CherryStudio
+                | SoftwareId::Chatbox
+                | SoftwareId::JianyingPro
+                | SoftwareId::CapCut
+                | SoftwareId::ComfyUi
+                // Gemini Desktop installs unattended from Google's own winget
+                // package (`Google.GoogleDesktop`, verified live: 152.0.7933.0,
+                // publisher Google), which is the same bar as the rest of this
+                // list. Its older sibling `Gemini` (the CLI) is npm-installed
+                // and remains detect-only.
+                | SoftwareId::GeminiDesktop
         )
     }
 
@@ -602,13 +737,23 @@ pub enum SoftwareCategory {
     AiTool,
     /// Containers, virtual machines, runtimes.
     Runtime,
+    /// AIGC creation tools — video, image, and general-purpose AI clients used
+    /// to *make things* rather than to write code.
+    ///
+    /// Separated from [`SoftwareCategory::AiTool`] in 0.1.2 because the two answer
+    /// different questions for a beginner. "AI 工具" is where you go to get a
+    /// coding assistant; "AI 创作" is where you go to make a video or generate an
+    /// image, and a student looking for 剪映 has no reason to open a list full of
+    /// command-line agents. Grouping is product surface, not taxonomy.
+    AiCreative,
 }
 
 impl SoftwareCategory {
-    pub const ALL: [SoftwareCategory; 4] = [
+    pub const ALL: [SoftwareCategory; 5] = [
         SoftwareCategory::Development,
         SoftwareCategory::Editor,
         SoftwareCategory::AiTool,
+        SoftwareCategory::AiCreative,
         SoftwareCategory::Runtime,
     ];
 
@@ -617,6 +762,7 @@ impl SoftwareCategory {
             SoftwareCategory::Development => "开发工具",
             SoftwareCategory::Editor => "编辑器",
             SoftwareCategory::AiTool => "AI 工具",
+            SoftwareCategory::AiCreative => "AI 创作",
             SoftwareCategory::Runtime => "运行环境",
         }
     }
@@ -626,6 +772,7 @@ impl SoftwareCategory {
             SoftwareCategory::Development => "development",
             SoftwareCategory::Editor => "editor",
             SoftwareCategory::AiTool => "aiTool",
+            SoftwareCategory::AiCreative => "aiCreative",
             SoftwareCategory::Runtime => "runtime",
         }
     }

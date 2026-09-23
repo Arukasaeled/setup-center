@@ -860,6 +860,36 @@ await shot("11-dashboard-software");
 // probe's timing, not about the product.
 const iconReport = await collectIconReport();
 
+/**
+ * Reads `SoftwareIcon.tsx`'s own exports from the running dev server, so the
+ * mark/exempt coverage assertion below compares the *real* lists rather than a
+ * copy this file would drift away from.
+ *
+ * Loaded through Vite (`/src/...`), which compiles the TSX on demand — the same
+ * transform the app uses, so what is asserted is what ships. `ALL_IDS` comes
+ * from the Rust-side list via `lib/types`; it is read here so the assertion can
+ * report "in neither list" for an id that was added to the product but wired to
+ * no icon at all.
+ */
+const iconExports = await page.evaluate(async () => {
+  const mod = await import("/src/components/SoftwareIcon.tsx");
+  // `SoftwareId` is a type-level union with no runtime value, so the id list is
+  // taken from the Rust catalog's mirrored key list in `lib/types.ts` when it
+  // exists, and otherwise reconstructed from the two icon lists themselves.
+  let allIds = [];
+  try {
+    const types = await import("/src/lib/types.ts");
+    allIds = types.SOFTWARE_IDS ?? [];
+  } catch {
+    allIds = [];
+  }
+  return {
+    ICON_IDS: mod.ICON_IDS ?? [],
+    NO_BRAND_ASSET: mod.NO_BRAND_ASSET ?? [],
+    ALL_IDS: allIds,
+  };
+});
+
 // --- 8a. The software grid (brief phase 3) and its category tabs (phase 4) ----
 //
 // Asserted on *structure*, not on appearance: the count of cards, whether the
@@ -2124,6 +2154,32 @@ const checks = [
   [
     "icons: every mark is visible against the dark surface",
     [darkIconContrast.ok, darkIconContrast.detail],
+  ],
+  [
+    "icons: every id with an official asset has one, the rest are on the record",
+    // `SoftwareIcon.tsx` has claimed since v2 that "`tools/ui-verify.mjs`
+    // asserts this list and `MARKS` together cover every id". It did not — the
+    // exports existed and nothing read them, so a software row added without an
+    // icon passed silently. This is that assertion.
+    //
+    // It reads the two module exports directly rather than the DOM, because the
+    // failure it guards against is "nobody wired the id up", which the DOM
+    // cannot distinguish from "this id is on the exempt list".
+    (() => {
+      const { ICON_IDS, NO_BRAND_ASSET } = iconExports;
+      const all = iconExports.ALL_IDS;
+      const both = ICON_IDS.filter((id) => NO_BRAND_ASSET.includes(id));
+      const missing = all.filter(
+        (id) => !ICON_IDS.includes(id) && !NO_BRAND_ASSET.includes(id),
+      );
+      const detail = [];
+      if (both.length) detail.push(`in both lists: ${both.join(", ")}`);
+      if (missing.length) detail.push(`in neither list: ${missing.join(", ")}`);
+      detail.push(
+        `${ICON_IDS.length} official marks, ${NO_BRAND_ASSET.length} exempt (${NO_BRAND_ASSET.join(", ")})`,
+      );
+      return [both.length === 0 && missing.length === 0, detail.join("; ")];
+    })(),
   ],
   [
     "titlebar: a drag region exists and reaches the top edge",

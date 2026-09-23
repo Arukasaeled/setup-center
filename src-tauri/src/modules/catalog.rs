@@ -233,6 +233,31 @@ impl CatalogEntry {
             .any(|marker| haystack.contains(&marker.to_lowercase()))
     }
 
+    /// Does a `winget list` row refer to this program?
+    ///
+    /// The winget counterpart of [`CatalogEntry::matches_registry_entry`], and it
+    /// exists for the same reason: a display name alone is ambiguous for some
+    /// programs. `winget list` gives us no `DisplayIcon`, but the id column
+    /// carries the identifying structure instead — `MSIX\OpenAI.Codex_26.915…`
+    /// for a Store app, `ARP\User\X64\4f20b4cc…` for a Chrome web-app shim. So
+    /// `location_markers` are matched against the id.
+    ///
+    /// Returns `false` for a name match whose id contradicts the markers, which
+    /// is what stops the Chrome shim from being reported as ChatGPT Desktop.
+    /// With no markers declared this is exactly `matches_name`.
+    pub fn matches_winget_row(&self, display_name: &str, package_id: &str) -> bool {
+        if !self.matches_name(display_name) {
+            return false;
+        }
+        if self.location_markers.is_empty() {
+            return true;
+        }
+        let haystack = package_id.to_lowercase();
+        self.location_markers
+            .iter()
+            .any(|marker| haystack.contains(&marker.to_lowercase()))
+    }
+
     /// Does an absolute path look like this program's executable?
     ///
     /// Both the file name and the parent directory are considered: a resolved
@@ -562,11 +587,32 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Codex,
-            winget_ids: &["OpenAI.Codex"],
+            // **Intentionally empty**, for the same reason ChatGPT's is.
+            //
+            // This entry used to declare `OpenAI.Codex`, which does not exist in
+            // the *ID column of `winget list`* — measured live, the declared id
+            // resolves to nothing while the real row is
+            // `MSIX\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0`. winget only
+            // ever prints the package-family form for an installed MSIX, so the
+            // declared id was dead: it could never match, and the entry silently
+            // relied on the name fallback the whole time.
+            //
+            // `OpenAI.Codex` *is* a real `winget search` id (the Codex CLI), and
+            // it is kept below as the install strategy — installing a package and
+            // detecting an installed one are different questions, and only the
+            // latter uses this field.
+            winget_ids: &[],
             name_patterns: &[
-                // The Codex desktop app ships as an MSIX signed into the ChatGPT
-                // product, so `winget list` reports the *display name* `ChatGPT`
-                // while its `DisplayIcon` lives under `OpenAI.Codex`.
+                // Codex exists in two genuinely different forms and both are
+                // named here, because a student who installed either one should
+                // see it detected:
+                //
+                // * `Codex CLI` — npm, `@openai/codex`. Ships `codex.cmd` and is
+                //   what the install strategy below creates.
+                // * `Codex` the desktop app — ships inside the ChatGPT MSIX, so
+                //   `winget list` reports the display name `ChatGPT` for it (an
+                //   OpenAI packaging decision, not our guess: the Appx is named
+                //   `OpenAI.Codex` and installed from the ChatGPT Store listing).
                 //
                 // `Exact("ChatGPT")` alone was not enough and produced a real
                 // false positive: a Chrome "install as web app" shortcut for
@@ -596,6 +642,7 @@ fn entries() -> Vec<CatalogEntry> {
             // "install as web app" false positive is still rejected: its icon
             // lives under the browser profile, which matches nothing here.
             location_markers: &["\\Programs\\", "\\OpenAI\\"],
+
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
@@ -618,18 +665,28 @@ fn entries() -> Vec<CatalogEntry> {
         // is the single place that decides what an empty list means — so no
         // caller has to remember a convention.
         //
-        // Why not implement installation for them too? Three reasons, in order
-        // of weight:
+        // ## This list shrank in 0.1.2, deliberately
         //
-        // 1. Docker Desktop and WSL need a reboot and a firmware setting. An
-        //    installer that appears to succeed and then needs the student to
-        //    leave the app is worse than one that explains the situation.
-        // 2. JetBrains is a *family* of products with per-product licences;
-        //    there is no single correct package to pick on the student's behalf.
-        // 3. Cursor, OpenCode and Continue are moving targets whose distribution
-        //    changes between releases. Pinning a URL here would rot silently.
+        // Docker, Cursor, MSVC, CMake, Java, Rust, uv and pnpm *used* to be here.
+        // They are not any more: every one of them has a working `winget` package
+        // (verified live with `winget show`, versions in the comments below), and
+        // "this tool cannot install it" was the single most common complaint about
+        // the previous build — on a product whose whole promise is "一键安装".
+        // Refusing to run `winget install Docker.DockerDesktop` while displaying
+        // the package id on the same screen was not caution, it was a gap.
         //
-        // Seeing without acting is the honest half of the product for these.
+        // What remains genuinely unmanaged, and why:
+        //
+        // 1. WSL is an optional Windows *feature*, not a package —
+        //    `wsl --install` enables components and changes boot configuration,
+        //    which is a system change this product does not make on its own.
+        // 2. JetBrains is a *family* of products with per-product licences; there
+        //    is no single correct package to pick on the student's behalf.
+        // 3. The npm/uv/pnpm-less CLIs (Gemini CLI, OpenCode, Continue, Moonshot)
+        //    publish no `winget` package at all — `winget search` returns nothing
+        //    — so there is no honest one-click route yet. They stay detectable.
+        //
+        // Seeing without acting is the honest half of the product for those.
         // -------------------------------------------------------------------
         // -------------------------------------------------------------------
         // AI clients a student installs *outside* a development workflow.
@@ -749,7 +806,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Docker.DockerDesktop"),
+                rationale: "从 winget 安装 Docker Desktop（官方包，安装后需重启并开启虚拟化）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Cursor,
@@ -763,7 +823,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: true,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Anysphere.Cursor"),
+                rationale: "从 winget 安装 Cursor（官方包，装完即可打开）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Windsurf,
@@ -817,7 +880,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["/?"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Microsoft.VisualStudio.2022.BuildTools"),
+                rationale: "从 winget 安装 MSVC 生成工具（官方包，体积约 2 GB，耗时最长）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Cmake,
@@ -829,7 +895,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Kitware.CMake"),
+                rationale: "从 winget 安装 CMake（官方包）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Npm,
@@ -856,7 +925,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("pnpm.pnpm"),
+                rationale: "从 winget 安装 pnpm（官方包）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Uv,
@@ -868,7 +940,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("astral-sh.uv"),
+                rationale: "从 winget 安装 uv（官方包，Python 包管理器）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Rust,
@@ -883,7 +958,10 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["--version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Rustlang.Rustup"),
+                rationale: "从 winget 安装 Rust 工具链（rustup，官方包）",
+            }],
         },
         CatalogEntry {
             id: SoftwareId::Java,
@@ -900,10 +978,26 @@ fn entries() -> Vec<CatalogEntry> {
             version_args: Some(&["-version"]),
             version_env: &[],
             version_via_shim: false,
-            install: &[],
+            install: &[
+                // Temurin first: it is the build the course ecosystem assumes
+                // (Adoptium, LTS 21) and it is the id the entry already declares.
+                InstallStrategy {
+                    source: StrategySource::Winget("EclipseAdoptium.Temurin.21.JDK"),
+                    rationale: "从 winget 安装 Eclipse Temurin JDK 21（官方包，课程通用 LTS）",
+                },
+                InstallStrategy {
+                    source: StrategySource::Winget("Microsoft.OpenJDK.21"),
+                    rationale: "改用微软构建的 OpenJDK 21（Temurin 不可用时）",
+                },
+            ],
         },
         CatalogEntry {
             id: SoftwareId::Gemini,
+            // No `winget` package exists at all: `winget search "Gemini CLI"`
+            // returns 找不到与输入条件匹配的程序包. The CLI ships through npm
+            // (`@google/gemini-cli`), which is a Node-dependent install route this
+            // version does not wire up for it yet — so it stays detect-only rather
+            // than getting an invented package id.
             winget_ids: &[],
             name_patterns: &[NamePattern::Word("Gemini CLI")],
             executables: &["gemini.cmd", "gemini.exe"],
@@ -1085,6 +1179,152 @@ fn entries() -> Vec<CatalogEntry> {
                 rationale: "通过官方 npm 包安装（@charmland/crush，官方仓库 charmbracelet/crush）",
             }],
         },
+        // -------------------------------------------------------------------
+        // 0.1.2 — AI chat clients and AIGC creation tools.
+        //
+        // Every id here was verified with `winget show` on the reference machine
+        // before being written down; the observed version is quoted so a future
+        // reader can tell a live id from a remembered one.
+        //
+        // Two entries carry no `location_markers`, and that is not laziness: an
+        // unambiguous vendor package id (`ByteDance.Doubao`) already *is* the
+        // identity. Markers exist for the cases where a display name is shared
+        // with something else — see ChatGPT vs the Chrome web-app shim.
+        // -------------------------------------------------------------------
+        CatalogEntry {
+            id: SoftwareId::Doubao,
+            // Verified live: `winget show --id ByteDance.Doubao -e` → 2.30.4.
+            // Already installed on the reference machine, where `winget list`
+            // printed exactly this id — the strongest form of the evidence.
+            winget_ids: &["ByteDance.Doubao"],
+            name_patterns: &[NamePattern::Exact("豆包"), NamePattern::Exact("Doubao")],
+            executables: &["Doubao.exe"],
+            install_roots: &["Programs\\Doubao"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("ByteDance.Doubao"),
+                rationale: "从 winget 安装豆包官方桌面版",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::CherryStudio,
+            // Verified live: `winget show --id kangfenmao.CherryStudio -e` → 2.1.2.
+            //
+            // The `msstore` source also lists a Cherry Studio (`XPDDXMTVP41MPH`).
+            // The community `winget` id is preferred because it is the one that
+            // resolved cleanly here; the Store build is a separate product id and
+            // mixing the two would make detection disagree with installation.
+            winget_ids: &["kangfenmao.CherryStudio"],
+            name_patterns: &[NamePattern::Prefix("Cherry Studio")],
+            executables: &["Cherry Studio.exe"],
+            install_roots: &["Programs\\Cherry Studio", "Programs\\cherry-studio"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("kangfenmao.CherryStudio"),
+                rationale: "从 winget 安装 Cherry Studio（官方包）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::Chatbox,
+            // Verified live: `winget show --id Bin-Huang.Chatbox -e` → 1.23.3.
+            winget_ids: &["Bin-Huang.Chatbox"],
+            name_patterns: &[NamePattern::Prefix("Chatbox")],
+            executables: &["Chatbox.exe"],
+            install_roots: &["Programs\\Chatbox"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Bin-Huang.Chatbox"),
+                rationale: "从 winget 安装 Chatbox（官方包）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::JianyingPro,
+            // Verified live: `winget show --id ByteDance.JianyingPro -e` →
+            // 11.5.0.14471. Already installed on the reference machine, where
+            // `winget list` printed this exact id against the display name
+            // 剪映专业版 — so both the id and the name pattern below are observed,
+            // not assumed.
+            winget_ids: &["ByteDance.JianyingPro"],
+            name_patterns: &[
+                NamePattern::Exact("剪映专业版"),
+                NamePattern::Exact("剪映"),
+            ],
+            executables: &["JianyingPro.exe"],
+            install_roots: &["Programs\\JianyingPro"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("ByteDance.JianyingPro"),
+                rationale: "从 winget 安装剪映专业版（字节官方包）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::CapCut,
+            // Verified live: `winget show --id ByteDance.CapCut -e` → 9.4.0.4015.
+            winget_ids: &["ByteDance.CapCut"],
+            name_patterns: &[NamePattern::Prefix("CapCut")],
+            executables: &["CapCut.exe"],
+            install_roots: &["Programs\\CapCut"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("ByteDance.CapCut"),
+                rationale: "从 winget 安装 CapCut（剪映国际版，官方包）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::ComfyUi,
+            // Verified live: `winget show --id Comfy.ComfyUI-Desktop -e` → 1.0.47.
+            winget_ids: &["Comfy.ComfyUI-Desktop"],
+            name_patterns: &[NamePattern::Prefix("ComfyUI")],
+            executables: &["ComfyUI.exe"],
+            install_roots: &["Programs\\ComfyUI", "ComfyUI"],
+            location_markers: &[],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Comfy.ComfyUI-Desktop"),
+                rationale: "从 winget 安装 ComfyUI Desktop（官方包）",
+            }],
+        },
+        CatalogEntry {
+            id: SoftwareId::GeminiDesktop,
+            // Verified live on this machine: `winget show --id Google.GoogleDesktop -e`
+            // → 名称 "Google App for Desktop", 版本 152.0.7933.0, 发布者 Google,
+            // tags include `google-gemini`.
+            //
+            // The id was *confirmed*, not guessed: the user's own download from
+            // Google's site (`GeminiSetup.exe`) reports version 152.0.7933.0,
+            // the same version winget serves for this id, so the two name the
+            // same product. `Google.Gemini` does not exist in the source; this
+            // is the desktop app.
+            winget_ids: &["Google.GoogleDesktop"],
+            name_patterns: &[NamePattern::Prefix("Google App"), NamePattern::Prefix("Gemini")],
+            executables: &["GoogleAppInstaller.exe"],
+            install_roots: &[],
+            location_markers: &["Google\\Google App"],
+            version_args: None,
+            version_env: &[],
+            version_via_shim: false,
+            install: &[InstallStrategy {
+                source: StrategySource::Winget("Google.GoogleDesktop"),
+                rationale: "从 winget 安装 Gemini 桌面客户端（Google 官方包）",
+            }],
+        },
     ]
 }
 
@@ -1100,6 +1340,68 @@ mod tests {
             assert_eq!(cat.entry(id).id, id, "{id:?} has no catalog entry");
         }
         assert_eq!(cat.len(), SoftwareId::ALL.len());
+    }
+
+    /// Closes the gap between the Rust model and its TypeScript mirror.
+    ///
+    /// `model.rs` and `types.ts` both describe this contract in prose ("the two
+    /// must name the same ids in the same order"), and until this test nothing
+    /// read the TypeScript file at all — the mirror could drift arbitrarily and
+    /// only a human reading both files would notice. The frontend's
+    /// `SOFTWARE_IDS` array exists for the same reason; the icon-coverage check
+    /// in `tools/ui-verify.mjs` enumerates from it, so an id missing there means
+    /// an id that can render without an icon and nobody notices.
+    ///
+    /// The parse is deliberately dumb — it reads the `SOFTWARE_IDS` array's
+    /// quoted strings in order and compares against `SoftwareId::ALL`'s keys.
+    /// A tolerant parser that "helpfully" skipped malformed lines would defeat
+    /// the purpose.
+    #[test]
+    fn typescript_id_list_matches_the_rust_enum_in_order() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("src")
+                .join("lib")
+                .join("types.ts"),
+        )
+        .expect("src/lib/types.ts must be readable from the crate");
+
+        let start = src
+            .find("export const SOFTWARE_IDS")
+            .expect("types.ts must export SOFTWARE_IDS");
+        let body = &src[start..];
+        let end = body.find("] as const").expect("SOFTWARE_IDS must be an array literal");
+        let body = &body[..end];
+
+        let ts: Vec<String> = body
+            .match_indices('"')
+            .filter(|(i, _)| {
+                // Keep only opening quotes: an even number of quote chars precede
+                // it, ignoring any that are part of the `export const` line's
+                // identifier (there are none).
+                body[..*i].matches('"').count() % 2 == 0
+            })
+            .filter_map(|(i, _)| {
+                let rest = &body[i + 1..];
+                let close = rest.find('"')?;
+                let value = &rest[..close];
+                // Skip prose: only ids are lowercase snake_case with no spaces.
+                if value.is_empty() || value.contains(' ') || value.contains('.') {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
+            })
+            .collect();
+
+        let rust: Vec<String> = SoftwareId::ALL.iter().map(|id| id.key().to_string()).collect();
+
+        assert_eq!(
+            ts, rust,
+            "src/lib/types.ts SOFTWARE_IDS and SoftwareId::ALL disagree; \
+             the Rust enum is authoritative and the TS list mirrors it in order"
+        );
     }
 
     #[test]
@@ -1248,17 +1550,41 @@ mod tests {
     fn the_new_detect_only_programs_are_still_fully_described() {
         // Spot-checks the entries added in P4.5, because a `match` arm is free to
         // be missing and this is the cheapest way to catch one.
+        //
+        // ## Rewritten in 0.1.2, and the rewrite is the point
+        //
+        // This test used to assert that Docker, Pnpm, Uv, Rust, Java and Cursor
+        // are detect-only. They are not any more — each has a working winget
+        // package that was verified live, and refusing to install them on a
+        // "one-click install" product was the complaint 0.1.2 exists to fix.
+        //
+        // The list below is what remains *genuinely* undetectable-by-installer,
+        // and both halves are asserted so a future edit cannot quietly move a
+        // program from one side to the other without a deliberate test change.
         let cat = Catalog::builtin();
+
+        // Promoted to installable in 0.1.2: real winget packages, verified live.
         for id in [
             SoftwareId::Docker,
-            SoftwareId::Wsl,
             SoftwareId::Pnpm,
             SoftwareId::Uv,
             SoftwareId::Rust,
             SoftwareId::Java,
             SoftwareId::Cursor,
-            SoftwareId::Jetbrains,
+            SoftwareId::MsvcBuildTools,
+            SoftwareId::Cmake,
         ] {
+            assert!(
+                cat.entry(id).is_installable(),
+                "{id:?} has a real winget package and must be installable"
+            );
+            assert!(cat.entry(id).is_detectable(), "{id:?} must be detectable");
+        }
+
+        // Still detect-only, and each for a reason that is not laziness:
+        //   WSL         — a Windows optional feature, not a package.
+        //   JetBrains   — a product *family*; no single correct package exists.
+        for id in [SoftwareId::Wsl, SoftwareId::Jetbrains] {
             assert!(!cat.entry(id).is_installable(), "{id:?} should be detect-only");
             assert!(cat.entry(id).is_detectable(), "{id:?} must be detectable");
         }

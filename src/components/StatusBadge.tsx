@@ -24,7 +24,7 @@
  * | `ok`      | 已安装       | verified present                               |
  * | `fail`    | 未安装       | checked and absent, and this tool manages it   |
  * | `unknown` | 无法确认     | could not be determined — *not* the same as absent |
- * | `skipped` | 需自行安装   | deliberately absent; the tool never offered it |
+ * | `skipped` | 需手动安装   | deliberately absent; the tool never offered it |
  *
  * `unknown` must never collapse into `fail`: telling a student to install
  * something they may already have is the worst message this product can send.
@@ -42,7 +42,7 @@ const STATES: Record<
   ok: { label: "已安装", tone: "ok", title: "已确认存在" },
   fail: { label: "未安装", tone: "bad", title: "已检查，确认不存在" },
   unknown: { label: "无法确认", tone: "warn", title: "没能检查到结果，不代表没有" },
-  skipped: { label: "需自行安装", tone: "quiet", title: "本工具只检测，不会替你安装" },
+  skipped: { label: "需手动安装", tone: "quiet", title: "本工具只检测这类软件，安装需要你自己完成" },
 };
 
 export function StatusBadge({
