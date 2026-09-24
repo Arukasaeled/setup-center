@@ -155,60 +155,58 @@ export default function App() {
 
   // Decide the entry surface once the licence question has an answer.
   //
-  // The order here is the whole rule: a licence beats the flag. Someone who
-  // chose FREE months ago and has since activated a key is PRO, and must not be
-  // sent back to the gate by a stale flag.
+  // ## 0.1.3 — the app no longer auto-advances past Welcome
   //
-  // A returning customer — licence or answered flag — goes to the *dashboard*,
-  // not the wizard. The wizard is the first-run path from nothing to a working
-  // environment; someone who already answered the gate has either walked it or
-  // declined to, and re-offering it would make the gate look like it did not
-  // take. "重新规划" on the dashboard is how they re-enter the wizard on purpose.
+  // Every launch now lands on `Welcome` (图1) and stays there until the customer
+  // picks something. Nothing about a persisted fact — an active licence, a
+  // recorded "free" answer — is allowed to skip that screen on its own.
   //
-  // What 0.1.1 changed, and what deliberately did NOT change:
+  // Why this changed. The 0.1.1 rule was "licence or answered flag → dashboard",
+  // which is correct for a *returning* customer but indistinguishable from a
+  // relaunch that the customer never chose. The visible defect: a customer who
+  // had answered the gate once (or held a licence) opened the app, saw 图1 for a
+  // frame, and was thrown onto the dashboard — a navigation they never asked for
+  // and, worse, one that fired while 图1's entries were still on screen waiting to
+  // be read. It read as a bug because it was one: the screen whose entire job is
+  // to ask "what do you want to do?" was answering on the customer's behalf.
   //
-  //   * CHANGED: a customer with *neither* a licence nor an answer now sees
-  //     `Welcome`, not the gate. Before this, the gate preempted both surfaces,
-  //     so a first-run student was asked "解锁 PRO?" before they knew what the
-  //     app was (audit §2). The gate is now reached FROM Welcome, on purpose,
-  //     by the customer who has a code.
-  //   * UNCHANGED — rule 1: an active licence still goes straight to the
-  //     dashboard and never sees the gate.
-  //   * UNCHANGED — rule 2: an already-answered customer is never shown the gate
-  //     again; they go to the dashboard.
-  //   * UNCHANGED — rule 3: a licence read *error* is not treated as "no
-  //     licence". This is the one case where the gate is still forced open on
-  //     its own, because leaving the customer on Welcome with an unreadable
-  //     licence would hide the fact that their PRO state could not be read —
-  //     and asking a paying customer to activate again is the exact outcome the
-  //     rule exists to prevent. The gate renders its "unreadable" state with a
-  //     retry.
+  // What is UNCHANGED:
+  //   * Rule 3: a licence read *error* is still not treated as "no licence". For
+  //     a customer who has not already answered, that is the one case where the
+  //     gate is still forced open on its own, because leaving them on Welcome
+  //     with an unreadable licence would hide the fact that their PRO state could
+  //     not be read — and asking a paying customer to activate again is the exact
+  //     outcome the rule exists to prevent. The gate renders its "unreadable"
+  //     state with a retry.
+  //   * Rules 1 and 2 still hold — they are now enforced by the *gate never
+  //     opening*, rather than by jumping to the dashboard. An active licence and
+  //     an already-answered customer are simply never shown the gate; they see
+  //     Welcome like everyone else and leave it by choosing.
+  //
+  // The licence is still read here, so the gate decision does not have to wait
+  // for a click — Welcome's third entry renders its PRO state from the store the
+  // moment the answer lands.
   useEffect(() => {
     if (decisionMade.current) return;
 
     const answered = readEntryChoice() !== null;
     if (entitlements) {
       decisionMade.current = true;
-      const active = entitlements.state === "active";
-      // Rule 1 and rule 2: a licence or an answer both mean "do not ask".
-      if (active || answered) openDashboard();
-      // Otherwise: stay on Welcome. `gateOpen` is left `false` — the customer
-      // opens the gate themselves from Welcome's activation entry.
+      // Rules 1 and 2 both mean "do not ask". There is deliberately no
+      // navigation here: the customer stays on Welcome.
     } else if (entitlementsPhase === "error") {
       decisionMade.current = true;
-      if (answered) {
-        // Rule 2 still wins over the unreadable state: someone who already
-        // answered is not asked again just because the file could not be read.
-        openDashboard();
-      } else {
+      if (!answered) {
         // Rule 3: the licence could not be read, so the gate shows — but only
         // for a customer who has not already answered. It renders the
         // "unreadable" panel rather than pretending there is no licence.
         setForcedGate(true);
         setGateOpen(true);
       }
+      // Already answered → rule 2 wins over the unreadable state: do not re-ask.
+      // No navigation either way; Welcome is the surface.
     }
-  }, [entitlements, entitlementsPhase, openDashboard]);
+  }, [entitlements, entitlementsPhase]);
 
   // Theme lives on `<html>` rather than in a React context because the webview
   // paints its own background before React mounts, and `tauri.conf.json` sets

@@ -169,8 +169,8 @@ console.log("\n== 1. an active licence never sees the gate ==\n");
   const st = await surface(page);
   check("PRO + no entry flag -> gate is NOT shown", gate === false, `gate=${gate}`);
   check(
-    "PRO + no entry flag -> lands on the dashboard (not Welcome, not the gate)",
-    st.dashboardOpen === true,
+    "PRO + no entry flag -> lands on Welcome, not the dashboard (0.1.3: no auto-advance)",
+    st.dashboardOpen === false && st.screen === "welcome",
     `dashboardOpen=${st.dashboardOpen} screen=${st.screen}`,
   );
   check("PRO cold start raises no console errors", consoleErrors.length === 0, consoleErrors.join(" | "));
@@ -222,9 +222,9 @@ console.log("\n== 2. rule 3: unreadable licence != unlicensed ==\n");
     `gate=${gate}`,
   );
   check(
-    "unreadable licence + already answered -> goes to the dashboard, not Welcome",
-    st.dashboardOpen === true,
-    `dashboardOpen=${st.dashboardOpen}`,
+    "unreadable licence + already answered -> stays on Welcome (0.1.3: no auto-advance)",
+    st.dashboardOpen === false && st.screen === "welcome",
+    `dashboardOpen=${st.dashboardOpen} screen=${st.screen}`,
   );
   await browser.close();
 }
@@ -263,6 +263,14 @@ console.log("\n== 3. cold start shows Welcome, not the gate ==\n");
   const again = await boot({ licenseMode: "freeEnforced", entry: "free" });
   const againGate = await gateVisible(again.page);
   check("answered FREE -> returning customer is NOT asked again", againGate === false);
+  // 0.1.3: rule 2 means "do not re-ask", NOT "skip to the dashboard". The
+  // returning customer still starts on Welcome and picks their own next move.
+  const againSt = await surface(again.page);
+  check(
+    "answered FREE -> returning customer still starts on Welcome (no auto-advance)",
+    againSt.dashboardOpen === false && againSt.screen === "welcome",
+    `dashboardOpen=${againSt.dashboardOpen} screen=${againSt.screen}`,
+  );
   await again.browser.close();
   await browser.close();
 }
