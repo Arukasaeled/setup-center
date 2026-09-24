@@ -66,3 +66,18 @@ _tmp/
 # clean checkout; ignoring it would silently reduce every UI assertion to a
 # failure on first run.
 
+
+# ---------------------------------------------------------------------------
+# Vendored upstream payload — deliberately NOT tracked
+# ---------------------------------------------------------------------------
+# `src-tauri/resources/claude-zh-cn/` is a 2.34 MB copy of the upstream
+# `javaht/claude-desktop-zh-cn` release 1.4.7 (see its
+# `resources/release.json`). Nothing in this repo references it: no Rust
+# source, no tool, and — verified by extracting the shipped 0.1.3 installer —
+# no bundle. `tauri.conf.json`'s `resources` globs are limited to
+# `profiles/*.json`, `localization/*.json`, `knowledge/{software,concept}/*.yaml`
+# and `plugins/*.json`, so this directory is never packaged.
+# It is material the app *installs onto the user's machine at runtime* from the
+# upstream project, not a build input, so versioning it would only add a 2.34 MB
+# blob (mostly a 666 KB minified `frontend-zh-CN.json`) to every clone.
+src-tauri/resources/
