@@ -16,6 +16,7 @@ import {
 import { VaultSync, type VaultSyncStatus, type VaultSyncResult } from "../core/vault";
 import { ScaffoldModal } from "../components/ScaffoldModal";
 import { TransferInboxDrawer } from "../components/TransferInboxDrawer";
+import { DetailShell } from "../components/DetailShell";
 
 function openUrl(url?: string) {
   if (!url) return;
@@ -30,6 +31,7 @@ export function ResourceSection() {
   const [selectedCategory, setSelectedCategory] = useState<ResourceCategory | "all" | "bookmarks">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedResourceForDetail, setSelectedResourceForDetail] = useState<ResourceItem | null>(null);
 
   // Bookmarks reactive state
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(() => Bookmarks.getAll());
@@ -111,19 +113,24 @@ export function ResourceSection() {
     return RESOURCE_CATALOG.filter((item) => item.featured).slice(0, 4);
   }, []);
 
+  const getCategoryLabel = (catId: string) => {
+    const cat = RESOURCE_CATEGORIES.find((c) => c.id === catId);
+    return cat ? cat.name : catId;
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header & Purpose Banner */}
       <header className="rise flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
-            CREATIVE & DEV BOOTSTRAP HUB // 开发与创作资源中心
+            RESOURCE EXPLORER // 开发与设计资源索引
           </div>
           <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
             开源项目、设计系统与工程基石
           </h1>
           <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
-            Setup Center 不再只是软件安装器，更是面向构建者的启动枢纽。精选收录 <strong>{RESOURCE_CATALOG.length}</strong> 个开源项目、前沿设计系统、动效库、高效工具链与学习路线图。
+            收录 <strong>{RESOURCE_CATALOG.length}</strong> 个开源项目、前沿设计系统、动效库、高效工具链与学习路线图。采用紧凑卡片网格浏览，点击任意卡片查看详细推荐原因与核心价值。
           </p>
         </div>
 
@@ -153,34 +160,34 @@ export function ResourceSection() {
           </div>
 
           <Button size="sm" variant="quiet" onClick={() => setShowInbox(true)}>
-            📥 外部收集箱
+            外部收集箱 ↓
           </Button>
         </div>
       </header>
 
-      {/* Featured Highlights (Shown when browsing all or no search active) */}
+      {/* Featured Highlights */}
       {!searchQuery && !selectedTag && selectedCategory === "all" && (
         <section className="rise rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/60 p-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--status-accent)]">
-              ★ 站长精选高星推荐 / Featured Spotlights
+              精选聚焦 / Featured Spotlights
             </span>
             <span className="text-[11.5px] text-[color:var(--text-quiet)]">
               最值得第一时间收藏与体验的开创性项目
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {featuredResources.map((feat) => {
               const isStarred = bookmarkedIds.includes(feat.id);
               return (
                 <div
                   key={feat.id}
-                  onClick={() => openUrl(feat.repository || feat.homepage)}
+                  onClick={() => setSelectedResourceForDetail(feat)}
                   className="group relative flex flex-col justify-between rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 cursor-pointer hover:border-[color:var(--status-accent)] hover:bg-[color:var(--surface-inset)] transition-all duration-150"
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-bold text-[13.5px] text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors truncate">
+                    <div className="flex items-start justify-between gap-1.5">
+                      <span className="font-bold text-[13.5px] text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors leading-tight">
                         {feat.name}
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
@@ -211,7 +218,7 @@ export function ResourceSection() {
                   <div className="mt-2.5 pt-2 border-t border-[color:var(--line-subtle)] flex items-center justify-between text-[11px] text-[color:var(--text-quiet)]">
                     <span>{feat.author}</span>
                     <span className="text-[color:var(--status-accent)] font-semibold group-hover:translate-x-0.5 transition-transform">
-                      浏览 ↗
+                      详情 ↗
                     </span>
                   </div>
                 </div>
@@ -279,7 +286,7 @@ export function ResourceSection() {
                   : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:border-[color:var(--line-default)] hover:text-[color:var(--text-strong)]",
               )}
             >
-              <span className="text-[12px]">{cat.icon}</span>
+              <span className="text-[12px] font-mono">{cat.icon}</span>
               <span>{cat.name}</span>
               <span className="rounded-full bg-black/10 px-1.5 py-0.2 text-[10.5px] font-mono">
                 {categoryCounts[cat.id] || 0}
@@ -289,7 +296,7 @@ export function ResourceSection() {
         })}
       </div>
 
-      {/* Search Bar & Active Filters Bar */}
+      {/* Search Bar & Counter */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <input
@@ -325,19 +332,19 @@ export function ResourceSection() {
             </div>
           )}
           <span>
-            共找到 <strong className="text-[color:var(--text-strong)]">{filteredResources.length}</strong> 个资源
+            共检索到 <strong className="text-[color:var(--text-strong)]">{filteredResources.length}</strong> 个资源
           </span>
         </div>
       </div>
 
-      {/* Resource Cards Grid */}
+      {/* Resource Cards Grid (Clean, Scannable Cards) */}
       {filteredResources.length === 0 ? (
         <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/30 p-12 text-center">
-          <div className="text-3xl mb-2">🔍</div>
+          <div className="text-2xl font-mono text-[color:var(--text-quiet)] mb-2">∅</div>
           <div className="text-[14px] font-semibold text-[color:var(--text-secondary)]">没有找到匹配的资源</div>
           <p className="text-[12px] text-[color:var(--text-quiet)] mt-1">
             {selectedCategory === "bookmarks"
-              ? "你还没有收藏任何资源。点击资源卡片右上角的 ★ 即可收藏！"
+              ? "你还没有收藏任何资源。在资源卡片右上角点击 ★ 即可收藏！"
               : "尝试更换关键词，或切换到全部分类"}
           </p>
           <Button
@@ -354,7 +361,7 @@ export function ResourceSection() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {filteredResources.map((item) => {
             const isStarred = bookmarkedIds.includes(item.id);
             const downloadTask = downloads.find((d) => d.url === item.downloadUrl);
@@ -363,69 +370,66 @@ export function ResourceSection() {
               <div
                 key={item.id}
                 data-resource-card={item.id}
-                className="group relative flex flex-col justify-between rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/80 p-4 transition-all duration-200 select-none hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]"
+                onClick={() => setSelectedResourceForDetail(item)}
+                className="group relative flex flex-col justify-between rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/80 p-4 transition-all duration-200 cursor-pointer select-none hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)] hover:shadow-md"
               >
                 <div>
-                  {/* Top Bar: Name, Badges & Stars */}
+                  {/* Top Bar: Title & Stars */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[15px] font-bold text-[color:var(--text-strong)] truncate">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className="text-[15px] font-bold text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors leading-tight"
+                          title={item.name}
+                        >
                           {item.name}
                         </span>
                         {item.featured && (
-                          <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-black">
+                          <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-black shrink-0">
                             精选
                           </span>
                         )}
                         {item.license && (
-                          <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] font-mono text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]">
+                          <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] font-mono text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)] shrink-0">
                             {item.license}
                           </span>
                         )}
                       </div>
-                      <div className="text-[color:var(--text-quiet)] text-[11px] mt-0.5">
-                        作者 / 组织：{item.author}
+                      <div className="text-[color:var(--text-quiet)] text-[11px] mt-1 truncate">
+                        {item.author} · {getCategoryLabel(item.category)}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => Bookmarks.toggle(item.id, item.name)}
-                        className={`text-[14px] p-0.5 hover:scale-125 transition-transform ${
-                          isStarred ? "text-amber-400 font-bold" : "text-[color:var(--text-quiet)] hover:text-amber-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          Bookmarks.toggle(item.id, item.name);
+                        }}
+                        className={`text-[13px] p-0.5 hover:scale-125 transition-transform ${
+                          isStarred ? "text-amber-400 font-bold" : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
                         }`}
-                        title={isStarred ? "已收藏 (点击取消)" : "点击收藏"}
+                        title={isStarred ? "已收藏" : "点击收藏"}
                       >
                         {isStarred ? "★" : "☆"}
                       </button>
                       {item.stars && (
-                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-mono font-bold text-amber-400 border border-amber-500/20">
+                        <span className="rounded-full bg-amber-500/10 px-1.5 py-0.2 text-[10.5px] font-mono font-semibold text-amber-400 border border-amber-500/20">
                           ★ {item.stars}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Description */}
-                  <p className="mt-2 text-[12px] text-[color:var(--text-secondary)] leading-relaxed line-clamp-3">
+                  {/* Concise 2-line Description */}
+                  <p className="mt-2 text-[12px] text-[color:var(--text-secondary)] leading-relaxed line-clamp-2">
                     {item.description}
                   </p>
 
-                  {/* Recommendation Rationale Box */}
-                  <div className="mt-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2.5 text-[11.5px]">
-                    <div className="font-semibold text-[color:var(--status-accent)] flex items-center gap-1">
-                      <span>💡 推荐价值：</span>
-                    </div>
-                    <div className="text-[color:var(--text-tertiary)] mt-0.5 leading-snug">
-                      {item.recommendedReason}
-                    </div>
-                  </div>
-
                   {/* Tags */}
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {item.tags.map((tag) => (
+                  <div className="mt-2.5 flex flex-wrap gap-1">
+                    {item.tags.slice(0, 3).map((tag) => (
                       <button
                         key={tag}
                         type="button"
@@ -434,87 +438,280 @@ export function ResourceSection() {
                           setSelectedTag(tag);
                         }}
                         className={clsx(
-                          "rounded px-1.5 py-0.5 text-[10.5px] transition-colors border",
+                          "rounded px-1.5 py-0.2 text-[10.5px] transition-colors border",
                           selectedTag === tag
                             ? "bg-[color:var(--status-accent)] text-black border-transparent font-bold"
-                            : "bg-[color:var(--surface-hover)] text-[color:var(--text-quiet)] border-[color:var(--line-subtle)] hover:text-[color:var(--text-secondary)] hover:border-[color:var(--line-default)]",
+                            : "bg-[color:var(--surface-hover)] text-[color:var(--text-quiet)] border-[color:var(--line-subtle)] hover:text-[color:var(--text-secondary)]",
                         )}
                       >
                         #{tag}
                       </button>
                     ))}
+                    {item.tags.length > 3 && (
+                      <span className="text-[10px] text-[color:var(--text-quiet)] font-mono self-center">
+                        +{item.tags.length - 3}
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {/* Bottom Actions */}
-                <div className="mt-4 pt-3 border-t border-[color:var(--line-subtle)] flex flex-wrap items-center justify-between gap-2">
+                <div className="mt-3.5 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     {item.repository && (
                       <button
                         type="button"
-                        onClick={() => openUrl(item.repository)}
-                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-active)] px-2.5 py-1 text-[11.5px] font-bold text-[color:var(--text-primary)] hover:bg-[color:var(--status-accent)] hover:text-black transition-colors border border-[color:var(--line-default)]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openUrl(item.repository);
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-active)] px-2 py-0.8 text-[11px] font-bold text-[color:var(--text-primary)] hover:bg-[color:var(--status-accent)] hover:text-black transition-colors border border-[color:var(--line-default)]"
                       >
                         <span>GitHub</span>
-                        <span className="text-[10px]">↗</span>
+                        <span className="text-[9.5px]">↗</span>
                       </button>
                     )}
                     {item.homepage && (
                       <button
                         type="button"
-                        onClick={() => openUrl(item.homepage)}
-                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-inset)] px-2.5 py-1 text-[11.5px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] hover:border-[color:var(--line-strong)] transition-colors border border-[color:var(--line-subtle)]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openUrl(item.homepage);
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-inset)] px-2 py-0.8 text-[11px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors border border-[color:var(--line-subtle)]"
                       >
                         <span>官网</span>
-                        <span className="text-[10px]">↗</span>
+                        <span className="text-[9.5px]">↗</span>
                       </button>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Template Scaffold Trigger */}
                     {item.category === "templates" && (
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setScaffoldTemplate({
                             id: item.id,
                             name: item.name,
                             description: item.description,
                             defaultDir: item.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-                          })
-                        }
-                        className="rounded-lg px-2.5 py-1 text-[11px] font-bold bg-[color:var(--status-accent)] text-black hover:opacity-90 transition-opacity"
+                          });
+                        }}
+                        className="rounded-lg px-2 py-0.8 text-[11px] font-bold bg-[color:var(--status-accent)] text-black hover:opacity-90 transition-opacity"
                       >
                         创建工程 ◩
                       </button>
                     )}
 
-                    {/* Direct Downloader Trigger */}
                     {item.actionType === "download" && item.downloadUrl && (
                       <button
                         type="button"
                         disabled={downloadTask?.status === "downloading"}
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           AssetDownloader.startDownload(
                             item.downloadUrl!,
                             `${item.name.toLowerCase().replace(/\s+/g, "_")}.zip`,
                             item.name,
-                          )
-                        }
-                        className="rounded-lg px-2.5 py-1 text-[11px] font-bold bg-emerald-400 text-black hover:bg-emerald-300 transition-colors"
+                          );
+                        }}
+                        className="rounded-lg px-2 py-0.8 text-[11px] font-bold bg-emerald-400 text-black hover:bg-emerald-300 transition-colors"
                       >
                         {downloadTask?.status === "downloading"
-                          ? `下载中 ${downloadTask.progress}%`
-                          : "下载资产 ⤓"}
+                          ? `${downloadTask.progress}%`
+                          : "下载 ⤓"}
                       </button>
                     )}
+
+                    <span className="text-[11px] text-[color:var(--status-accent)] group-hover:underline">
+                      详情 ↗
+                    </span>
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Resource Detail Modal (DetailShell) */}
+      {selectedResourceForDetail && (
+        <DetailShell
+          isOpen={true}
+          onClose={() => setSelectedResourceForDetail(null)}
+          title={selectedResourceForDetail.name}
+          subtitle={`作者 / 组织：${selectedResourceForDetail.author} · 分类：${getCategoryLabel(
+            selectedResourceForDetail.category,
+          )}`}
+          tags={selectedResourceForDetail.tags}
+          badge={
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {selectedResourceForDetail.featured && (
+                <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-black">
+                  官方精选
+                </span>
+              )}
+              {selectedResourceForDetail.license && (
+                <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] font-mono text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]">
+                  {selectedResourceForDetail.license}
+                </span>
+              )}
+              {selectedResourceForDetail.stars && (
+                <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-mono font-bold text-amber-400 border border-amber-500/30">
+                  ★ {selectedResourceForDetail.stars}
+                </span>
+              )}
+            </div>
+          }
+          actions={
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    Bookmarks.toggle(selectedResourceForDetail.id, selectedResourceForDetail.name);
+                  }}
+                  className="rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors"
+                >
+                  {bookmarkedIds.includes(selectedResourceForDetail.id)
+                    ? "★ 已收藏"
+                    : "☆ 加入收藏"}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {selectedResourceForDetail.category === "templates" && (
+                  <Button
+                    size="sm"
+                    className="font-bold text-[12px]"
+                    onClick={() => {
+                      setScaffoldTemplate({
+                        id: selectedResourceForDetail.id,
+                        name: selectedResourceForDetail.name,
+                        description: selectedResourceForDetail.description,
+                        defaultDir: selectedResourceForDetail.name
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]/g, "-"),
+                      });
+                      setSelectedResourceForDetail(null);
+                    }}
+                  >
+                    创建工程 ◩
+                  </Button>
+                )}
+
+                {selectedResourceForDetail.actionType === "download" &&
+                  selectedResourceForDetail.downloadUrl && (
+                    <Button
+                      size="sm"
+                      className="font-bold text-[12px] bg-emerald-400 text-black hover:bg-emerald-300"
+                      onClick={() => {
+                        AssetDownloader.startDownload(
+                          selectedResourceForDetail.downloadUrl!,
+                          `${selectedResourceForDetail.name.toLowerCase().replace(/\s+/g, "_")}.zip`,
+                          selectedResourceForDetail.name,
+                        );
+                        setSelectedResourceForDetail(null);
+                      }}
+                    >
+                      下载离线资产 ⤓
+                    </Button>
+                  )}
+
+                {selectedResourceForDetail.repository && (
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    onClick={() => openUrl(selectedResourceForDetail.repository)}
+                  >
+                    访问 GitHub ↗
+                  </Button>
+                )}
+
+                {selectedResourceForDetail.homepage && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openUrl(selectedResourceForDetail.homepage)}
+                  >
+                    访问官网 ↗
+                  </Button>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedResourceForDetail(null)}
+                >
+                  关闭
+                </Button>
+              </div>
+            </>
+          }
+        >
+          {/* Detailed Description */}
+          <div>
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-1.5">
+              项目描述
+            </h3>
+            <p className="text-[13px] text-[color:var(--text-secondary)] leading-relaxed">
+              {selectedResourceForDetail.description}
+            </p>
+          </div>
+
+          {/* Core Recommendation Reason */}
+          <div className="rounded-xl border border-[color:var(--status-accent)]/40 bg-[color:var(--surface-sunken)] p-4">
+            <div className="text-[11.5px] font-bold text-[color:var(--status-accent)] uppercase tracking-wider flex items-center gap-1.5">
+              <span>◈ 推荐理由与核心价值</span>
+            </div>
+            <p className="text-[12.5px] text-[color:var(--text-primary)] mt-1.5 leading-relaxed">
+              {selectedResourceForDetail.recommendedReason}
+            </p>
+          </div>
+
+          {/* Technical Metadata Table */}
+          <div>
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+              元数据与流转规格
+            </h3>
+            <div className="grid grid-cols-2 gap-2 text-[12px]">
+              <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2">
+                <span className="text-[color:var(--text-quiet)]">资源标识符：</span>
+                <span className="font-mono text-[color:var(--text-secondary)] ml-1">
+                  {selectedResourceForDetail.id}
+                </span>
+              </div>
+              <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2">
+                <span className="text-[color:var(--text-quiet)]">开源协议：</span>
+                <span className="font-mono text-[color:var(--text-secondary)] ml-1">
+                  {selectedResourceForDetail.license || "未注明"}
+                </span>
+              </div>
+              <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2">
+                <span className="text-[color:var(--text-quiet)]">分类领域：</span>
+                <span className="text-[color:var(--text-secondary)] ml-1">
+                  {getCategoryLabel(selectedResourceForDetail.category)}
+                </span>
+              </div>
+              <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2">
+                <span className="text-[color:var(--text-quiet)]">流转动作：</span>
+                <span className="font-mono text-[color:var(--text-secondary)] ml-1">
+                  {selectedResourceForDetail.actionType}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Transfer Ecosystem Insight */}
+          <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/60 p-3.5 text-[12px] text-[color:var(--text-tertiary)]">
+            <div className="font-semibold text-[color:var(--text-secondary)] mb-1">
+              Setup Center · Transfer 生态集成
+            </div>
+            该资产由 Setup Center 精选收录并标准化归档，支持离线快照检索、个人星标收藏与本地工程无缝初始化，降低项目构建与设计实践的冷启动成本。
+          </div>
+        </DetailShell>
       )}
 
       {/* Template Scaffold Modal */}
