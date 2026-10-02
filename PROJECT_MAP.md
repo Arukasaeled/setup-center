@@ -13,15 +13,17 @@ Setup Center
 │   │
 │   ├── ui/             # 跨风格共享的基础通用 UI 原语与无障碍组件
 │   │
-│   ├── styles/         # 视觉风格系统：统一契约、风格注册表与多风格实现
+│   ├── styles/         # 视觉风格系统：统一契约、自动发现与 12 套真实风格实现
 │   │   ├── types.ts     # SetupStyle 统一契约
-│   │   ├── registry.ts  # 风格注册中心（供风格试验场使用）
+│   │   ├── registry.ts  # 风格注册中心（Vite import.meta.glob 自动发现）
 │   │   ├── default/     # 默认工业级中性风格
-│   │   └── phantom-comic/# 旗舰参考实现：P5 × 美漫彩漫高风格化视觉
+│   │   ├── phantom-comic/# 旗舰参考实现：P5 × 美漫彩漫高风格化视觉
+│   │   └── [10+ styles]/# 瑞士排版、包豪斯、粗野主义、空间毛玻璃、终端CRT、蓝图等
 │   │
 │   └── content/        # 统一内容目录（软件、风格、资源、模板、技能、路径）
 │       ├── types.ts     # ContentItem 契约
-│       └── registry.ts  # ContentRegistry 查询中心
+│       ├── registry.ts  # ContentRegistry 查询中心（多适配器统一入口）
+│       └── resources/   # 10 分类高质量开发与设计资源库（80+ 真实条目）
 │
 └── src-tauri/          # 跨平台宿主与高性能核心引擎（Rust）
     ├── src/             # Tauri 命令派发、本地授权加密与执行沙箱

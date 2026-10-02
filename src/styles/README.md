@@ -22,9 +22,7 @@
 1. 在 `src/styles/<style-id>/` 创建新风格目录。
 2. 创建 `manifest.ts`，实现 `SetupStyle` 接口并导出 manifest 对象。
 3. 创建对应的样式文件（例如 `<style-id>.css`），通过 `[data-style="<style-id>"]` 作用域限定选择器。
-4. 在 `src/styles.css` 中引入该样式文件（`@import "./styles/<style-id>/<style-id>.css";`）。
-5. 在 `src/styles/registry.ts` 的 `STYLE_REGISTRY` 数组中注册该风格对象。
-6. **无需修改**任何业务页面（如无需修改 Detect、Software、Install、Dashboard 等），风格页将自动渲染新卡片并支持即时启用。
+4. **完成！零已有文件修改（Zero Edits）**：Vite 自动发现清单与 CSS，风格页将自动渲染新卡片并支持即时启用。无需修改 `styles.css`，无需修改 `registry.ts`，无需修改任何页面代码。
 
 # Allowed Dependencies
 - `src/styles/types.ts`
