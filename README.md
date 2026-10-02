@@ -88,6 +88,6 @@ pwsh -File .\build-dist.ps1
 ## 4. Agent 协作与扩展指南
 
 本项目专为多 Agent 协作设计。如果您是一个初次接触本项目的 AI Agent：
-- **请首先阅读根目录 [`AGENTS.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/AGENTS.md)**，获取精准的任务路由与扩展食谱。
-- **请参考架构地图 [`PROJECT_MAP.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/PROJECT_MAP.md)**，在几十秒内建立模块心智模型。
-- **新增风格**请参阅 [`src/styles/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/styles/README.md)，并参考首个参考样本 [`src/styles/phantom-comic/`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/styles/phantom-comic/)。
+- **请首先阅读根目录 [`AGENTS.md`](AGENTS.md)**，获取精准的任务路由与扩展食谱。
+- **请参考架构地图 [`PROJECT_MAP.md`](PROJECT_MAP.md)**，在几十秒内建立模块心智模型。
+- **新增风格**请参阅 [`src/styles/README.md`](src/styles/README.md)，并参考首个参考样本 [`src/styles/phantom-comic/`](src/styles/phantom-comic/)。

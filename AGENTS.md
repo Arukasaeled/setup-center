@@ -22,13 +22,13 @@ styles/   ──x core/installer/ (视觉层绝不直接侵入安装器底层逻
 ## Task Routing
 | 任务类型 | 首先阅读 |
 | :--- | :--- |
-| **增加 / 修改视觉风格（Style）** | [`src/styles/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/styles/README.md) |
-| **增加 / 收录新软件** | [`src/content/software/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/content/software/README.md) |
-| **修改环境检测与硬件侦测** | [`src/core/environment/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/core/environment/README.md) |
-| **修改安装调度与方案构建** | [`src/core/installer/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/core/installer/README.md) |
-| **增加资源库 / 模板** | [`src/content/resources/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/content/resources/README.md) |
-| **修改通用基础 UI 组件** | [`src/ui/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/ui/README.md) |
-| **修改全局流程与页面结构** | [`src/app/README.md`](file:///D:/AI-Vault/DeepSeek/ai-student-setup/src/app/README.md) |
+| **增加 / 修改视觉风格（Style）** | [`src/styles/README.md`](src/styles/README.md) |
+| **增加 / 收录新软件** | [`src/content/software/README.md`](src/content/software/README.md) |
+| **修改环境检测与硬件侦测** | [`src/core/environment/README.md`](src/core/environment/README.md) |
+| **修改安装调度与方案构建** | [`src/core/installer/README.md`](src/core/installer/README.md) |
+| **增加资源库 / 模板** | [`src/content/resources/README.md`](src/content/resources/README.md) |
+| **修改通用基础 UI 组件** | [`src/ui/README.md`](src/ui/README.md) |
+| **修改全局流程与页面结构** | [`src/app/README.md`](src/app/README.md) |
 
 ## Golden Rules
 1. **不要为了理解局部任务读取整个仓库**：优先阅读上述路由表中对应模块的 `README.md`。

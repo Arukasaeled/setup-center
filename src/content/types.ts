@@ -20,12 +20,14 @@ export interface ContentItem<TMetadata = Record<string, unknown>> {
   id: string;
   type: ContentType;
   name: string;
-  version: string;
+  version?: string;
   description: string;
-  source: string;
-  author: string;
-  license: string;
-  updatedAt: string;
+  source?: string;
+  author?: string;
+  license?: string;
+  updatedAt?: string;
+  homepage?: string;
+  repository?: string;
   tags?: string[];
   metadata?: TMetadata;
 }

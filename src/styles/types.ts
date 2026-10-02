@@ -7,14 +7,7 @@
  * from backend execution and business logic.
  */
 
-export type StyleId =
-  | "phantom-comic"
-  | "default"
-  | "apple-minimal"
-  | "terminal-crt"
-  | "editorial"
-  // Backward compatibility alias during migration
-  | "p5-comic";
+export type StyleId = string;
 
 export interface StylePalette {
   baseBg: string;
@@ -45,4 +38,7 @@ export interface SetupStyle {
   features: string[];
   tokens?: StyleTokens;
   implemented: boolean;
+  designPrinciples?: string[];
+  license?: string;
+  updatedAt?: string;
 }

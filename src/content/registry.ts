@@ -27,12 +27,15 @@ class ContentRegistryManager {
         description: style.description,
         source: "builtin",
         author: style.author,
-        license: "MIT",
-        updatedAt: "2026-10-02",
+        license: style.license,
+        updatedAt: style.updatedAt,
         tags: style.tags,
         metadata: {
           styleId: style.id,
           implemented: style.implemented,
+          palette: style.palette,
+          inspiration: style.inspiration,
+          designPrinciples: style.designPrinciples,
         },
       });
     }

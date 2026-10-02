@@ -494,7 +494,5 @@ body {
 }
 
 /* ==========================================================================
-   STYLE SYSTEM — Registered Themes & Presets
+   STYLE SYSTEM — Stylesheets auto-discovered via src/styles/registry.ts
    ========================================================================== */
-@import "./styles/phantom-comic/phantom-comic.css";
-
