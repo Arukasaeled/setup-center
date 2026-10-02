@@ -43,6 +43,7 @@ import type {
   VerificationReport,
 } from "./types";
 import { loadSavedStyle, saveStylePreference, type StyleId } from "./styles";
+import { TransferHistory } from "../core/transfer";
 
 export type Screen =
   | "welcome"
@@ -553,6 +554,18 @@ export const useApp = create<AppStore>((set, get) => ({
   setActiveStyle: (activeStyle) => {
     saveStylePreference(activeStyle);
     set({ activeStyle });
+    try {
+      TransferHistory.record({
+        type: "style-switch",
+        title: "切换设计系统",
+        targetId: activeStyle,
+        targetName: activeStyle,
+        status: "info",
+        summary: `已激活视觉风格「${activeStyle}」`,
+      });
+    } catch {
+      // ignore
+    }
   },
 
   // -------------------------------------------------------------------------

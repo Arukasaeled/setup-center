@@ -55,6 +55,9 @@ import {
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
 import { ResourceSection } from "./ResourceSection";
+import { TokenTweaker } from "../components/TokenTweaker";
+import { TransferHistoryTimeline } from "../components/TransferHistoryTimeline";
+import { Bookmarks } from "../core/transfer";
 import type {
   CapabilityStatus,
   Confidence,
@@ -1323,6 +1326,9 @@ function HistorySection() {
           </div>
         </section>
       )}
+
+      {/* Transfer 流转履历 */}
+      <TransferHistoryTimeline />
     </div>
   );
 }
@@ -2125,6 +2131,11 @@ function LoadingBlock({ label }: { label: string }) {
 function StyleSection() {
   const activeStyle = useApp((s) => s.activeStyle);
   const setActiveStyle = useApp((s) => s.setActiveStyle);
+  const [styleBookmarks, setStyleBookmarks] = useState<string[]>(() => Bookmarks.getAll());
+
+  useEffect(() => {
+    return Bookmarks.subscribe((b) => setStyleBookmarks(b));
+  }, []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2139,6 +2150,9 @@ function StyleSection() {
           支持一键切换 Setup Center 的全套视觉系统。首套旗舰主题为 <strong>P5 × 美漫彩漫</strong>，以黑白灰为硬核基底，搭配电光高亮撞色与高对比分镜轮廓，让每个软件卡片都鲜明独立。
         </p>
       </header>
+
+      {/* Style Inspector & Token Tweaker */}
+      <TokenTweaker activeStyleId={activeStyle} />
 
       {/* Preset Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2184,25 +2198,43 @@ function StyleSection() {
                     </div>
                   </div>
 
-                  {/* Palette dots */}
-                  <div className="flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-1 shrink-0">
-                    <span
-                      className="h-3 w-3 rounded-full border border-black/20"
-                      style={{ backgroundColor: preset.palette.baseBg }}
-                      title="基底色"
-                    />
-                    <span
-                      className="h-3 w-3 rounded-full border border-black/20"
-                      style={{ backgroundColor: preset.palette.accent }}
-                      title="强调色"
-                    />
-                    {preset.palette.accentSecondary && (
+                  {/* Actions & Palette dots */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        Bookmarks.toggle(preset.id, preset.name);
+                      }}
+                      className={`text-[14px] p-0.5 hover:scale-125 transition-transform ${
+                        styleBookmarks.includes(preset.id)
+                          ? "text-amber-400 font-bold"
+                          : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
+                      }`}
+                      title={styleBookmarks.includes(preset.id) ? "取消收藏" : "收藏此风格"}
+                    >
+                      {styleBookmarks.includes(preset.id) ? "★" : "☆"}
+                    </button>
+
+                    <div className="flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-1">
                       <span
                         className="h-3 w-3 rounded-full border border-black/20"
-                        style={{ backgroundColor: preset.palette.accentSecondary }}
-                        title="次级色"
+                        style={{ backgroundColor: preset.palette.baseBg }}
+                        title="基底色"
                       />
-                    )}
+                      <span
+                        className="h-3 w-3 rounded-full border border-black/20"
+                        style={{ backgroundColor: preset.palette.accent }}
+                        title="强调色"
+                      />
+                      {preset.palette.accentSecondary && (
+                        <span
+                          className="h-3 w-3 rounded-full border border-black/20"
+                          style={{ backgroundColor: preset.palette.accentSecondary }}
+                          title="次级色"
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
 

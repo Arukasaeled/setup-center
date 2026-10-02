@@ -5,9 +5,10 @@ Setup Center
 │
 ├── src/
 │   ├── core/           # 核心领域模型：环境检测、安装执行器与远程内容边界
+│   │   ├── vault/       # Setup Vault 远程内容更新、版本仲裁与本地离线缓存
+│   │   ├── transfer/    # Transfer 协议实现（Inbox、Downloader、Scaffolder、Bookmarks、History）
 │   │   ├── environment/ # 系统硬件侦测与学生目标能力计算
-│   │   ├── installer/   # 安装方案调度、执行会话与验证结果契约
-│   │   └── content/     # 远程内容清单（Remote Manifest）同步边界
+│   │   └── installer/   # 安装方案调度、执行会话与验证结果契约
 │   │
 │   ├── app/            # 应用级装配：Zustand 状态机、屏路由与冷启动控制
 │   │
@@ -23,7 +24,7 @@ Setup Center
 │   └── content/        # 统一内容目录（软件、风格、资源、模板、技能、路径）
 │       ├── types.ts     # ContentItem 契约
 │       ├── registry.ts  # ContentRegistry 查询中心（多适配器统一入口）
-│       └── resources/   # 10 分类高质量开发与设计资源库（80+ 真实条目）
+│       └── resources/   # 10 分类高质量开发与设计资源库（80+ 真实条目，glob 自动发现）
 │
 └── src-tauri/          # 跨平台宿主与高性能核心引擎（Rust）
     ├── src/             # Tauri 命令派发、本地授权加密与执行沙箱
@@ -45,22 +46,28 @@ UI Screens & Primitives (ui/)
 Active Style Dressing (styles/)
 ```
 
-### 2. Style Resolution Flow
+### 2. Style Resolution & Token Customization Flow
 ```
-User Selection / Storage
+User Selection / Token Tweaker
        ↓
-StyleRegistry (styles/registry.ts)
+StyleRegistry (styles/registry.ts) + CSS Variables Overrides (:root)
        ↓
 document.documentElement[data-style]
        ↓
 CSS Design Tokens & Component Overrides (styles/phantom-comic/...)
 ```
 
-### 3. Modular Content Flow (Local & Future Remote)
+### 3. Transfer & Vault Update Flow
 ```
-Local Registry / Future Remote Manifest
+External Link / Repo / Idea
        ↓
-ContentRegistry (content/registry.ts)
+Transfer Inbox (core/transfer/inbox.ts)
        ↓
-Application Catalog & Recommendations
+Normalization (Agent / User) -> Setup Vault (Remote Git Repo)
+       ↓
+Runtime Vault Sync (core/vault/sync.ts)
+       ↓
+Offline Cache (localStorage) + Dynamic ContentRegistry + Dynamic Style Injection
+       ↓
+User Bookmarks / Direct Asset Download / Template Scaffolding
 ```

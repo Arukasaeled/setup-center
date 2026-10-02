@@ -8,36 +8,32 @@ Setup Center 不再只是传统的 Windows 软件安装器。在现代开发中�
 
 ---
 
-## 1. 核心系统架构
+## 1. 核心系统架构与 Transfer 理念
 
-项目采用分层清晰的模块边界，彻底解耦视觉风格与底层业务引擎：
+Setup Center 将应用运行时与内容解耦，核心围绕 **Transfer（流转）** 理念构建：
+**Discover → Transfer → Normalize → Store → Distribute → Instantiate**
 
 ```
-Setup Center
-├── src/core/       # 核心业务领域：环境检测、安装执行器与远程内容边界（与 UI 解耦）
-├── src/app/        # 应用编排：全局状态机（Zustand）、屏路由与冷启动控制
-├── src/ui/         # 跨风格共享的基础通用 UI 原语与无障碍组件（A11y）
-├── src/styles/     # 视觉风格系统（Style System）：统一契约、风格注册表与多风格实现
-└── src/content/    # 统一内容目录（Content Registry）：软件、风格、资源、模板等元数据
+Setup Center (App)                  Setup Center Vault (Remote Content)
+├── src/core/vault/      <───────── https://github.com/arukas0623-ai/setup-center-vault
+│   └── 运行时增量更新与离线缓存       ├── schemas/   (JSON Schema 契约)
+├── src/core/transfer/              ├── styles/    (视觉风格与 CSS)
+│   ├── 收集箱 (Inbox)               ├── resources/ (精选开发资源)
+│   ├── 资产下载器 (Downloader)        ├── templates/ (工程脚手架)
+│   ├── 脚手架实例化 (Scaffolder)     ├── patterns/  (可复用 UI 交互模式)
+│   └── 个人收藏 (Bookmarks)         ├── skills/    (Agent 迁移技能)
+├── src/styles/                     └── inbox/     (待规整队列)
+│   ├── 12 套真实可切换风格
+│   └── 设计令牌微调器 (Token Tweaker)
+└── src/content/resources/
+    └── 10 大分类 80+ 开源精选资产 (glob 自动发现)
 ```
 
-### Style System（风格试验场）
-- **统一 Style Contract**：定义了 `SetupStyle` 规范（Manifest、Tokens、Palette、A11y）。
-- **统一 Style Registry**：所有设计语言通过 `src/styles/registry.ts` 注册，风格切换即时全局生效。
-- **首套高风格化旗舰实现：`phantom-comic`（P5 × 美漫彩漫）**：
-  - 灵感来源：Persona 5 视觉语言（平面切割感、角度徽章、动态海报节奏）+ 美漫/波普艺术（粗粝轮廓、0-blur 几何硬投影、电光黄/青蓝撞色）。
-  - 纯设计语言与布局实验，不包含或重新分发任何官方版权素材。
-  - 软件卡片具备独立分镜格实体感，大幅提升视觉焦点与辨识度。
-- **预设风格草案槽位**：`apple-minimal`（Cupertino 极简）、`terminal-crt`（赛博终端）、`editorial`（瑞士画册）。
-
-### Content Registry（内容目录骨架）
-为未来的多模态内容生态奠定统一元数据规范（`ContentItem`, `ContentType`, `ContentManifest`）：
-- **Software**：常用开发软件与环境运行时的识别与自选安装。
-- **Style**：前端视觉交互主题。
-- **Resource**：离线模型权重、镜像源与依赖包索引。
-- **Template**：工程项目脚手架与基础代码模板。
-- **Skill**：面向 AI Agent 与开发者的技能工作流指南。
-- **Learning**：从零到一的实战成长路径。
+### Transfer Protocol（流转协议）
+- **外部一键捕获**：支持通过 UI 收集箱或 Agent 指令：“`Transfer this into Setup: <URL>`” 自动抓取并规整入库。详见 [`TRANSFER.md`](TRANSFER.md)。
+- **零编译热扩充 (Zero-Rebuild)**：Vault 远端内容更新后，客户端无需重新打包发布，启动时或点击「同步 Vault」自动增量热挂载。
+- **离线优先 (Offline-First)**：即使断网，本地快照依然无缝驱动完整界面。
+- **设计令牌微调器 (Token Tweaker)**：在风格试验场内实时调节圆角、边框、硬阴影与强调色，并支持导出配置 JSON。
 
 ---
 

@@ -6,7 +6,7 @@
  * Learning paths, and Awesome collections.
  */
 
-export type ResourceCategory =
+export type KnownResourceCategory =
   | "frontend"
   | "components"
   | "animation"
@@ -17,6 +17,8 @@ export type ResourceCategory =
   | "templates"
   | "learning"
   | "collections";
+
+export type ResourceCategory = KnownResourceCategory | (string & {});
 
 export type ResourceActionType = "github" | "external" | "download";
 

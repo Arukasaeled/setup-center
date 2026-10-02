@@ -23,6 +23,8 @@ export interface StyleTokens {
   hardShadow?: string;
   borderRadius?: string;
   accentHue?: string;
+  fontHeading?: string;
+  fontBody?: string;
 }
 
 export interface SetupStyle {

@@ -1,18 +1,41 @@
 import type { ResourceCategory, ResourceCategoryMeta, ResourceItem } from "./types";
-import { frontendResources } from "./categories/frontend";
-import { componentResources } from "./categories/components";
-import { animationResources } from "./categories/animation";
-import { iconResources } from "./categories/icons";
-import { fontResources } from "./categories/fonts";
-import { toolResources } from "./categories/tools";
-import { aiResources } from "./categories/ai";
-import { templateResources } from "./categories/templates";
-import { learningResources } from "./categories/learning";
-import { collectionResources } from "./categories/collections";
 
 export * from "./types";
 
-export const RESOURCE_CATEGORIES: ResourceCategoryMeta[] = [
+// Auto-discover all category modules dynamically across ./categories/*.ts
+const categoryModules = import.meta.glob<{
+  [key: string]: unknown;
+}>("./categories/*.ts", { eager: true });
+
+function extractResourceItems(mod: Record<string, unknown>): ResourceItem[] {
+  const items: ResourceItem[] = [];
+  for (const key of Object.keys(mod)) {
+    const val = mod[key];
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        if (
+          item &&
+          typeof item === "object" &&
+          "id" in item &&
+          "name" in item &&
+          "category" in item
+        ) {
+          items.push(item as ResourceItem);
+        }
+      }
+    }
+  }
+  return items;
+}
+
+const discoveredResources: ResourceItem[] = [];
+for (const path in categoryModules) {
+  const mod = categoryModules[path];
+  const items = extractResourceItems(mod);
+  discoveredResources.push(...items);
+}
+
+export const BUILTIN_CATEGORIES: ResourceCategoryMeta[] = [
   {
     id: "frontend",
     name: "设计灵感与系统",
@@ -75,19 +98,27 @@ export const RESOURCE_CATEGORIES: ResourceCategoryMeta[] = [
   },
 ];
 
+export const RESOURCE_CATEGORIES: ResourceCategoryMeta[] = [...BUILTIN_CATEGORIES];
+
 /** The complete aggregated catalog of developer and creative resources */
-export const RESOURCE_CATALOG: ResourceItem[] = [
-  ...frontendResources,
-  ...componentResources,
-  ...animationResources,
-  ...iconResources,
-  ...fontResources,
-  ...toolResources,
-  ...aiResources,
-  ...templateResources,
-  ...learningResources,
-  ...collectionResources,
-];
+export const RESOURCE_CATALOG: ResourceItem[] = [...discoveredResources];
+
+/** Register or update a resource in the active catalog */
+export function registerResource(item: ResourceItem): void {
+  const existingIdx = RESOURCE_CATALOG.findIndex((r) => r.id === item.id);
+  if (existingIdx >= 0) {
+    RESOURCE_CATALOG[existingIdx] = item;
+  } else {
+    RESOURCE_CATALOG.push(item);
+  }
+}
+
+/** Batch register resources (e.g. from Vault synchronization) */
+export function registerResourcesBatch(items: ResourceItem[]): void {
+  for (const item of items) {
+    registerResource(item);
+  }
+}
 
 /** Query resources by category */
 export function getResourcesByCategory(category: ResourceCategory): ResourceItem[] {

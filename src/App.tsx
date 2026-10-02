@@ -44,6 +44,7 @@ import { SoftwareScreen } from "./screens/Software";
 import { WelcomeScreen } from "./screens/Welcome";
 import { useApp, type Screen } from "./lib/store";
 import { readEntryChoice } from "./lib/entry";
+import { VaultSync } from "./core/vault";
 
 /**
  * The wizard's steps.
@@ -142,6 +143,8 @@ export default function App() {
     // than having to work out which programs landed.
     void loadResumable();
     if (useApp.getState().entitlementsPhase === "idle") void loadEntitlements();
+    VaultSync.hydrateFromCache();
+    void VaultSync.sync();
   }, [loadStatus, loadResumable, loadEntitlements]);
 
   /**

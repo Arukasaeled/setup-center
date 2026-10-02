@@ -13,6 +13,7 @@ export type ContentType =
   | "style"
   | "resource"
   | "template"
+  | "pattern"
   | "skill"
   | "learning";
 
