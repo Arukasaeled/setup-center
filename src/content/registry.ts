@@ -1,11 +1,12 @@
 import type { ContentItem, ContentType, ContentManifest } from "./types";
 import { STYLE_REGISTRY } from "../styles";
+import { RESOURCE_CATALOG } from "./resources";
 
 /**
  * In-memory unified Content Registry skeleton.
  *
- * Bridges currently built-in styles, software descriptors, and future
- * modular assets into a single queryable catalog.
+ * Bridges currently built-in styles, software descriptors, and external
+ * curated developer and design assets into a single queryable catalog.
  */
 class ContentRegistryManager {
   private items: Map<string, ContentItem> = new Map();
@@ -15,9 +16,11 @@ class ContentRegistryManager {
   }
 
   /**
-   * Seed static content from existing registered style specifications.
+   * Seed static content from existing registered style specifications and
+   * curated resource catalogs via adapter pattern.
    */
   private seedInitialContent(): void {
+    // Style Adapter -> ContentItem
     for (const style of STYLE_REGISTRY) {
       this.register({
         id: `style:${style.id}`,
@@ -36,6 +39,32 @@ class ContentRegistryManager {
           palette: style.palette,
           inspiration: style.inspiration,
           designPrinciples: style.designPrinciples,
+        },
+      });
+    }
+
+    // Resource Adapter -> ContentItem
+    for (const res of RESOURCE_CATALOG) {
+      this.register({
+        id: res.id,
+        type: "resource",
+        name: res.name,
+        version: res.version,
+        description: res.description,
+        source: res.repository ?? res.homepage ?? "community",
+        author: res.author,
+        license: res.license,
+        updatedAt: res.updatedAt,
+        homepage: res.homepage,
+        repository: res.repository,
+        tags: res.tags,
+        metadata: {
+          category: res.category,
+          recommendedReason: res.recommendedReason,
+          actionType: res.actionType,
+          downloadUrl: res.downloadUrl,
+          stars: res.stars,
+          featured: res.featured,
         },
       });
     }

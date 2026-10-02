@@ -55,6 +55,7 @@ const WIZARD_TITLES: Record<string, string> = {
 const SECTION_TITLES: Record<Section, string> = {
   overview: "概览",
   software: "软件",
+  resources: "开发资源",
   config: "配置",
   history: "历史",
   plugins: "插件",

@@ -66,10 +66,11 @@ export type Screen =
 export type Section =
   | "overview"
   | "software"
+  | "resources"
+  | "style"
   | "config"
   | "history"
   | "plugins"
-  | "style"
   | "license"
   | "about";
 

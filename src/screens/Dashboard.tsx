@@ -54,6 +54,7 @@ import {
 } from "../components/ActivationPanel";
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
+import { ResourceSection } from "./ResourceSection";
 import type {
   CapabilityStatus,
   Confidence,
@@ -74,6 +75,7 @@ import type {
 const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "overview", label: "环境概览", hint: "总体状态与缺口" },
   { id: "software", label: "软件", hint: "这台电脑装了什么" },
+  { id: "resources", label: "开发资源", hint: "开源项目、模板与灵感" },
   { id: "style", label: "风格", hint: "视觉风格与主题试验场" },
   { id: "config", label: "配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
@@ -175,6 +177,7 @@ export function Dashboard() {
             />
           )}
           {section === "software" && <SoftwareSection />}
+          {section === "resources" && <ResourceSection />}
           {section === "style" && <StyleSection />}
           {section === "config" && <ConfigSection />}
           {section === "history" && <HistorySection />}
