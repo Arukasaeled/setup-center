@@ -42,6 +42,7 @@ import type {
   StepProgress,
   VerificationReport,
 } from "./types";
+import { loadSavedStyle, saveStylePreference, type StyleId } from "./styles";
 
 export type Screen =
   | "welcome"
@@ -68,6 +69,7 @@ export type Section =
   | "config"
   | "history"
   | "plugins"
+  | "style"
   | "license"
   | "about";
 
@@ -159,6 +161,10 @@ interface AppStore {
   // --- Theme ----------------------------------------------------------------
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
+
+  // --- Visual Style Playground ----------------------------------------------
+  activeStyle: StyleId;
+  setActiveStyle: (style: StyleId) => void;
 
   // --- Capability layer (stage 5) -------------------------------------------
   capabilities: CapabilityStatus[];
@@ -268,6 +274,14 @@ interface AppStore {
   planLoading: boolean;
   planError: string | null;
   buildPlan: () => Promise<void>;
+  /**
+   * Builds a plan for exactly these programs, regardless of which profile is
+   * selected. This is the path a row's "安装" button uses: the student named a
+   * program, so the plan must contain that program and nothing they did not ask
+   * for. An empty profile id is legitimate — they may have opened the software
+   * list without picking a scenario first.
+   */
+  buildPlanFor: (ids: SoftwareId[]) => Promise<void>;
 
   // --- Execution ------------------------------------------------------------
   /** The live or last-finished run. `null` before anything has been attempted. */
@@ -530,6 +544,15 @@ export const useApp = create<AppStore>((set, get) => ({
   // the store stays free of DOM access and remains testable outside a browser.
   theme: "system",
   setTheme: (theme) => set({ theme }),
+
+  // -------------------------------------------------------------------------
+  // Visual Style Playground
+  // -------------------------------------------------------------------------
+  activeStyle: loadSavedStyle(),
+  setActiveStyle: (activeStyle) => {
+    saveStylePreference(activeStyle);
+    set({ activeStyle });
+  },
 
   // -------------------------------------------------------------------------
   // Capability layer
@@ -924,6 +947,25 @@ export const useApp = create<AppStore>((set, get) => ({
     }
   },
 
+  buildPlanFor: async (ids) => {
+    if (ids.length === 0) {
+      set({ planError: "至少要选择一项才需要安装方案" });
+      return;
+    }
+    const profileId = get().selectedProfileId ?? "";
+    set({ planLoading: true, planError: null, chosenSteps: null });
+    try {
+      const [plan, strategies] = await Promise.all([
+        ipc.buildInstallPlanFor(ids, profileId),
+        ipc.installStrategiesFor(ids),
+      ]);
+      set({ plan, strategies, planLoading: false });
+      void get().checkReadiness();
+    } catch (err) {
+      set({ planLoading: false, planError: describeError(err) });
+    }
+  },
+
   // -------------------------------------------------------------------------
   // Execution
   // -------------------------------------------------------------------------
@@ -1180,7 +1222,11 @@ export const useApp = create<AppStore>((set, get) => ({
   preparing: false,
   prepareFinish: async () => {
     const { plan, environment, selectedProfileId } = get();
-    if (!plan || !environment || !selectedProfileId) return;
+    if (!plan || !environment) return;
+    // A hand-picked plan carries the scenario it started from, which may be
+    // empty. Bailing on `!selectedProfileId` would leave the finishing screen
+    // preparing forever on a route the student legitimately took.
+    const profileId = selectedProfileId ?? plan.profileId;
 
     set({ preparing: true });
     try {
@@ -1191,12 +1237,12 @@ export const useApp = create<AppStore>((set, get) => ({
       // differ, and the later reading is the truer one.
       const [verification, configActions] = await Promise.all([
         ipc.verifyInstallation(plan),
-        ipc.plannedConfigActions(selectedProfileId),
+        ipc.plannedConfigActions(profileId),
       ]);
       set({ verification, configActions });
 
       const rendered = await ipc.generateReport({
-        profileId: selectedProfileId,
+        profileId,
         plan,
         environment,
         verification,
@@ -1239,4 +1285,8 @@ export const useApp = create<AppStore>((set, get) => ({
 export function selectedProfile(state: AppStore): Profile | null {
   if (!state.selectedProfileId) return null;
   return state.profiles.find((p) => p.id === state.selectedProfileId) ?? null;
+}
+
+if (typeof window !== "undefined") {
+  (window as unknown as { useApp: typeof useApp }).useApp = useApp;
 }

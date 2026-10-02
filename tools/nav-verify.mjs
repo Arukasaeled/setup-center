@@ -54,12 +54,12 @@ function skip(name, why) {
  */
 async function attachStore(page) {
   await page.evaluate(async () => {
-    const mod = await import("/src/lib/store.ts");
+    const store = window.useApp ?? (await import("/src/lib/store.ts")).useApp;
     window.__nav = {
-      s: () => mod.useApp.getState(),
-      set: (p) => mod.useApp.setState(p),
-      goTo: (x) => mod.useApp.getState().goTo(x),
-      goBack: () => mod.useApp.getState().goBack(),
+      s: () => store.getState(),
+      set: (p) => store.setState(p),
+      goTo: (x) => store.getState().goTo(x),
+      goBack: () => store.getState().goBack(),
     };
   });
 }

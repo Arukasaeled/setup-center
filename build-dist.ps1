@@ -1,4 +1,4 @@
-# build-dist.ps1 — produce the two separated deliverables.
+﻿# build-dist.ps1 — produce the two separated deliverables.
 #
 #   DevKit   : the vendor's own tools + ledger. Contains hashes only.
 #   UserKit  : the NSIS installer that end users receive.
@@ -53,28 +53,12 @@ $scriptOwns = @(
     'issue.exe', 'license_admin.exe', '查码.exe',
     'license_inventory.csv', '使用说明.md', '生成新码.bat', '记账.bat'
 )
-$preserved = @()
-if (Test-Path $DevKit) {
-    $keepDir = Join-Path ([System.IO.Path]::GetTempPath()) ("devkit-keep-" + [System.IO.Path]::GetRandomFileName())
-    New-Item -ItemType Directory -Path $keepDir -Force | Out-Null
-    foreach ($f in Get-ChildItem $DevKit -Recurse -File) {
-        if ($f.Name -notin $scriptOwns) {
-            $relPath = $f.FullName.Substring($DevKit.Length).TrimStart('\')
-            $dest = Join-Path $keepDir $relPath
-            New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
-            Copy-Item $f.FullName $dest -Force
-            $preserved += $relPath
-        }
-    }
-    if ($preserved) { Ok "preserved $($preserved.Count) hand-made file(s): $($preserved -join ', ')" }
-    Remove-Item $DevKit -Recurse -Force
-}
 New-Item -ItemType Directory -Path $DevKit -Force | Out-Null
-if ($preserved) {
-    foreach ($relPath in $preserved) {
-        Copy-Item (Join-Path $keepDir $relPath) (Join-Path $DevKit $relPath) -Force
+foreach ($so in $scriptOwns) {
+    $target = Join-Path $DevKit $so
+    if (Test-Path $target) {
+        Remove-Item $target -Force -Recurse -ErrorAction SilentlyContinue
     }
-    Remove-Item $keepDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $rel = Join-Path $SrcTauri 'target\release\examples'
@@ -86,13 +70,13 @@ $map = @{
 foreach ($src in $map.Keys) {
     $from = Join-Path $rel $src
     if (-not (Test-Path $from)) { Die "missing built tool: $from" }
-    Copy-Item $from (Join-Path $DevKit $map[$src])
+    Copy-Item $from (Join-Path $DevKit $map[$src]) -Force
 }
 Ok 'three tools copied (lookup.exe shipped as 查码.exe)'
 
 $ledger = Join-Path $SrcTauri 'license_inventory.csv'
 if (-not (Test-Path $ledger)) { Die "ledger not found: $ledger" }
-Copy-Item $ledger (Join-Path $DevKit 'license_inventory.csv')
+Copy-Item $ledger (Join-Path $DevKit 'license_inventory.csv') -Force
 $rowCount = (Import-Csv $ledger).Count
 Ok "ledger copied ($rowCount rows)"
 
@@ -100,7 +84,7 @@ foreach ($doc in 'DEVDOC_使用说明.md', 'DEVDOC_生成新码.bat', 'DEVDOC_�
     $f = Join-Path $SrcTauri $doc
     if (-not (Test-Path $f)) { Die "missing doc: $f" }
     $name = $doc -replace '^DEVDOC_', ''
-    Copy-Item $f (Join-Path $DevKit $name)
+    Copy-Item $f (Join-Path $DevKit $name) -Force
 }
 Ok 'docs + bat helpers copied'
 
@@ -172,17 +156,12 @@ $bundleDir = Join-Path $Repo 'src-tauri\target\release\bundle\nsis'
 $installer = $null
 if (-not $SkipUserKit) {
     Step 'Building NSIS installer (user side)'
-    $dist = Join-Path $Repo 'dist'
-    if (-not (Test-Path $dist)) {
-        Push-Location $Repo
-        try {
-            & npm run build
-            if ($LASTEXITCODE -ne 0) { Die 'npm run build failed' }
-        } finally { Pop-Location }
-        Ok 'frontend built'
-    } else {
-        Ok 'frontend dist/ already present'
-    }
+    Push-Location $Repo
+    try {
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { Die 'npm run build failed' }
+    } finally { Pop-Location }
+    Ok 'frontend built'
 
     Push-Location $Repo
     try {

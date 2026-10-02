@@ -546,7 +546,7 @@ mod tests {
             steps: vec![],
             ready_count: 0,
             satisfied_count: 0,
-            estimated_minutes: 10,
+            estimated_minutes: Some(10),
         };
         let mut env = crate::modules::detect::detect(500).unwrap();
         env.recalculate();

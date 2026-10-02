@@ -79,6 +79,7 @@ export default function App() {
   const loadResumable = useApp((s) => s.loadResumable);
   const dashboardOpen = useApp((s) => s.dashboardOpen);
   const theme = useApp((s) => s.theme);
+  const activeStyle = useApp((s) => s.activeStyle);
   const entitlements = useApp((s) => s.entitlements);
   /**
    * Subscribed, not read via `getState()` inside the effect.
@@ -226,6 +227,11 @@ export default function App() {
     root.setAttribute("data-theme", theme);
     return undefined;
   }, [theme]);
+
+  // Visual style language attribute (e.g. p5-comic, default, etc.)
+  useEffect(() => {
+    document.documentElement.setAttribute("data-style", activeStyle);
+  }, [activeStyle]);
 
   return (
     <div className="app-field relative flex h-full flex-col overflow-hidden">

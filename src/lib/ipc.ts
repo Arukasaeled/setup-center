@@ -277,8 +277,16 @@ export const getProfile = (id: string) =>
 export const buildInstallPlan = (profileId: string) =>
   call<InstallPlan>("build_install_plan", { profileId });
 
+/** A plan for the programs the student actually ticked, not the profile's list. */
+export const buildInstallPlanFor = (ids: SoftwareId[], profileId: string) =>
+  call<InstallPlan>("build_install_plan_for", { ids, profileId });
+
 export const installStrategies = (profileId: string) =>
   call<InstallStrategy[]>("install_strategies", { profileId });
+
+/** Strategies for an explicit list, so a pick outside the profile still has a method. */
+export const installStrategiesFor = (ids: SoftwareId[]) =>
+  call<InstallStrategy[]>("install_strategies_for", { ids });
 
 /**
  * Stage 1: returns the dry-run progress stream. Nothing is installed; every

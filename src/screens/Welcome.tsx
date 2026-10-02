@@ -197,10 +197,13 @@ export function WelcomeScreen({
             </div>
             <button
               type="button"
-              onClick={configure}
-              className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-3 text-[12px] transition-colors duration-150"
+              onClick={() => {
+                void scanInstalled();
+                goTo("software");
+              }}
+              className="text-primary hover:underline mt-3 text-[12.5px] font-medium transition-colors duration-150 inline-flex items-center gap-1"
             >
-              已经知道自己需要什么？浏览全部软件 →
+              已经知道自己需要什么？浏览全部软件自选库 →
             </button>
           </section>
         )}

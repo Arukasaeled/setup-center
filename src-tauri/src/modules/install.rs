@@ -86,9 +86,41 @@ pub fn spec_from(catalog: &Catalog, id: SoftwareId) -> InstallerSpec {
 /// enough — that is the classic case where the student still cannot run it — and
 /// neither is "winget has a record of it", which survives uninstalls.
 pub fn build_plan(catalog: &Catalog, profile: &Profile, existing: &SoftwareScan) -> InstallPlan {
+    build_plan_with(
+        catalog,
+        &profile.id,
+        Some(profile.estimated_minutes),
+        &profile.software,
+        existing,
+    )
+}
+
+/// The plan builder, over an explicit list of programs.
+///
+/// This is the whole of [`build_plan`] generalised: the profile path is a call
+/// with `profile.software`, and the "install exactly what the student ticked"
+/// path is a call with the ticked ids. Keeping one implementation is the point —
+/// there is no second place where an `InstallSource` is decided, so the profile
+/// plan and a hand-picked plan can never disagree about *how* a program
+/// installs.
+///
+/// Two things are deliberately *not* derived from `ids`:
+///
+/// * `profile_id` — the scenario the student started from, carried into the
+///   session and the report. It may be empty; nothing here reads it.
+/// * `estimated_minutes` — `None` means "no profile to quote a number from", and
+///   the caller (or the UI) scales or omits the estimate rather than inventing
+///   one from a program count.
+pub fn build_plan_with(
+    catalog: &Catalog,
+    profile_id: &str,
+    estimated_minutes: Option<u32>,
+    ids: &[SoftwareId],
+    existing: &SoftwareScan,
+) -> InstallPlan {
     let mut steps: Vec<InstallStep> = Vec::new();
 
-    for id in &profile.software {
+    for id in ids {
         let spec = spec_from(catalog, *id);
         let found = existing.find(*id);
 
@@ -147,11 +179,11 @@ pub fn build_plan(catalog: &Catalog, profile: &Profile, existing: &SoftwareScan)
     let ready_count = steps.len() as u32 - satisfied_count;
 
     InstallPlan {
-        profile_id: profile.id.clone(),
+        profile_id: profile_id.to_string(),
         steps,
         ready_count,
         satisfied_count,
-        estimated_minutes: profile.estimated_minutes,
+        estimated_minutes,
     }
 }
 

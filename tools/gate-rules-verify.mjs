@@ -144,8 +144,8 @@ async function gateVisible(page) {
 /** The screen/store facts we care about. */
 async function surface(page) {
   return page.evaluate(async () => {
-    const mod = await import("/src/lib/store.ts");
-    const s = mod.useApp.getState();
+    const store = window.useApp ?? (await import("/src/lib/store.ts")).useApp;
+    const s = store.getState();
     return {
       screen: s.screen,
       dashboardOpen: s.dashboardOpen,

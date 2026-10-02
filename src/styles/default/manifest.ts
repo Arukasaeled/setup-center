@@ -1,0 +1,27 @@
+import type { SetupStyle } from "../types";
+
+export const defaultStyle: SetupStyle = {
+  id: "default",
+  name: "现代沉稳",
+  version: "1.0.0",
+  subtitle: "Default Neutral",
+  description:
+    "克制严谨的工业级界面，低饱和度半透明磨砂，注重低干扰与沉浸式文本阅读。",
+  inspiration: "Linear / Windows 11 设置 / Raycast 精致克制排版",
+  author: "Setup Center Core Team",
+  tags: ["低饱和", "克制微光", "中性灰度"],
+  palette: {
+    baseBg: "#08090b",
+    surface: "#14171c",
+    cardBorder: "rgba(255, 255, 255, 0.08)",
+    accent: "#6ee7d0",
+    text: "#e4e7eb",
+  },
+  features: ["细致微边框", "半透明悬浮面板", "低饱和度指示器"],
+  tokens: {
+    borderWidth: "1px",
+    hardShadow: "0 12px 32px -12px rgba(0, 0, 0, 0.7)",
+    borderRadius: "10px",
+  },
+  implemented: true,
+};

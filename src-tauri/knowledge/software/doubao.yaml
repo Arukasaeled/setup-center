@@ -1,0 +1,22 @@
+id: doubao
+name: 豆包
+category: AI 工具
+description: 字节跳动的 AI 助手桌面客户端，装完登录就能用，不需要 API Key。
+purpose:
+  - 写作业、查资料、翻译、解释概念
+  - 不需要申请 API Key，登录账号即可开始用
+  - 桌面客户端比网页版稳定，可快捷键唤起
+  - 支持图片、文档等输入，适合处理课件和截图
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - 不想折腾 API Key 的同学
+studentExplanation: |
+  它和 ChatGPT 桌面版是同一类工具：打开就能聊，不用配置。
+
+  最省事的一点是**不需要 API Key**：用手机号或抖音账号登录就能用。很多同学卡在
+  “不知道怎么申请 Key”这一步，先装豆包能立刻开始用，之后想用别的模型再加。
+
+  和 ChatGPT、Cherry Studio 都不冲突，装几个都可以，按回答质量挑一个常用的。
+versions: []

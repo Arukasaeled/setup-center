@@ -97,6 +97,21 @@ pub enum Requirement {
     /// is unavailable, and the honest render for that is "we could not check"
     /// — never a fabricated ✓.
     Manual(ManualKey),
+    /// Any one of these programs satisfies the requirement.
+    ///
+    /// The requirement exists so a capability can say "a command-line AI
+    /// assistant" without naming one vendor as the only acceptable answer.
+    /// Binding a capability to a single product made that product a step the
+    /// student could not decline, which is how Claude Code became mandatory for
+    /// a goal that was really about *having an assistant at all*.
+    ///
+    /// Satisfied when **any** listed program is present (and on PATH, when
+    /// `needs_path` is set). Absence of every one of them is what fails — never
+    /// the absence of a particular one.
+    AnyOf {
+        programs: &'static [SoftwareId],
+        needs_path: bool,
+    },
 }
 
 /// A machine fact a capability may depend on.
@@ -254,6 +269,30 @@ impl Requires {
             threshold: 0.0,
         }
     }
+
+    /// "Any one of these, present on the machine."
+    pub const fn any_of(programs: &'static [SoftwareId]) -> Self {
+        Self {
+            requirement: Requirement::AnyOf {
+                programs,
+                needs_path: false,
+            },
+            necessity: Necessity::Required,
+            threshold: 0.0,
+        }
+    }
+
+    /// "Any one of these, and callable by name."
+    pub const fn any_of_on_path(programs: &'static [SoftwareId]) -> Self {
+        Self {
+            requirement: Requirement::AnyOf {
+                programs,
+                needs_path: true,
+            },
+            necessity: Necessity::Required,
+            threshold: 0.0,
+        }
+    }
 }
 
 /// One row of the capability table.
@@ -311,6 +350,73 @@ impl CapabilityGroup {
 // ---------------------------------------------------------------------------
 // The table
 // ---------------------------------------------------------------------------
+
+/// Command-line AI assistants. Any one of them is a CLI assistant; none of
+/// them is *the* CLI assistant. Kept as data so a capability can require the
+/// category without naming a vendor, and so the recurrence guard below has a
+/// single list to check against.
+const CLI_ASSISTANTS: &[SoftwareId] = &[
+    SoftwareId::ClaudeCode,
+    SoftwareId::Codex,
+    SoftwareId::Gemini,
+    SoftwareId::QwenCode,
+    SoftwareId::KimiCli,
+    SoftwareId::OpenCode,
+    SoftwareId::Crush,
+];
+
+/// Desktop chat clients. Same rule: the category is the requirement, not the
+/// brand. GUI-only, so they are required as present, never as on-PATH.
+const DESKTOP_ASSISTANTS: &[SoftwareId] = &[
+    SoftwareId::ClaudeDesktop,
+    SoftwareId::ChatgptDesktop,
+    SoftwareId::CherryStudio,
+    SoftwareId::Chatbox,
+    SoftwareId::Doubao,
+    SoftwareId::GeminiDesktop,
+];
+
+/// Editors a student actually writes in. Cursor and Windsurf are editors in
+/// their own right, not accessories to VS Code.
+const EDITORS: &[SoftwareId] = &[
+    SoftwareId::Vscode,
+    SoftwareId::Cursor,
+    SoftwareId::Windsurf,
+];
+
+/// Something that puts an assistant inside or beside the editor. Continue is
+/// the in-editor extension; the CLI assistants pair with the editor from the
+/// terminal. Any one is enough.
+const EDITOR_ASSISTANTS: &[SoftwareId] = &[
+    SoftwareId::Continue,
+    SoftwareId::ClaudeCode,
+    SoftwareId::Codex,
+    SoftwareId::Gemini,
+    SoftwareId::QwenCode,
+    SoftwareId::KimiCli,
+    SoftwareId::OpenCode,
+    SoftwareId::Crush,
+];
+
+/// Vendors of AI assistants. A capability may require *one of* these. It may
+/// never require a *particular* one — that is the rule that stops "install
+/// Claude or you cannot continue" from coming back.
+const AI_VENDORS: &[SoftwareId] = &[
+    SoftwareId::ClaudeCode,
+    SoftwareId::ClaudeDesktop,
+    SoftwareId::Codex,
+    SoftwareId::ChatgptDesktop,
+    SoftwareId::Gemini,
+    SoftwareId::GeminiDesktop,
+    SoftwareId::QwenCode,
+    SoftwareId::KimiCli,
+    SoftwareId::OpenCode,
+    SoftwareId::Crush,
+    SoftwareId::CherryStudio,
+    SoftwareId::Chatbox,
+    SoftwareId::Doubao,
+    SoftwareId::Continue,
+];
 
 /// Every capability the product knows about.
 ///
@@ -371,6 +477,50 @@ pub const TABLE: &[CapabilitySpec] = &[
         outcome: "可以运行 Node.js 项目",
     },
 
+    CapabilitySpec {
+        id: CapabilityId("java-development"),
+        name: "Java 开发",
+        description: "编译运行 Java 程序、完成 Java 课程的实验",
+        group: CapabilityGroup::Development,
+        // `java.yaml` has named this capability since the knowledge layer
+        // existed, and until now the table had no such row — so the link was
+        // dropped and the warning was invisible because the compiled-in
+        // fallback set did not include that file. The shipped directory is
+        // read on a real machine, which is where it showed up.
+        //
+        // JDK, not JRE: `java` alone can only run code someone else compiled.
+        // The catalog installs a JDK and `javac` ships beside `java`, so
+        // requiring the interpreter on PATH is the honest floor — a student
+        // compiling from the editor gets `javac` from the same install.
+        requires: &[
+            Requires::required(Requirement::OnPath(SoftwareId::Java)),
+            Requires::required(Requirement::OnPath(SoftwareId::Vscode)),
+            Requires::optional(Requirement::OnPath(SoftwareId::Git)),
+        ],
+        outcome: "可以编译并运行 Java 程序",
+    },
+    CapabilitySpec {
+        id: CapabilityId("rust-development"),
+        name: "Rust 开发",
+        description: "用 cargo 建项目、编译并运行 Rust 程序",
+        group: CapabilityGroup::Development,
+        // See `java-development`: this row is named by `rust.yaml` and did not
+        // exist. `cargo` is the requirement rather than `rustc` because cargo is
+        // the entry point a student actually types, and it is what the catalog's
+        // Rustup install puts on PATH.
+        //
+        // The MSVC requirement is real on Windows, not decoration: rustup's
+        // default host toolchain links through `link.exe`, and without the MSVC
+        // build tools a `cargo build` fails at the link step with an error that
+        // reads to a beginner as "my code is wrong".
+        requires: &[
+            Requires::required(Requirement::OnPath(SoftwareId::Rust)),
+            Requires::required(Requirement::OnPath(SoftwareId::Vscode)),
+            Requires::required(Requirement::Program(SoftwareId::MsvcBuildTools)),
+        ],
+        outcome: "可以编译并运行 Rust 程序",
+    },
+
     // --- AI tooling -------------------------------------------------------
     CapabilitySpec {
         id: CapabilityId("ai-agent-development"),
@@ -394,9 +544,12 @@ pub const TABLE: &[CapabilitySpec] = &[
         name: "命令行 AI 助手",
         description: "在终端里让 AI 直接读写你的项目文件",
         group: CapabilityGroup::AiTooling,
+        // Any one assistant is enough. Naming Claude Code alone made every goal
+        // that wanted "a CLI assistant" demand Claude specifically, and a
+        // student who had already chosen Codex or Gemini was told they still
+        // needed Claude before anything else would install.
         requires: &[
-            Requires::required(Requirement::Program(SoftwareId::ClaudeCode)),
-            Requires::required(Requirement::OnPath(SoftwareId::ClaudeCode)),
+            Requires::any_of_on_path(CLI_ASSISTANTS),
             Requires::required(Requirement::OnPath(SoftwareId::Node)),
         ],
         outcome: "可以在终端使用 AI 编程助手",
@@ -406,16 +559,19 @@ pub const TABLE: &[CapabilitySpec] = &[
         name: "桌面 AI 助手",
         description: "不写代码也能用的 AI 对话工具",
         group: CapabilityGroup::AiTooling,
-        // `Program`, not `OnPath`, and that distinction is load-bearing. Claude
-        // Desktop is a GUI application with no CLI — it has no `--version` and is
-        // never callable by name. Requiring it on PATH made the capability report
-        // "重启终端，让 Claude Desktop 进入 PATH" on a machine where it was
-        // correctly installed and working. Demanding something that cannot exist
-        // is a worse error than missing a real one, because the advice is
-        // un-followable.
-        requires: &[Requires::required(Requirement::Program(
-            SoftwareId::ClaudeDesktop,
-        ))],
+        // `Program`, not `OnPath`, and that distinction is load-bearing. These
+        // are GUI applications with no CLI — they have no `--version` and are
+        // never callable by name. Requiring Claude Desktop on PATH made the
+        // capability report "重启终端，让 Claude Desktop 进入 PATH" on a machine
+        // where it was correctly installed and working. Demanding something that
+        // cannot exist is a worse error than missing a real one, because the
+        // advice is un-followable.
+        //
+        // Any one client is enough. Cherry Studio, ChatGPT, 豆包 and the rest
+        // are the same kind of tool; requiring Claude Desktop specifically is
+        // what made a student who wanted Cherry Studio get told to install
+        // Claude first.
+        requires: &[Requires::any_of(DESKTOP_ASSISTANTS)],
         outcome: "可以随时打开 AI 助手提问",
     },
     CapabilitySpec {
@@ -435,9 +591,12 @@ pub const TABLE: &[CapabilitySpec] = &[
         name: "编辑器内 AI 辅助",
         description: "在编辑器里直接补全、解释和修改代码",
         group: CapabilityGroup::AiTooling,
+        // VS Code (or another editor) plus *any* assistant. Continue is the
+        // in-editor extension; the CLI assistants pair with the editor from
+        // the terminal. None of them is the only acceptable one.
         requires: &[
-            Requires::required(Requirement::OnPath(SoftwareId::Vscode)),
-            Requires::required(Requirement::OnPath(SoftwareId::ClaudeCode)),
+            Requires::any_of_on_path(EDITORS),
+            Requires::any_of(EDITOR_ASSISTANTS),
         ],
         outcome: "编辑器里已有 AI 助手",
     },
@@ -468,6 +627,36 @@ pub const TABLE: &[CapabilitySpec] = &[
     },
 ];
 
+/// The AI vendor this requirement names by name, if it does so as a hard
+/// requirement.
+///
+/// Extracted so the validator and the guard test share one predicate: a rule
+/// stated in two places is a rule that will be enforced in one of them. The test
+/// calls this directly with the *broken* requirement the product actually
+/// shipped, which is what makes the guard's teeth demonstrable rather than
+/// asserted.
+fn required_ai_vendor_by_name(req: Requires) -> Option<SoftwareId> {
+    if req.necessity != Necessity::Required {
+        return None;
+    }
+    match req.requirement {
+        Requirement::Program(id) | Requirement::OnPath(id) if AI_VENDORS.contains(&id) => Some(id),
+        _ => None,
+    }
+}
+
+/// Whether a requirement names `program`, including as one alternative of an
+/// `AnyOf`. A disjunction that omitted the alternatives would make "what does
+/// installing Cherry Studio buy me?" return nothing for a tool that does
+/// satisfy the desktop-assistant capability.
+fn requirement_mentions(requirement: Requirement, program: SoftwareId) -> bool {
+    match requirement {
+        Requirement::Program(id) | Requirement::OnPath(id) => id == program,
+        Requirement::AnyOf { programs, .. } => programs.contains(&program),
+        Requirement::Fact(_) | Requirement::Manual(_) => false,
+    }
+}
+
 /// The row for `id`, if the table has one.
 pub fn lookup(id: CapabilityId) -> Option<&'static CapabilitySpec> {
     TABLE.iter().find(|spec| spec.id == id)
@@ -482,10 +671,7 @@ pub fn depending_on(program: SoftwareId) -> Vec<&'static CapabilitySpec> {
     TABLE
         .iter()
         .filter(|spec| {
-            spec.requires.iter().any(|r| match r.requirement {
-                Requirement::Program(p) | Requirement::OnPath(p) => p == program,
-                _ => false,
-            })
+            spec.requires.iter().any(|r| requirement_mentions(r.requirement, program))
         })
         .collect()
 }
@@ -978,6 +1164,69 @@ fn evaluate(facts: &EnvironmentFacts, req: Requires) -> RequirementOutcome {
             }
         }
 
+        Requirement::AnyOf {
+            programs,
+            needs_path,
+        } => {
+            let mut any_uncertain = false;
+            let mut met = false;
+            let mut present: Vec<&str> = Vec::new();
+            for id in programs {
+                let presence = facts.programs.get(id).copied().unwrap_or(ProgramPresence {
+                    installed: false,
+                    on_path: false,
+                    uncertain: true,
+                });
+                if presence.uncertain {
+                    any_uncertain = true;
+                    continue;
+                }
+                let ok = presence.installed && (!needs_path || presence.on_path);
+                if ok {
+                    met = true;
+                    present.push(entry_display_name(*id));
+                }
+            }
+
+            let names: Vec<&str> = programs.iter().map(|id| entry_display_name(*id)).collect();
+            let joined = names.join("、");
+            // A lookup miss on every alternative means we never probed them, not
+            // that the student has none. Reporting "未安装" there would tell them
+            // to install something we simply did not look for.
+            let unknown = !met && any_uncertain && present.is_empty();
+
+            RequirementOutcome {
+                key: format!(
+                    "anyOf.{}",
+                    programs
+                        .iter()
+                        .map(|id| id.key())
+                        .collect::<Vec<_>>()
+                        .join("+")
+                ),
+                label: if needs_path {
+                    format!("已安装并可在命令行调用：{joined} 之一")
+                } else {
+                    format!("已安装：{joined} 之一")
+                },
+                necessity,
+                met,
+                unknown,
+                observed: if met {
+                    format!("已就绪（{}）", present.join("、"))
+                } else if unknown {
+                    "检测未完成".to_string()
+                } else {
+                    "都未安装".to_string()
+                },
+                remedy: if met || unknown {
+                    None
+                } else {
+                    Some(format!("安装其中任意一个：{joined}"))
+                },
+            }
+        }
+
         Requirement::Manual(key) => {
             // A manual check has three outcomes, not two. `None` — we could not
             // read it — becomes `unknown`, which renders as "无法确认" and never
@@ -1044,6 +1293,12 @@ pub fn from_profile(profile: &Profile) -> Vec<CapabilityId> {
             spec.requires.iter().all(|req| match req.requirement {
                 Requirement::Program(id) | Requirement::OnPath(id) => {
                     profile.software.contains(&id)
+                }
+                // A disjunction is aimed at when the profile installs *any* of
+                // the alternatives. Requiring all of them would turn "any AI
+                // assistant" back into "every AI assistant".
+                Requirement::AnyOf { programs, .. } => {
+                    programs.iter().any(|id| profile.software.contains(id))
                 }
                 // Hardware and manual requirements are decided by the machine,
                 // not by the profile, so they never exclude a capability here.
@@ -1151,17 +1406,34 @@ pub fn validate_table() -> Vec<String> {
         }
         for req in spec.requires {
             match req.requirement {
-                Requirement::OnPath(id) => {
-                    // A program with no CLI can never be on PATH, so requiring it
-                    // produces advice the student cannot follow ("重启终端，让
-                    // Claude Desktop 进入 PATH"). The catalog knows which programs
-                    // have a CLI — that is what `version_args` records — so the
-                    // check is structural rather than a note in a comment.
-                    if !programs_with_a_cli().contains(&id) {
+                Requirement::Program(id) | Requirement::OnPath(id) => {
+                    // **The recurrence guard.** A *required* AI tool named by
+                    // name is how "install Claude Code or you cannot continue"
+                    // got into the product: the assistant was a requirement, and
+                    // the only way to satisfy it was one vendor. An assistant is
+                    // a category, so it must be written as `AnyOf` (or as an
+                    // optional requirement, where declining it costs nothing).
+                    //
+                    // This is checked here, in the validator, rather than only in
+                    // a test, so the rule holds wherever the table is validated.
+                    if let Some(vendor) = required_ai_vendor_by_name(*req) {
                         problems.push(format!(
-                            "{} requires {:?} on PATH, but it has no CLI to call",
-                            spec.id, id
+                            "{} requires the AI tool {:?} by name; require it as any-of so another vendor can satisfy it",
+                            spec.id, vendor
                         ));
+                    }                    if matches!(req.requirement, Requirement::OnPath(_)) {
+                        // A program with no CLI can never be on PATH, so requiring
+                        // it produces advice the student cannot follow ("重启终端，
+                        // 让 Claude Desktop 进入 PATH"). The catalog knows which
+                        // programs have a CLI — that is what `version_args`
+                        // records — so the check is structural rather than a note
+                        // in a comment.
+                        if !programs_with_a_cli().contains(&id) {
+                            problems.push(format!(
+                                "{} requires {:?} on PATH, but it has no CLI to call",
+                                spec.id, id
+                            ));
+                        }
                     }
                 }
                 Requirement::Fact(key) if key.unit().is_empty() => {
@@ -1176,7 +1448,22 @@ pub fn validate_table() -> Vec<String> {
                         ));
                     }
                 }
-                Requirement::Fact(_) | Requirement::Program(_) | Requirement::Manual(_) => {}
+                Requirement::AnyOf { programs, needs_path } => {
+                    if programs.is_empty() {
+                        problems.push(format!("{} has an empty any-of requirement", spec.id));
+                    }
+                    if needs_path {
+                        for id in programs {
+                            if !programs_with_a_cli().contains(id) {
+                                problems.push(format!(
+                                    "{} requires {:?} on PATH, but it has no CLI to call",
+                                    spec.id, id
+                                ));
+                            }
+                        }
+                    }
+                }
+                Requirement::Fact(_) | Requirement::Manual(_) => {}
             }
         }
     }
@@ -1248,6 +1535,100 @@ mod tests {
         assert!(
             programs_with_a_cli().contains(&SoftwareId::Git),
             "a program with a CLI must be in the list, or the guard rejects nothing"
+        );
+    }
+
+    #[test]
+    fn no_capability_requires_one_ai_vendor_by_name() {
+        // The measured failure: a student who wanted Cherry Studio was told to
+        // install Claude Code, and declining Claude blocked the install. The
+        // mechanism was a capability that required one vendor as a Program or
+        // OnPath. A category ("any CLI assistant") is expressed as AnyOf and is
+        // allowed; naming one vendor as the only answer is not.
+        for spec in TABLE {
+            for req in spec.requires {
+                assert_eq!(
+                    required_ai_vendor_by_name(*req),
+                    None,
+                    "{} requires one AI vendor by name",
+                    spec.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_single_vendor_guard_has_teeth() {
+        // A guard nobody has seen fail is not a guard. These are the two
+        // requirements the product actually shipped, replayed through the exact
+        // predicate `validate_table` uses. If the guard is ever loosened, this
+        // fails before a student is told to install Claude again.
+        let was_shipped = Requires {
+            requirement: Requirement::OnPath(SoftwareId::ClaudeCode),
+            necessity: Necessity::Required,
+            threshold: 0.0,
+        };
+        assert_eq!(
+            required_ai_vendor_by_name(was_shipped),
+            Some(SoftwareId::ClaudeCode),
+            "the guard no longer catches the requirement that caused the bug"
+        );
+
+        let also_shipped = Requires::required(Requirement::Program(SoftwareId::ClaudeDesktop));
+        assert_eq!(
+            required_ai_vendor_by_name(also_shipped),
+            Some(SoftwareId::ClaudeDesktop)
+        );
+
+        // And the two permitted forms stay permitted, or the guard would reject
+        // the fix itself: a category, and an optional vendor.
+        let category = Requires::any_of_on_path(CLI_ASSISTANTS);
+        assert_eq!(required_ai_vendor_by_name(category), None);
+
+        let declined_freely = Requires {
+            requirement: Requirement::OnPath(SoftwareId::ClaudeCode),
+            necessity: Necessity::Optional,
+            threshold: 0.0,
+        };
+        assert_eq!(
+            required_ai_vendor_by_name(declined_freely),
+            None,
+            "an optional assistant costs nothing to decline"
+        );
+
+        // A non-AI program required by name is still fine — this guard is about
+        // vendors being *substitutable*, not about naming programs.
+        let node = Requires::required(Requirement::OnPath(SoftwareId::Node));
+        assert_eq!(required_ai_vendor_by_name(node), None);
+    }
+
+    #[test]
+    fn cherry_studio_alone_satisfies_the_desktop_assistant() {
+        let mut facts = EnvironmentFacts::default();
+        for id in SoftwareId::ALL {
+            facts.programs.insert(
+                id,
+                ProgramPresence {
+                    installed: false,
+                    on_path: false,
+                    uncertain: false,
+                },
+            );
+        }
+        facts.programs.insert(
+            SoftwareId::CherryStudio,
+            ProgramPresence {
+                installed: true,
+                on_path: false,
+                uncertain: false,
+            },
+        );
+        let status = status_of(&facts, "ai-desktop-assistant");
+        assert_eq!(status.status, "available", "{}", status.summary);
+        assert!(
+            !status.summary.contains("Claude"),
+            "a machine with Cherry Studio must not be told to install Claude: {}",
+            status.summary
         );
     }
 

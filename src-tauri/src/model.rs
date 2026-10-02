@@ -1131,13 +1131,20 @@ pub struct InstallStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallPlan {
+    /// The scenario the student started from. Empty is legitimate: a plan built
+    /// from hand-picked programs has no profile to belong to, and nothing in the
+    /// engine reads this field.
     pub profile_id: String,
     pub steps: Vec<InstallStep>,
     /// Steps that can start immediately.
     pub ready_count: u32,
     /// Steps that will be skipped because they are already satisfied.
     pub satisfied_count: u32,
-    pub estimated_minutes: u32,
+    /// `None` when no profile supplied a number — the UI then shows no estimate
+    /// rather than a figure invented from a step count. A wrong estimate is a
+    /// promise the run has to break.
+    #[serde(default)]
+    pub estimated_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1459,6 +1466,15 @@ pub enum AppError {
     /// Chinese prose that could be reworded at any time.
     #[error("专业版功能：{reason}")]
     LicenseRequired { reason: String },
+    /// The caller asked for something that is not a meaningful request — an
+    /// empty program selection, for instance.
+    ///
+    /// Its own variant rather than [`AppError::Internal`] because it is the
+    /// *caller's* mistake and the frontend can legitimately provoke it while
+    /// the student is still choosing, which is not an internal fault worth
+    /// reporting as one.
+    #[error("请求无效：{reason}")]
+    InvalidRequest { reason: String },
     #[error("internal error: {0}")]
     Internal(String),
 }

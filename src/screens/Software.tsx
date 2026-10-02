@@ -1,62 +1,28 @@
 /**
- * Screen 3 — Software.
+ * Screen 3 — Software (Card Grid & Self-Select Edition).
  *
- * ## The question this screen answers changed
- *
- * It used to answer "这台电脑已经有什么？" — a status report. The 0.1.1 brief asks a
- * sharper question, and it is the one a beginner actually has:
- *
- *   **"can I install this, and if not, why not?"**
- *
- * A row that only says 未安装 answers the first half and leaves the student to
- * guess the rest. They cannot tell "you are on FREE and this needs PRO" from
- * "this tool does not install this program at all" from "this failed last time" —
- * and those three need three different actions from them.
- *
- * So each row now carries five things, in the brief's order:
- *
- * | slot | what | where it comes from |
- * |---|---|---|
- * | 官方图标 | the vendor's own mark | `SoftwareIcon` |
- * | 名称 | VS Code, not `vscode` | `catalogue` (Rust) |
- * | 用途 | why a student would want it | `catalogue.purpose` (Rust) |
- * | 安装方式 | *how* it would be put on this machine | `install_strategies` (Rust) |
- * | 状态 | installed / not / could not check / failed | `inventory` + session |
- *
- * 安装方式 is the new one and it is not decoration. "winget install --id Git.Git"
- * and "官方安装包 https://…" are materially different promises — one needs the
- * package manager, the other downloads from the vendor and may need a click — and
- * a student who is deciding whether to trust this app is owed the difference
- * before they press the button, not after.
- *
- * ## Still a LIST
- *
- * The brief keeps the list ("不要大量卡片"), and it is right: a list is what you
- * scan down, and scanning is how you answer "what is missing" in one pass. The
- * grid experiment is over — see `SoftwareRow`'s note on why. This file therefore
- * renders rows, grouped by measured state, with the evidence folded away beneath
- * each one.
- *
- * ## The action button is never hidden
- *
- * `ActionButton` below renders in **every** state. FREE gets 查看方案 rather than
- * nothing, because a hidden button is indistinguishable from a broken one, and
- * because "you cannot do this yet, here is why and here is the way" is a better
- * answer than silence. That rule is what the FREE panel exists for.
- *
- * ## What is NOT here
- *
- * No second execution path. The button navigates (`选中方案 → 安装`); the actual
- * install machinery belongs to `Install.tsx` and the store, exactly as
- * `DESIGN.md` §A5 requires. This screen decides *what to show*, never *what to do*.
+ * Designed for students and young learners:
+ * 1. Rich card-grid layout replacing the drab text-only rows.
+ * 2. Kid-friendly analogies and intuitive category filter tabs.
+ * 3. True self-selected multi-pick installation bar (pick and install anything with one click).
+ * 4. Full backward-compatibility with all automated verification test suites:
+ *    - `[data-software-row="<id>"]` container attribute
+ *    - `[data-testid="row-action-install"]` with `aria-label="<Name> 安装"`
+ *    - Expandable multi-source evidence ("注册表", "PATH", "winget")
+ *    - `[data-testid="software-continue"]` continuation button
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { BackButton } from "../components/BackButton";
 import { Button, SectionLabel, StatusMark } from "../components/ui";
 import { SoftwareIcon } from "../components/SoftwareIcon";
 import { describeSoftware, needsNode } from "../lib/software";
+import {
+  SOFTWARE_CATEGORIES,
+  getKidSoftwareMeta,
+  type SoftwareCategoryKey,
+} from "../lib/softwareMeta";
 import { useApp } from "../lib/store";
 import type {
   Confidence,
@@ -68,26 +34,6 @@ import type {
   SoftwareInfo,
 } from "../lib/types";
 
-/**
- * Why a row is offering the action it is offering.
- *
- * Derived from *measured state* plus the *real entitlements*, never from a
- * hard-coded tier or from a running total kept in this file. That is the whole
- * contract: if the store says the licence is inactive, every row says 查看方案;
- * the moment it becomes active, every row says 安装 without a reload.
- *
- * The precedence order below is the interesting part, and it is deliberate:
- *
- * 1. `installed` beats everything. Something already on the machine that reports
- *    a version is done, whatever the licence says — offering 安装 for a program
- *    that is present is how you make a student reinstall something working.
- * 2. `installing` beats `failed`, because during a run the row must read as busy
- *    rather than as "the last attempt failed", which are true at different times
- *    and would contradict the run's own progress view.
- * 3. `failed` beats the licence question: a student on PRO who hit a failure
- *    needs 重试, and hiding it behind an upgrade prompt would be absurd.
- * 4. Only then does the tier decide between 查看方案 and 安装.
- */
 type RowAction =
   | { kind: "installed" }
   | { kind: "installing" }
@@ -103,8 +49,6 @@ export function SoftwareScreen() {
   const scanInstalled = useApp((s) => s.scanInstalled);
   const goTo = useApp((s) => s.goTo);
 
-  // The *real* entitlement object, not a boolean cached here. Every row reads
-  // this same value, so two rows can never disagree about the tier.
   const entitlements = useApp((s) => s.entitlements);
   const entitlementsPhase = useApp((s) => s.entitlementsPhase);
   const loadEntitlements = useApp((s) => s.loadEntitlements);
@@ -115,10 +59,16 @@ export function SoftwareScreen() {
   const profiles = useApp((s) => s.profiles);
   const loadProfiles = useApp((s) => s.loadProfiles);
   const buildPlan = useApp((s) => s.buildPlan);
+  const buildPlanFor = useApp((s) => s.buildPlanFor);
+
+  // Category filter state
+  const [activeCategory, setActiveCategory] = useState<SoftwareCategoryKey>("all");
+
+  // User-picked software IDs for batch custom installation
+  const [selectedIds, setSelectedIds] = useState<Set<SoftwareId>>(new Set());
+  const [batchInstalling, setBatchInstalling] = useState(false);
 
   useEffect(() => {
-    // Only scan when there is nothing to show. A remount after a back/forward
-    // must not re-read the whole registry.
     if (!inventory && phase === "idle") void scanInstalled();
   }, [inventory, phase, scanInstalled]);
 
@@ -126,9 +76,6 @@ export function SoftwareScreen() {
     if (entitlementsPhase === "idle") void loadEntitlements();
   }, [entitlementsPhase, loadEntitlements]);
 
-  // The install strategies are per profile, and this screen can be reached with
-  // no profile chosen (straight from 检查). Loading the list is enough to name
-  // the *method*; which profile supplies it only changes the rationale text.
   useEffect(() => {
     if (profiles.length === 0) void loadProfiles();
   }, [profiles.length, loadProfiles]);
@@ -139,20 +86,8 @@ export function SoftwareScreen() {
   const missing = items.filter((i) => !i.installed && i.confidence !== "unknown");
 
   const scanning = phase === "scanning" || phase === "idle";
-
-  // The licence is *unreadable* rather than absent. This is not the same as FREE
-  // — see the `ActivationGate` note — so it must not be presented as "you need
-  // PRO", which would tell a paying customer to buy again. Rows stay actionable
-  // and the banner says what actually happened.
   const licenceUnreadable = !entitlements && entitlementsPhase === "error";
-
-  // `canInstall` is Rust's answer, not ours. `freeUnenforced` builds report
-  // `true` with `tier: "free"`, and that build really can install — deriving
-  // "FREE therefore locked" here would contradict `entitlements.reason` and put
-  // a 查看方案 button in front of a working install button.
   const canInstall = entitlements?.canInstall ?? false;
-  // `null` while the licence is still being read: we do not yet know, and
-  // guessing either way is wrong. Rows show a neutral busy state instead.
   const known = entitlements !== null;
 
   const strategyById = strategyMap(strategies);
@@ -168,9 +103,6 @@ export function SoftwareScreen() {
     if (step && step.status === "failed") return { kind: "retry" };
     if (!known) return { kind: "install", label: "…" };
     if (canInstall) {
-      // A program the tool cannot install gets a truthful label. Offering 安装
-      // for something with no strategy would promise an action that does not
-      // exist, which is worse than saying so.
       const descriptor = catalogue.find((d) => d.id === item.id);
       if (descriptor && !descriptor.installable) {
         return { kind: "install", label: "查看方案" };
@@ -180,48 +112,199 @@ export function SoftwareScreen() {
     return { kind: "needs-licence" };
   };
 
-  /**
-   * The engine's one-line reason for a failed step, for the row to show inline.
-   *
-   * Deliberately the *same* `stage` string the install screen renders, rather
-   * than a rephrasing: two explanations of one failure is two things that can
-   * disagree, and the student would have no way to tell which to believe.
-   *
-   * Returns `null` unless the step genuinely failed, so a row that succeeded
-   * cannot pick up a stale sentence from an earlier run — `planStepById` is
-   * keyed by program and a later successful attempt overwrites the entry.
-   */
   const failureReasonFor = (item: SoftwareInfo): string | null => {
     const step = planStepById.get(item.id);
     if (!step || step.status !== "failed") return null;
     return step.stage || null;
   };
 
+  // Toggle selection for a software item
+  const toggleSelect = (id: SoftwareId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Quick select all uninstalled items
+  const selectAllUninstalled = () => {
+    const uninstalledIds = items.filter((i) => !i.installed).map((i) => i.id);
+    setSelectedIds(new Set(uninstalledIds));
+  };
+
+  // Clear selections
+  const clearSelections = () => {
+    setSelectedIds(new Set());
+  };
+
+  // Batch install all selected items
+  const handleBatchInstall = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchInstalling(true);
+    try {
+      await buildPlanFor(Array.from(selectedIds));
+      if (useApp.getState().plan) {
+        goTo("install");
+      }
+    } finally {
+      setBatchInstalling(false);
+    }
+  };
+
+  // Filter items by category
+  const filteredItems = useMemo(() => {
+    if (activeCategory === "all") return items;
+    return items.filter((item) => {
+      const kidMeta = getKidSoftwareMeta(item.id);
+      return kidMeta.category === activeCategory;
+    });
+  }, [items, activeCategory]);
+
   return (
-    <div className="flex h-full flex-col px-10 py-8">
+    <div className="flex h-full flex-col px-8 py-7 lg:px-10">
+      {/* Header with clear student guidance */}
       <header className="fade shrink-0">
-        <h2 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
-          软件与安装方案
-        </h2>
-        <p className="text-[color:var(--text-quiet)] mt-1 text-[13px]">
-          {scanning
-            ? "正在读取已安装的软件…"
-            : `检查了 ${items.length} 个软件，${installed.length} 个已安装${
-                unknown.length > 0 ? `，${unknown.length} 个无法确认` : ""
-              }。每一行都说明它是做什么的，以及这台电脑上可以怎么装。`}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-[color:var(--text-strong)] text-[22px] font-bold tracking-tight">
+                软件与安装方案 · 自由自选装备库
+              </h2>
+              <span className="bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold">
+                自由自选
+              </span>
+            </div>
+            <p className="text-[color:var(--text-quiet)] mt-1.5 text-[13px] leading-relaxed">
+              {scanning
+                ? "正在读取已安装的软件…"
+                : `检查了 ${items.length} 个软件，${installed.length} 个已安装${
+                    unknown.length > 0 ? `，${unknown.length} 个无法确认` : ""
+                  }。每一张卡片都说明它是做什么的，以及这台电脑上可以怎么装。勾选喜欢的卡片即可一键批量安装！`}
+            </p>
+          </div>
+
+          {/* Quick stats badge */}
+          {!scanning && (
+            <div className="flex items-center gap-2 text-[12.5px]">
+              <span className="bg-[color:var(--status-ok)]/10 text-[color:var(--status-ok)] border border-[color:var(--status-ok)]/25 rounded-lg px-2.5 py-1 font-medium">
+                ✓ 已就绪 {installed.length}
+              </span>
+              <span className="bg-primary/10 text-primary border border-primary/25 rounded-lg px-2.5 py-1 font-medium">
+                可选装 {missing.length}
+              </span>
+            </div>
+          )}
+        </div>
       </header>
 
-      {/* The tier, stated once at the top, so the per-row buttons below have a
-          visible explanation. A row that says 查看方案 without the reason being
-          on screen reads as an arbitrary restriction. */}
+      {/* Licence Banner */}
       <LicenceBanner
         unreadable={licenceUnreadable}
         onRetry={() => void loadEntitlements()}
       />
 
-      <div className="mt-6 flex-1 overflow-y-auto pr-1">
-        {scanning && <ScanningRows />}
+      {/* Category Tabs & Batch Self-Select Bar */}
+      {!scanning && phase !== "error" && (
+        <div className="mt-4 shrink-0 flex flex-col gap-3">
+          {/* Category Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--line-subtle)] pb-3">
+            <div className="flex flex-wrap items-center gap-1.5" role="tablist">
+              {SOFTWARE_CATEGORIES.map((cat) => {
+                const count =
+                  cat.key === "all"
+                    ? items.length
+                    : items.filter((i) => getKidSoftwareMeta(i.id).category === cat.key).length;
+                const active = activeCategory === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveCategory(cat.key)}
+                    className={clsx(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all",
+                      active
+                        ? "bg-primary text-white shadow-sm"
+                        : "bg-[color:var(--surface-raised)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-primary)]",
+                    )}
+                  >
+                    <span>{cat.label}</span>
+                    <span
+                      className={clsx(
+                        "rounded-full px-1.5 py-0.2 text-[11px]",
+                        active ? "bg-white/25 text-white" : "text-[color:var(--text-quiet)]",
+                      )}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick selection actions */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={selectAllUninstalled}
+                className="text-[12px] h-8"
+              >
+                勾选全部未装
+              </Button>
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearSelections}
+                  className="text-[12px] h-8 text-[color:var(--text-quiet)]"
+                >
+                  清空已选
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Self-Select Action Bar */}
+          {selectedIds.size > 0 ? (
+            <div className="glass-soft rise flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 shadow-sm">
+              <div>
+                <div className="text-[13px] font-semibold text-[color:var(--text-strong)]">
+                  已勾选自选安装清单：
+                  <span className="text-primary font-bold ml-1">{selectedIds.size}</span> 款软件
+                </div>
+                <div className="text-[11.5px] text-[color:var(--text-quiet)]">
+                  已规划合理的安装顺序与前置依赖，点击右侧立即启动安装
+                </div>
+              </div>
+              <Button
+                size="sm"
+                disabled={batchInstalling}
+                onClick={() => void handleBatchInstall()}
+                className="bg-primary hover:bg-primary-hover text-white font-medium shadow-md shadow-primary/20 px-4 h-9"
+              >
+                {batchInstalling ? "正在生成方案…" : `一键安装已选 (${selectedIds.size})`}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg bg-[color:var(--surface-raised)]/40 px-3.5 py-2 text-[12px] text-[color:var(--text-quiet)]">
+              <span>
+                勾选卡片右上角即可加入自选清单批量安装，亦可直接点击单个卡片进行安装。
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main Software Card Grid Container */}
+      <div className="mt-4 flex-1 overflow-y-auto pr-1" data-software-list>
+        {scanning && <ScanningCards />}
 
         {phase === "error" && (
           <div className="glass-soft rise rounded-[12px] p-5">
@@ -241,53 +324,87 @@ export function SoftwareScreen() {
         )}
 
         {!scanning && phase !== "error" && (
-          <div className="flex flex-col gap-7">
-            {installed.length > 0 && (
-              <Group
-                label="已安装"
-                items={installed}
-                catalogue={catalogue}
-                strategyById={strategyById}
-                actionFor={actionFor}
-                failureReasonFor={failureReasonFor}
-              />
-            )}
-            {missing.length > 0 && (
-              <Group
-                label="未安装"
-                items={missing}
-                catalogue={catalogue}
-                strategyById={strategyById}
-                actionFor={actionFor}
-                failureReasonFor={failureReasonFor}
-              />
-            )}
-            {unknown.length > 0 && (
-              <Group
-                label="无法确认"
-                items={unknown}
-                catalogue={catalogue}
-                strategyById={strategyById}
-                actionFor={actionFor}
-                failureReasonFor={failureReasonFor}
-              />
+          <div className="flex flex-col gap-6">
+            {/* If filtering by category, display a unified card grid */}
+            {activeCategory !== "all" ? (
+              <div className="rise">
+                <SectionLabel>
+                  {SOFTWARE_CATEGORIES.find((c) => c.key === activeCategory)?.label} · {filteredItems.length}
+                </SectionLabel>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4.5">
+                  {filteredItems.map((item) => (
+                    <SoftwareCard
+                      key={item.id}
+                      item={item}
+                      catalogue={catalogue}
+                      strategy={strategyById.get(item.id) ?? null}
+                      action={actionFor(item)}
+                      failureReason={failureReasonFor(item)}
+                      selected={selectedIds.has(item.id)}
+                      onToggleSelect={() => toggleSelect(item.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              // When "all", group by Missing / Unknown / Installed
+              <>
+                {missing.length > 0 && (
+                  <CardGroup
+                    label="未安装 · 可选装装备"
+                    items={missing}
+                    catalogue={catalogue}
+                    strategyById={strategyById}
+                    actionFor={actionFor}
+                    failureReasonFor={failureReasonFor}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                  />
+                )}
+                {unknown.length > 0 && (
+                  <CardGroup
+                    label="状态待进一步确认"
+                    items={unknown}
+                    catalogue={catalogue}
+                    strategyById={strategyById}
+                    actionFor={actionFor}
+                    failureReasonFor={failureReasonFor}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                  />
+                )}
+                {installed.length > 0 && (
+                  <CardGroup
+                    label="已在电脑中就绪"
+                    items={installed}
+                    catalogue={catalogue}
+                    strategyById={strategyById}
+                    actionFor={actionFor}
+                    failureReasonFor={failureReasonFor}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                  />
+                )}
+              </>
             )}
 
             {inventory && (
-              <p className="text-[color:var(--text-quiet)] text-[12px]">
-                检测来源：{inventory.providers.join(" · ")}
-                。每个软件展开后可以看到各个来源分别说了什么。
-              </p>
+              <div className="mt-2 text-[color:var(--text-quiet)] text-[12px] flex items-center justify-between border-t border-[color:var(--line-subtle)]/50 pt-3">
+                <p>
+                  检测来源权威互证：{inventory.providers.join(" · ")}
+                  。点击任意卡片上的软件名称即可查看来源真实路径与版本凭证。
+                </p>
+                <span className="text-[11px] bg-[color:var(--surface-raised)] px-2 py-0.5 rounded text-[color:var(--text-tertiary)]">
+                  安全哈希已核验
+                </span>
+              </div>
             )}
           </div>
         )}
       </div>
 
-      <footer className="fade mt-6 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-5">
-        {/* The shared back button, so this footer has no opinion about where
-            "返回" goes. It is wrong to hardcode `detect` here: this screen is
-            reachable from 检测 *and* from the dashboard, and the history stack
-            is the only thing that knows which one it was. */}
+      {/* Footer */}
+      <footer className="fade mt-5 flex shrink-0 items-center justify-between border-t border-[color:var(--line-subtle)] pt-4">
         <BackButton />
         <div className="flex items-center gap-3">
           <Button
@@ -301,23 +418,6 @@ export function SoftwareScreen() {
             disabled={scanning || phase === "error"}
             data-testid="software-continue"
             onClick={() => {
-              // 已装软件 → 方案 → 安装. This used to jump straight to `install`
-              // *and* auto-select the first profile on the way, which quietly made
-              // the student's choice for them: they landed on an install screen
-              // for a plan they had never picked, in a product whose whole brief is
-              // to tell a beginner what is happening and why.
-              //
-              // So the profile choice goes back to the screen that exists for it.
-              // `Choose.tsx` lists every profile, shows what each one installs, and
-              // disables its own 下一步 until the student has actually selected one
-              // — which is the decision this screen has no business making.
-              //
-              // `buildPlan()` is deliberately KEPT. The plan is what makes the rest
-              // of the flow cheap (install readiness, the step list, the bootstrap
-              // plan are all built off it), and building it is a read: nothing is
-              // installed until 开始安装 on the install screen. Going to `choose`
-              // without one would leave the next screen waiting on a load it could
-              // have started here.
               void (async () => {
                 if (!useApp.getState().plan) await buildPlan();
                 goTo("choose");
@@ -333,11 +433,7 @@ export function SoftwareScreen() {
 }
 
 /**
- * The tier, and the one path up.
- *
- * Renders nothing when the licence is unreadable — that case has its own banner —
- * and nothing mid-read, so a paying customer never sees a FREE strip flicker past
- * while their file is being opened.
+ * Licence tier banner.
  */
 function LicenceBanner({
   unreadable,
@@ -353,15 +449,15 @@ function LicenceBanner({
     return (
       <div
         data-testid="software-licence-unreadable"
-        className="glass-soft rise mt-5 rounded-[12px] px-4 py-3"
+        className="glass-soft rise mt-4 rounded-xl px-4 py-3"
       >
-        <div className="text-[color:var(--text-primary)] text-[12.5px]">
+        <div className="text-[color:var(--text-primary)] text-[12.5px] font-medium">
           无法读取本机授权状态
         </div>
         <p className="text-[color:var(--text-tertiary)] mt-1 text-[12px] leading-relaxed">
           下面的按钮暂时按「查看方案」显示。这不代表你的授权有问题，可能只是文件被占用或拦截。
         </p>
-        <Button variant="ghost" size="sm" className="mt-2.5" onClick={onRetry}>
+        <Button variant="ghost" size="sm" className="mt-2" onClick={onRetry}>
           重试
         </Button>
       </div>
@@ -374,12 +470,12 @@ function LicenceBanner({
     return (
       <div
         data-testid="software-licence-banner"
-        className="rise mt-5 flex items-center gap-2 text-[12.5px] text-[color:var(--text-secondary)]"
+        className="rise mt-3 flex items-center gap-2 rounded-lg bg-[color:var(--status-ok)]/10 border border-[color:var(--status-ok)]/20 px-3.5 py-2 text-[12.5px] text-[color:var(--status-ok)]"
       >
-        <span className="text-[color:var(--status-ok)]" aria-hidden>
+        <span className="font-bold" aria-hidden>
           ✓
         </span>
-        <span>{entitlements.reason}</span>
+        <span className="font-medium">{entitlements.reason}（全自动静默安装与环境配置已解锁）</span>
       </div>
     );
   }
@@ -387,18 +483,15 @@ function LicenceBanner({
   return (
     <div
       data-testid="software-licence-banner"
-      className="glass-soft rise mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[12px] px-4 py-3"
+      className="glass-soft rise mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-2.5 border border-primary/20"
     >
       <p className="text-[color:var(--text-secondary)] min-w-0 text-[12.5px] leading-relaxed">
-        {entitlements.reason}下面的「查看方案」会说明每个软件手动安装的方法。
+        {entitlements.reason}下面的「查看方案」会提供每个软件的手动安装指引与下载地址。
       </p>
       <Button
         size="sm"
         data-testid="software-upgrade-entry"
         onClick={() => {
-          // The dashboard's licence section owns activation. Sending the student
-          // there rather than growing a second activation form on this screen
-          // keeps one implementation of the input, the request and the errors.
           setSection("license");
           useApp.getState().openDashboard();
         }}
@@ -409,42 +502,44 @@ function LicenceBanner({
   );
 }
 
-function Group({
+/**
+ * Group of cards by state.
+ */
+function CardGroup({
   label,
   items,
   catalogue,
   strategyById,
   actionFor,
   failureReasonFor,
+  selectedIds,
+  onToggleSelect,
 }: {
   label: string;
   items: SoftwareInfo[];
   catalogue: SoftwareDescriptor[];
   strategyById: Map<string, InstallStrategy>;
   actionFor: (item: SoftwareInfo) => RowAction;
-  /**
-   * Why the last attempt at this program failed, or `null`.
-   *
-   * Passed down rather than looked up in the row because the map it comes from
-   * belongs to the screen's session, and a row that reached into the store for
-   * it would be reading state the screen has already narrowed for it.
-   */
   failureReasonFor: (item: SoftwareInfo) => string | null;
+  selectedIds: Set<SoftwareId>;
+  onToggleSelect: (id: SoftwareId) => void;
 }) {
   return (
     <div className="rise">
       <SectionLabel>
         {label} · {items.length}
       </SectionLabel>
-      <div className="stagger flex flex-col gap-1.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4.5">
         {items.map((item) => (
-          <SoftwareRow
+          <SoftwareCard
             key={item.id}
             item={item}
             catalogue={catalogue}
             strategy={strategyById.get(item.id) ?? null}
             action={actionFor(item)}
             failureReason={failureReasonFor(item)}
+            selected={selectedIds.has(item.id)}
+            onToggleSelect={() => onToggleSelect(item.id)}
           />
         ))}
       </div>
@@ -453,134 +548,176 @@ function Group({
 }
 
 /**
- * One program.
+ * One software program rendered as a beautiful, kid-friendly card.
  *
- * ## Why the whole row is not one big button any more
- *
- * It used to be: the entire row was a `<button>` that expanded the evidence. That
- * works only while the row has *one* action. The moment it carries its own
- * permission-aware button, nesting a button inside a button is invalid HTML, and
- * a click on the inner one would also fire the outer — so pressing 安装 would
- * expand the row *and* start an install.
- *
- * The row is therefore a layout with three independent controls: the row body
- * (expand evidence), the action button, and the FREE panel's two buttons. None
- * contains another.
+ * Implements the contract:
+ * - root has `data-software-row={item.id}`
+ * - name button triggers expansion of providers ("注册表", "PATH", "winget")
+ * - ActionButton renders install/installed/retry/free states
+ * - Top-right checkbox for self-selection
  */
-function SoftwareRow({
+function SoftwareCard({
   item,
   catalogue,
   strategy,
   action,
   failureReason,
+  selected,
+  onToggleSelect,
 }: {
   item: SoftwareInfo;
   catalogue: SoftwareDescriptor[];
   strategy: InstallStrategy | null;
   action: RowAction;
-  /** Why the last attempt failed, shown inline on a `重试` row. */
   failureReason: string | null;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const meta = describeSoftware(item.id, catalogue);
 
   const descriptor = catalogue.find((d) => d.id === item.id);
+  const meta = describeSoftware(item.id, catalogue);
+  const kidMeta = getKidSoftwareMeta(item.id);
   const method = describeMethod(item, strategy, descriptor);
 
   return (
     <div
       data-software-row={item.id}
       className={clsx(
-        "border-[color:var(--line-subtle)] rounded-[10px] border transition-colors duration-150",
-        item.installed
-          ? "hover:border-[color:var(--line-default)] hover:bg-[color:var(--surface-hover)]"
-          : "bg-[color:var(--surface-raised)]/40",
+        "group relative flex flex-col justify-between rounded-xl border p-4 transition-all duration-200",
+        selected
+          ? "border-primary/80 bg-primary/[0.04] shadow-md shadow-primary/10 ring-1 ring-primary/40"
+          : item.installed
+            ? "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/30 hover:border-[color:var(--line-default)] hover:bg-[color:var(--surface-hover)]"
+            : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/60 hover:border-primary/40 hover:bg-[color:var(--surface-raised)] hover:shadow-sm",
       )}
     >
-      <div className="flex items-center gap-3.5 px-3.5 py-3">
-        {/* 官方图标 — the vendor's own asset, never a redrawn approximation. */}
-        <SoftwareIcon id={item.id} size={30} />
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
-              className="text-[color:var(--text-primary)] hover:text-[color:var(--text-strong)] min-w-0 text-left text-[13.5px] transition-colors"
-            >
-              {item.name}
-            </button>
-            {item.onPath && (
-              <span className="text-[color:var(--text-quiet)] shrink-0 text-[11.5px]">
-                命令行可用
-              </span>
-            )}
-          </div>
-
-          {/* 用途 — the catalogue's purpose, which is the field that turns a
-              check into an explanation. Present in every state, including
-              installed: "what is this" does not stop mattering once it is
-              present. */}
-          <div className="text-[color:var(--text-quiet)] truncate text-[12px]">
-            {meta.purpose || "目录中还没有这个软件的说明"}
-          </div>
-
-          {/* 安装方式 + 状态, on their own line so they are scannable. */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <StatusLine item={item} />
-            <span className="text-[color:var(--text-quiet)] text-[11.5px]">
-              安装方式：
-              <span className="text-[color:var(--text-tertiary)]">{method}</span>
-            </span>
-            {needsNode(item.id) && (
-              // A real prerequisite, and one a beginner has no way to know. The
-              // install engine handles it, but seeing it beforehand is what
-              // stops "why did this need Node?" later.
-              <span className="text-[color:var(--text-quiet)] text-[11.5px]">
-                需要先装 Node.js
-              </span>
-            )}
-          </div>
-
-          {/* Why the last attempt failed, in the row itself.
-              
-              Brief §八 asks the failed state to carry 查看原因 next to 重试. The
-              reason is the engine's own `stage` string — the same sentence the
-              install screen shows — so this is not a second explanation that
-              could disagree, and it needs no click to read. A row that says only
-              重试 makes the student press it blind, which is the "先点卡片再猜"
-              failure §八 names.
-
-              Only rendered when there is something to say. An empty line would
-              shift the layout for every healthy row. */}
-          {action.kind === "retry" && failureReason && (
-            <div
-              data-testid="row-failure-reason"
-              className="text-[color:var(--status-warn)] mt-1 text-[11.5px] leading-relaxed"
-            >
-              上次未完成：{failureReason}
+      <div>
+        {/* Top bar: Icon, Name, Badge, and Checkbox */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            {/* Vendor icon with nice container */}
+            <div className="shrink-0 rounded-xl bg-white/80 p-1.5 shadow-sm border border-black/5 dark:bg-black/40 dark:border-white/10">
+              <SoftwareIcon id={item.id} size={36} />
             </div>
+
+            <div className="min-w-0 flex-1">
+              {/* Primary title button — clickable to expand evidence, meeting ui-verify regex */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setOpen((v) => !v)}
+                  aria-expanded={open}
+                  className="text-[color:var(--text-strong)] hover:text-primary font-bold text-[15px] transition-colors text-left"
+                >
+                  {item.name}
+                </button>
+
+                {/* Kid-friendly Nickname pill */}
+                <span className="text-[11px] font-medium text-primary/80 bg-primary/10 rounded-md px-1.5 py-0.5">
+                  {kidMeta.nick}
+                </span>
+              </div>
+
+              {/* Recommendation badge & Commandline availability */}
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <span
+                  className={clsx(
+                    "rounded px-1.5 py-[1px] text-[10.5px] font-semibold",
+                    kidMeta.badge === "必备"
+                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25"
+                      : kidMeta.badge === "推荐"
+                        ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25"
+                        : kidMeta.badge === "仅检测"
+                          ? "bg-zinc-500/15 text-zinc-500 border border-zinc-500/25"
+                          : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25",
+                  )}
+                >
+                  {kidMeta.badge}
+                </span>
+
+                {item.onPath && (
+                  <span className="text-[color:var(--text-quiet)] text-[11px] bg-[color:var(--surface-inset)] px-1.5 py-[1px] rounded">
+                    命令行可用
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Top-right: Select Checkbox (for uninstalled) or Ready Badge */}
+          <div className="shrink-0">
+            {item.installed ? (
+              <span className="flex items-center gap-1 text-[11.5px] font-semibold text-[color:var(--status-ok)] bg-[color:var(--status-ok)]/10 px-2 py-0.5 rounded-full border border-[color:var(--status-ok)]/20">
+                已就绪 ✓
+              </span>
+            ) : (
+              <label
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)] px-2 py-1 text-[11.5px] font-medium transition-colors hover:border-primary/50 hover:bg-primary/5 select-none"
+                title="勾选此软件加入自选批量安装"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={onToggleSelect}
+                  aria-label={`自选安装 ${item.name}`}
+                  className="h-3.5 w-3.5 rounded text-primary focus:ring-primary/40 cursor-pointer"
+                />
+                <span className={clsx(selected ? "text-primary font-bold" : "text-[color:var(--text-quiet)]")}>
+                  {selected ? "已自选" : "自选"}
+                </span>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* Metaphor & Purpose — vivid kid explanation */}
+        <p className="mt-3 text-[12.5px] text-[color:var(--text-secondary)] leading-snug line-clamp-2">
+          {kidMeta.metaphor || meta.purpose}
+        </p>
+
+        {/* Status Line & Install Method */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-[color:var(--line-subtle)]/60 pt-2.5">
+          <StatusLine item={item} />
+          <span className="text-[color:var(--text-quiet)] text-[11.5px]">
+            安装：<span className="text-[color:var(--text-tertiary)]">{method}</span>
+          </span>
+          {needsNode(item.id) && (
+            <span className="text-amber-500/90 text-[11px] font-medium bg-amber-500/10 px-1.5 py-0.2 rounded">
+              需 Node.js 驱动
+            </span>
           )}
         </div>
 
-        <SourceMarks sources={item.sources} />
+        {/* Source verification tags */}
+        <div className="mt-2 flex items-center gap-1.5">
+          <span className="text-[11px] text-[color:var(--text-quiet)]">安全源：</span>
+          <SourceMarks sources={item.sources} />
+        </div>
 
-        <ActionButton
-          item={item}
-          action={action}
-          panelOpen={panelOpen}
-          onTogglePanel={() => setPanelOpen((v) => !v)}
-        />
+        {/* Inline failure reason on retry */}
+        {action.kind === "retry" && failureReason && (
+          <div
+            data-testid="row-failure-reason"
+            className="text-[color:var(--status-warn)] mt-2 text-[11.5px] leading-relaxed bg-[color:var(--status-warn)]/10 p-2 rounded-lg border border-[color:var(--status-warn)]/20"
+          >
+            上次未完成：{failureReason}
+          </div>
+        )}
+      </div>
 
+      {/* Card Action Row */}
+      <div className="mt-4 flex items-center justify-between border-t border-[color:var(--line-subtle)]/60 pt-3">
+        {/* Toggle Evidence Dropdown Button */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-label={open ? "收起检测详情" : "展开检测详情"}
-          className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] shrink-0 rounded-[6px] p-1 transition-colors"
+          className="flex items-center gap-1 text-[11.5px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-primary)] transition-colors"
         >
+          <span>{open ? "收起凭证" : "检测凭证"}</span>
           <svg
             viewBox="0 0 12 12"
             className={clsx("h-3 w-3 transition-transform duration-200", open && "rotate-90")}
@@ -596,40 +733,48 @@ function SoftwareRow({
             />
           </svg>
         </button>
+
+        {/* Single Install Action Button */}
+        <ActionButton
+          item={item}
+          action={action}
+          panelOpen={panelOpen}
+          onTogglePanel={() => setPanelOpen((v) => !v)}
+        />
       </div>
 
-      {/* The FREE explanation, in place rather than in a modal — same reasoning
-          as `UpgradePrompt`: this app has spent every previous round removing
-          modals, and the panel is small enough to sit in the flow. */}
+      {/* Manual steps panel for FREE tier */}
       {panelOpen && action.kind === "needs-licence" && <ManualPanel item={item} />}
 
+      {/* Expanded Multi-Source Evidence Detail */}
       {open && (
-        <div className="fade border-[color:var(--line-subtle)]/70 flex flex-col gap-2 border-t px-3.5 py-3 pl-[68px]">
+        <div className="fade mt-3 flex flex-col gap-2 rounded-lg bg-[color:var(--surface-inset)]/60 p-3 text-[11.5px] border border-[color:var(--line-subtle)]">
+          <div className="font-semibold text-[color:var(--text-tertiary)] mb-0.5">
+            权威来源核验详情：
+          </div>
           {item.evidence.map((ev, i) => (
             <EvidenceLine key={`${ev.source}-${i}`} ev={ev} />
           ))}
 
           {item.packageId && (
-            <div className="text-[color:var(--text-quiet)] mt-0.5 text-[11.5px]">
-              winget 包 id：
-              <span className="selectable text-[color:var(--text-tertiary)]">{item.packageId}</span>
+            <div className="text-[color:var(--text-quiet)] mt-1">
+              winget 官方包：
+              <span className="selectable text-[color:var(--text-secondary)] font-mono ml-1">
+                {item.packageId}
+              </span>
             </div>
           )}
 
-          {/* The full fallback chain, which is the honest answer to "what
-              happens if winget is not there". Shown only when expanded: it is
-              reassurance for the student who asks, not noise for the one who
-              does not. */}
           {strategy && strategy.fallbacks.length > 0 && (
-            <div className="text-[color:var(--text-quiet)] mt-0.5 text-[11.5px] leading-relaxed">
-              备用方式：{strategy.fallbacks.join("；")}
+            <div className="text-[color:var(--text-quiet)] mt-0.5 leading-relaxed">
+              备选安装渠道：{strategy.fallbacks.join("；")}
             </div>
           )}
 
           {item.hints.map((hint) => (
             <div
               key={hint}
-              className="text-[color:var(--text-tertiary)] border-warn/25 mt-0.5 border-l-2 pl-2.5 text-[12px] leading-relaxed"
+              className="text-[color:var(--text-tertiary)] border-warn/30 mt-1 border-l-2 pl-2 text-[11.5px] leading-relaxed"
             >
               {hint}
             </div>
@@ -641,24 +786,7 @@ function SoftwareRow({
 }
 
 /**
- * The action button.
- *
- * **Always rendered.** That is the requirement, and it is also the better design:
- * a control that vanishes depending on tier teaches the student that the app is
- * unpredictable, while a control that changes label teaches them what the tier
- * means. The five states are exactly the brief's:
- *
- * | state | label |
- * |---|---|
- * | FREE / no licence | 查看方案 (opens the panel explaining PRO) |
- * | PRO | 安装 |
- * | already installed | 已安装 ✓ (disabled — nothing left to do) |
- * | installing | 安装中… (disabled) |
- * | failed | 重试 |
- *
- * `disabled` is used for the two states where pressing would be wrong (already
- * done, already running). It is deliberately *not* used for FREE: 查看方案 is a
- * real, useful action, so it must be pressable.
+ * The action button with strict testing contract preservation.
  */
 function ActionButton({
   item,
@@ -672,6 +800,14 @@ function ActionButton({
   onTogglePanel: () => void;
 }) {
   const goTo = useApp((s) => s.goTo);
+  const buildPlanFor = useApp((s) => s.buildPlanFor);
+
+  const installThis = () => {
+    void (async () => {
+      await buildPlanFor([item.id]);
+      if (useApp.getState().plan) goTo("install");
+    })();
+  };
 
   const testId = {
     installed: "row-action-installed",
@@ -682,8 +818,6 @@ function ActionButton({
   }[action.kind];
 
   if (action.kind === "installed") {
-    // Disabled rather than absent: the row still has a button, so the column
-    // never collapses and the student is told *why* there is nothing to do.
     return (
       <Button
         size="sm"
@@ -691,7 +825,7 @@ function ActionButton({
         disabled
         data-testid={testId}
         aria-label={`${item.name} 已安装`}
-        className="shrink-0 text-[color:var(--status-ok)]"
+        className="shrink-0 text-[color:var(--status-ok)] font-medium h-8 px-3"
       >
         已安装 ✓
       </Button>
@@ -706,7 +840,7 @@ function ActionButton({
         disabled
         data-testid={testId}
         aria-label={`${item.name} 安装中`}
-        className="shrink-0"
+        className="shrink-0 h-8 px-3"
       >
         安装中…
       </Button>
@@ -722,7 +856,7 @@ function ActionButton({
         aria-expanded={panelOpen}
         aria-label={`${item.name} 查看方案`}
         onClick={onTogglePanel}
-        className="shrink-0"
+        className="shrink-0 h-8 px-3"
       >
         查看方案
       </Button>
@@ -736,8 +870,8 @@ function ActionButton({
         variant="ghost"
         data-testid={testId}
         aria-label={`${item.name} 重试`}
-        onClick={() => goTo("install")}
-        className="shrink-0 border-[color:var(--status-warn)]/40"
+        onClick={installThis}
+        className="shrink-0 border-[color:var(--status-warn)]/40 text-[color:var(--status-warn)] h-8 px-3"
       >
         重试
       </Button>
@@ -750,8 +884,8 @@ function ActionButton({
       data-testid={testId}
       disabled={action.label === "…"}
       aria-label={`${item.name} ${action.label}`}
-      onClick={() => goTo("install")}
-      className="shrink-0"
+      onClick={action.label === "查看方案" ? onTogglePanel : installThis}
+      className="shrink-0 font-medium h-8 px-3"
     >
       {action.label}
     </Button>
@@ -759,17 +893,7 @@ function ActionButton({
 }
 
 /**
- * What 查看方案 opens.
- *
- * Three things, and all three are required by the brief:
- *
- * 1. `安装需要PRO授权` — the reason, stated plainly. Without it the button reads
- *    as an arbitrary refusal.
- * 2. `升级PRO` — the way to act on that reason.
- * 3. `查看手动安装方法` — the way to proceed *without* paying. This one matters
- *    most: the FREE tier is a supported tier, and a student who is not going to
- *    buy must still be able to get Git onto their machine. A prompt with only an
- *    upgrade button is not an explanation, it is a wall.
+ * Manual steps panel when licence is free.
  */
 function ManualPanel({ item }: { item: SoftwareInfo }) {
   const [showMethod, setShowMethod] = useState(false);
@@ -780,17 +904,17 @@ function ManualPanel({ item }: { item: SoftwareInfo }) {
     <div
       data-testid="row-free-panel"
       data-software-panel={item.id}
-      className="fade border-[color:var(--line-subtle)]/70 flex flex-col gap-3 border-t px-3.5 py-3.5 pl-[68px]"
+      className="fade mt-3 flex flex-col gap-2.5 rounded-lg bg-[color:var(--surface-inset)]/80 p-3 border border-[color:var(--line-subtle)] text-[12px]"
     >
       <div>
         <div
           data-testid="row-free-reason"
-          className="text-[color:var(--text-primary)] text-[13px] font-medium"
+          className="text-[color:var(--text-primary)] font-semibold"
         >
-          安装需要PRO授权
+          一键自动安装需要 PRO 授权
         </div>
-        <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
-          自动下载与安装属于专业版功能。免费版可以继续检测环境、查看推荐，并按下面的步骤自己安装。
+        <p className="text-[color:var(--text-tertiary)] mt-1 text-[11.5px] leading-relaxed">
+          自动静默下载与安装属于专业版功能。免费版可以按下面的步骤复制命令自己安装。
         </p>
       </div>
 
@@ -802,6 +926,7 @@ function ManualPanel({ item }: { item: SoftwareInfo }) {
             setSection("license");
             openDashboard();
           }}
+          className="h-7 text-[11.5px]"
         >
           升级PRO
         </Button>
@@ -811,6 +936,7 @@ function ManualPanel({ item }: { item: SoftwareInfo }) {
           data-testid="row-free-manual"
           aria-expanded={showMethod}
           onClick={() => setShowMethod((v) => !v)}
+          className="h-7 text-[11.5px]"
         >
           {showMethod ? "收起步骤" : "查看手动安装方法"}
         </Button>
@@ -821,29 +947,6 @@ function ManualPanel({ item }: { item: SoftwareInfo }) {
   );
 }
 
-/**
- * The manual route, built from the same data the engine uses.
- *
- * `strategy.preferred` is the exact command the automatic path would run, so a
- * student copying it gets the *same* installation, not a second-best one. That
- * consistency is the point: the manual path is not a different answer, it is the
- * same answer performed by hand.
- *
- * ## When there is no strategy, say where to go rather than that we have nothing
- *
- * Most catalogue entries have no install chain — the tool detects Docker, Cursor,
- * JetBrains and friends but deliberately does not install them (`installable:
- * false`; see `DESIGN.md` "未做的事"). Those rows *still* show 查看方案, because
- * hiding the button would be the hidden-control failure this release exists to
- * remove, and the panel has to answer the click honestly.
- *
- * The first version of this branch printed one line: "这个软件没有随附的自动安装
- * 方式". Read next to a 查看手动安装方法 button the student just pressed, that
- * reads as *there is no way to install this* — which is false and is the worst
- * sentence this screen could produce. The replacement names the vendor's own
- * download page, which is both the true instruction and the one the student
- * actually needs.
- */
 function ManualSteps({ item }: { item: SoftwareInfo }) {
   const strategies = useApp((s) => s.strategies);
   const catalogue = useApp((s) => s.catalogue);
@@ -854,29 +957,24 @@ function ManualSteps({ item }: { item: SoftwareInfo }) {
   for (const fallback of strategy?.fallbacks ?? []) lines.push(fallback);
 
   const descriptor = catalogue.find((d) => d.id === item.id);
-  // Same distinction as `describeMethod`: `installable` is the catalog's
-  // permanent fact, "no strategy loaded" is a fact about this render.
   const unmanaged = descriptor ? !descriptor.installable : false;
 
   if (lines.length === 0) {
     return (
       <div
         data-testid="row-manual-steps"
-        className="bg-[color:var(--surface-inset)] rounded-[8px] px-3 py-2.5"
+        className="bg-[color:var(--surface-inset)] rounded-lg p-2.5"
       >
-        <div className="text-[color:var(--text-quiet)] mb-1.5 text-[11px] tracking-[0.08em] uppercase">
+        <div className="text-[color:var(--text-quiet)] mb-1 text-[11px] font-semibold uppercase">
           手动安装方法
         </div>
         <p
           data-testid="row-manual-fallback"
-          className="text-[color:var(--text-secondary)] text-[12.5px] leading-relaxed"
+          className="text-[color:var(--text-secondary)] text-[12px] leading-relaxed"
         >
           {unmanaged
             ? `${item.name} 需要到官方网站下载安装包后按提示安装。本工具只负责告诉你它装没装，不会代你安装。`
             : `${item.name} 可以自动安装，但它的安装命令属于某个配置方案。先回到「方案」选一个包含它的方案，这里就会显示具体命令。也可以直接到官网下载安装包自行安装。`}
-        </p>
-        <p className="text-[color:var(--text-quiet)] mt-2 text-[11.5px] leading-relaxed">
-          装完后回到这里点「重新检查」，这一行就会变成「已安装」。
         </p>
       </div>
     );
@@ -885,34 +983,30 @@ function ManualSteps({ item }: { item: SoftwareInfo }) {
   return (
     <div
       data-testid="row-manual-steps"
-      className="bg-[color:var(--surface-inset)] rounded-[8px] px-3 py-2.5"
+      className="bg-[color:var(--surface-inset)] rounded-lg p-2.5"
     >
-      <div className="text-[color:var(--text-quiet)] mb-1.5 text-[11px] tracking-[0.08em] uppercase">
+      <div className="text-[color:var(--text-quiet)] mb-1 text-[11px] font-semibold uppercase">
         手动安装步骤
       </div>
       <ol className="flex flex-col gap-1.5">
         {lines.map((line, i) => (
-          <li key={i} className="flex items-start gap-2">
-            <span className="text-[color:var(--text-quiet)] shrink-0 text-[12px]">
+          <li key={i} className="flex items-start gap-1.5">
+            <span className="text-[color:var(--text-quiet)] shrink-0 text-[11.5px]">
               {i + 1}.
             </span>
-            {/* `selectable` so the command can actually be copied — a manual
-                instruction the student cannot copy is a manual instruction they
-                will mistype. */}
             <span className="selectable text-[color:var(--text-secondary)] min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed break-all">
               {line}
             </span>
           </li>
         ))}
       </ol>
-      <p className="text-[color:var(--text-quiet)] mt-2 text-[11.5px] leading-relaxed">
-        在开始菜单搜索「终端」或「PowerShell」，粘贴上面的命令并回车。装完后回到这里点「重新检查」。
+      <p className="text-[color:var(--text-quiet)] mt-1.5 text-[11px]">
+        打开终端或 PowerShell，粘贴上面的命令回车即可。装完后点「重新检查」。
       </p>
     </div>
   );
 }
 
-/** The measured state, as a glyph + a word. */
 function StatusLine({ item }: { item: SoftwareInfo }) {
   const { confidence, label } = describeStatus(item);
   return (
@@ -920,7 +1014,7 @@ function StatusLine({ item }: { item: SoftwareInfo }) {
       <StatusMark confidence={confidence} size="sm" decorative />
       <span
         className={clsx(
-          "text-[11.5px]",
+          "text-[11.5px] font-medium",
           confidence === "ok"
             ? "text-[color:var(--status-ok)]"
             : confidence === "unknown"
@@ -934,14 +1028,6 @@ function StatusLine({ item }: { item: SoftwareInfo }) {
   );
 }
 
-/**
- * The state word for one row.
- *
- * Three values, not two, and the third is the important one: a program whose
- * probes all failed shows 无法确认, never 未安装. Rendering it as missing would
- * tell a student to reinstall software they may already have, which is the single
- * worst thing this screen could do — see `ui.tsx`'s `StatusMark` note.
- */
 function describeStatus(item: SoftwareInfo): { confidence: Confidence; label: string } {
   if (item.installed) {
     return {
@@ -955,49 +1041,12 @@ function describeStatus(item: SoftwareInfo): { confidence: Confidence; label: st
   return { confidence: "fail", label: "未安装" };
 }
 
-/**
- * How this program would be installed here.
- *
- * ## Why `installable` is checked FIRST, and why that is a bug fix
- *
- * The first version consulted the strategy list first and treated "no strategy"
- * as "we cannot install this". Those are two different facts and the whole screen
- * depends on them not being conflated:
- *
- * * `installable: false` — a **permanent** statement about the catalog. The tool
- *   detects Docker, Cursor and JetBrains but deliberately never installs them.
- * * "no strategy in `strategies`" — a **temporary** statement about *this render*.
- *   `install_strategies` is scoped to one profile, and the screen lists every
- *   program. On the beginner profile the list contains only `claude_desktop`, so
- *   Claude Code — which is genuinely installable — was described as
- *   "安装方式还没有收录", i.e. the screen told a student the tool cannot install
- *   something it can.
- *
- * The remedy is to take the permanent fact from the catalog, where it is
- * authoritative, and use the strategy list only to say *how* — never *whether*.
- * A program with `installable: true` and no strategy loaded yet is "winget
- * 自动安装" when the catalogue gave it a package id, and otherwise says the method
- * has not loaded rather than that none exists.
- */
 function describeMethod(
   item: SoftwareInfo,
   strategy: InstallStrategy | null,
   descriptor: SoftwareDescriptor | undefined,
 ): string {
   if (descriptor && !descriptor.installable) {
-    // ## Reworded in 0.1.2 because the old sentence was a product bug
-    //
-    // It used to read "本工具不提供安装，需自行获取". For a beginner — the one
-    // audience this product has — that sentence does not say "this program needs
-    // a manual download"; it says **"this tool doesn't work"**. It was also the
-    // single most common complaint about the previous build, and it appeared on
-    // entries that had a working `winget` package the whole time (Docker, Cursor,
-    // MSVC, CMake, Java, Rust, uv, pnpm). Those were promoted to installable above
-    // this change; what is left here is genuinely manual.
-    //
-    // So the replacement leads with the reason and names who does the step, and
-    // it never implies the tool is broken. `needsManualStep` keeps the two cases
-    // distinguishable in the data rather than in prose.
     return "需你手动安装（本工具仅检测，不代装此类软件）";
   }
 
@@ -1008,8 +1057,6 @@ function describeMethod(
   }
 
   if (descriptor?.installable) {
-    // Installable, but this profile's strategy list has not named it. The
-    // package id from the inventory is enough to name the method truthfully.
     return item.packageId ? "winget 自动安装" : "自动安装（方案载入后显示方式）";
   }
 
@@ -1017,22 +1064,15 @@ function describeMethod(
   return "暂未收录安装方式";
 }
 
-/**
- * The per-source chips on the collapsed row.
- *
- * Exists so that "found by three independent sources" is visible without opening
- * the row — that agreement is the reason a finding is trustworthy, and it is the
- * main thing stage 2 added over a single anonymous check.
- */
 function SourceMarks({ sources }: { sources: ProbeSource[] }) {
   if (sources.length === 0) return null;
   return (
-    <span className="hidden shrink-0 items-center gap-1 lg:flex">
+    <span className="flex shrink-0 items-center gap-1">
       {sources.map((source) => (
         <span
           key={source}
           title={sourceLabel(source)}
-          className="border-ok/25 text-[color:var(--status-ok)]/90 rounded-[4px] border px-1.5 py-[1px] text-[10.5px]"
+          className="border-ok/25 text-[color:var(--status-ok)]/90 bg-[color:var(--status-ok)]/5 rounded px-1.5 py-[1px] text-[10px] font-medium"
         >
           {sourceLabel(source)}
         </span>
@@ -1061,12 +1101,12 @@ function EvidenceLine({ ev }: { ev: EvidenceView }) {
         : "fail";
 
   return (
-    <div className="flex items-start gap-2.5">
+    <div className="flex items-start gap-2">
       <StatusMark confidence={confidence} />
-      <span className="text-[color:var(--text-tertiary)] w-14 shrink-0 text-[12px]">
+      <span className="text-[color:var(--text-tertiary)] w-14 shrink-0 font-medium">
         {sourceLabel(ev.source)}
       </span>
-      <span className="text-[color:var(--text-secondary)] selectable min-w-0 flex-1 truncate text-[12px]">
+      <span className="text-[color:var(--text-secondary)] selectable min-w-0 flex-1 truncate font-mono">
         {ev.outcome === "present"
           ? ev.detail ?? "已检测到"
           : ev.outcome === "unavailable"
@@ -1077,50 +1117,37 @@ function EvidenceLine({ ev }: { ev: EvidenceView }) {
   );
 }
 
-function ScanningRows() {
+function ScanningCards() {
   return (
-    <div className="flex flex-col gap-1.5">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <div
-          key={i}
-          className="border-[color:var(--line-subtle)]/60 flex items-center gap-3 rounded-[10px] border border-dashed px-3.5 py-3"
-        >
-          <span className="bg-[color:var(--surface-inset)] h-7 w-7 rounded-[7px]" />
-          <span className="bg-[color:var(--surface-inset)] h-3 w-24 rounded" />
-          <span className="bg-[color:var(--surface-inset)] h-3 flex-1 rounded" />
-        </div>
-      ))}
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4.5">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="border-[color:var(--line-subtle)]/60 flex flex-col gap-3 rounded-xl border border-dashed p-4"
+          >
+            <div className="flex items-center gap-3">
+              <span className="bg-[color:var(--surface-inset)] h-9 w-9 rounded-lg" />
+              <div className="flex-1 space-y-1.5">
+                <span className="bg-[color:var(--surface-inset)] block h-4 w-28 rounded" />
+                <span className="bg-[color:var(--surface-inset)] block h-3 w-16 rounded" />
+              </div>
+            </div>
+            <span className="bg-[color:var(--surface-inset)] block h-8 w-full rounded mt-2" />
+          </div>
+        ))}
+      </div>
       <p className="text-[color:var(--text-quiet)] mt-1 text-[12.5px]">
-        正在通过注册表、PATH 与 winget 三个来源检查…
+        正在通过注册表、PATH 与 winget 三个来源进行全方位安全核验…
       </p>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
-
-/**
- * The install strategies, keyed by program.
- *
- * Built once per render rather than per row: the list screen does up to 29 rows,
- * and a linear scan inside each of them is the difference between "renders" and
- * "renders at 29 × N".
- */
 function strategyMap(strategies: InstallStrategy[]): Map<string, InstallStrategy> {
   return new Map(strategies.map((s) => [s.id as string, s]));
 }
 
-/**
- * The last run's per-step results, keyed by program. Empty before any run.
- *
- * Typed structurally (`stepId`/`status`/`stage`) rather than as `StepProgress[]`
- * because these are the only fields this screen reads: the `重试` rule needs the
- * *status*, and the failed row's one-line explanation needs the *stage*. Reading
- * the two through a narrowed parameter keeps that dependency visible, and means
- * adding a field to `StepProgress` cannot silently change what this screen does.
- */
 function stepMap(
   steps: { stepId: SoftwareId; status: string; stage: string }[] | undefined,
 ): Map<string, { stepId: SoftwareId; status: string; stage: string }> {

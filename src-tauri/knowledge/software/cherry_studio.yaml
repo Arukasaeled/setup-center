@@ -1,0 +1,29 @@
+id: cherry_studio
+name: Cherry Studio
+category: AI 工具
+description: 一个客户端里接多家大模型（OpenAI、Claude、Gemini、本地模型），可自由切换。
+purpose:
+  - 一个界面里同时用多个模型，按问题挑更合适的那个回答
+  - 把常用的问题存成助手，反复使用不用每次重写
+  - 接本地模型时数据不出本机，适合处理课程材料
+  - 支持知识库：把课件、讲义丢进去让它按你的资料回答
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - 需要比较多模型答案的同学
+  - 想接本地模型但不想用命令行的人
+studentExplanation: |
+  它本身**不含模型**，是一个“壳”：你把自己的 API Key 填进去，或者指向
+  本机跑的模型，它负责把请求发出去、把回答显示出来。
+
+  和 ChatGPT 桌面版、豆包的区别：那些是“一家公司一个客户端”，这是“一个客户端
+  装多家”。如果你同时有 OpenAI 和 Claude 的 Key，用这一个就够了，不用装好几个
+  软件切来切去。
+
+  它和 Claude Desktop 是同一类工具，选哪一个都能满足“桌面 AI 助手”。装了它不会
+  影响别的客户端，也没有先后顺序要求。
+
+  第一次打开需要自己填 Key 才能用——这一步没有 Key 替代不了，本工具不会替你
+  申请账号。
+versions: []

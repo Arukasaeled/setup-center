@@ -870,6 +870,81 @@ fn builtin_knowledge_covers_the_programs_the_profiles_install() {
     assert!(missing.is_empty(), "unexplained: {missing:?}");
 }
 
+/// Every shipped knowledge file must resolve its references.
+///
+/// ## Why this test exists separately from `the_builtin_knowledge_loads_without_warnings`
+///
+/// That test loads with `None`, which falls back to the *compiled-in* set — and
+/// the compiled-in set deliberately omitted `java.yaml` and `rust.yaml`. So two
+/// files that named capabilities the table does not have (`java-development`,
+/// `rust-development`) produced a warning only on a real machine, where the
+/// files are read from disk. The suite was green and the product was telling a
+/// maintainer its knowledge base was broken.
+///
+/// This loads the directory the app actually ships and fails on any warning.
+/// A dangling capability id means a row whose 关联能力 silently shows nothing.
+#[test]
+fn the_shipped_knowledge_directory_has_no_dangling_references() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("knowledge");
+    assert!(dir.is_dir(), "knowledge dir missing: {}", dir.display());
+    let k = Knowledge::load(Some(&dir));
+    assert_eq!(
+        k.source_dir.as_deref(),
+        Some(dir.as_path()),
+        "the shipped files must be what was read"
+    );
+    assert!(k.warnings.is_empty(), "{:?}", k.warnings);
+    assert_eq!(
+        k.software_without_knowledge(),
+        Vec::new(),
+        "every catalogued program needs an explanation file"
+    );
+}
+
+/// The compiled-in set must be the shipped set.
+///
+/// ## Why this test did not exist until now, and what it cost
+///
+/// [`BUILTIN`]'s own doc comment claimed a `knowledge_matches_builtin` test
+/// asserted the two do not drift — but no such test was ever written, and they
+/// had drifted: the compiled-in set carried 17 of the 29 shipped files. A binary
+/// built without the resource directory silently explained two-thirds as much as
+/// the source did, and nothing said so.
+///
+/// The drift also *hid a real bug*: `java.yaml` and `rust.yaml` named
+/// capabilities the table does not have, which warns on every real machine and
+/// warned in no test, precisely because those two files were missing from the
+/// compiled-in set that the suite loads through.
+#[test]
+fn knowledge_matches_builtin() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("knowledge");
+    let disk = Knowledge::load(Some(&dir));
+    let builtin = Knowledge::load(None);
+    assert!(
+        builtin.source_dir.is_none(),
+        "load(None) must take the compiled-in path"
+    );
+
+    let disk_software: Vec<&String> = disk.software.keys().collect();
+    let builtin_software: Vec<&String> = builtin.software.keys().collect();
+    assert_eq!(
+        builtin_software, disk_software,
+        "the compiled-in software files have drifted from src-tauri/knowledge/software/"
+    );
+
+    let disk_concepts: Vec<&String> = disk.concepts.keys().collect();
+    let builtin_concepts: Vec<&String> = builtin.concepts.keys().collect();
+    assert_eq!(builtin_concepts, disk_concepts, "concepts have drifted");
+
+    for id in SoftwareId::ALL {
+        assert!(
+            builtin.software.contains_key(id.key()),
+            "{} is compiled in nowhere: a machine without bundled resources cannot explain it",
+            id.key()
+        );
+    }
+}
+
 #[test]
 fn on_disk_knowledge_is_preferred_over_builtin() {
     let dir = std::env::temp_dir().join("aissetup-custom-knowledge");

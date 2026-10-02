@@ -76,7 +76,7 @@ fn plan_with_step(id: SoftwareId, source: InstallSource, satisfied: bool) -> Ins
         }],
         ready_count: if satisfied { 0 } else { 1 },
         satisfied_count: if satisfied { 1 } else { 0 },
-        estimated_minutes: 5,
+        estimated_minutes: Some(5),
     }
 }
 

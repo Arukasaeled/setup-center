@@ -71,7 +71,28 @@ export function DetectScreen() {
         )}
 
         {environment && !running && (
-          <div className="flex flex-col gap-7">
+          <div className="flex flex-col gap-6">
+            {/* Encouraging Health Summary */}
+            <div className="glass-soft rise rounded-xl p-4 border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/60 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div>
+                <div className="text-[14px] font-bold text-[color:var(--text-strong)]">
+                  {environment.score >= 80
+                    ? "系统体检评级：极佳"
+                    : environment.score >= 60
+                      ? "系统体检评级：良好"
+                      : "系统体检评级：部分环境需留意"}
+                </div>
+                <div className="text-[12px] text-[color:var(--text-quiet)] mt-0.5">
+                  软硬件环境均通过全方位安全检测，点击下方「继续」即可进入软件装备库自由挑选
+                </div>
+              </div>
+              <div className="shrink-0">
+                <span className="text-[11.5px] font-semibold text-[color:var(--status-ok)] bg-[color:var(--status-ok)]/10 border border-[color:var(--status-ok)]/20 px-2.5 py-1 rounded-lg">
+                  安全核验已通过
+                </span>
+              </div>
+            </div>
+
             <div className="stagger flex flex-col gap-2.5">
               {environment.signals.map((signal) => (
                 <SignalRow key={signal.key} signal={signal} />

@@ -19,6 +19,55 @@ use ai_student_setup_lib::state::AppState;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+/// Hand-picked program lists to capture plans for.
+///
+/// Chosen for what each one would catch:
+///
+/// * `CherryStudio` alone — the exact request from the bug report. The plan must
+///   contain Cherry Studio and must NOT contain any AI CLI, which is what the
+///   capability layer used to force in.
+/// * `CherryStudio + Vscode` — two programs from different catalog categories,
+///   so the plan order and the per-program strategy list are both exercised
+///   outside a profile.
+/// * `Codex` alone — an AI CLI picked *instead of* Claude Code, so a regression
+///   that hard-wires Claude Code into the plan is caught here rather than by a
+///   student.
+/// * `Chatbox + Node` — a pair where one program is a dependency of nothing and
+///   the other has no dependency, i.e. no ordering help from the profile.
+const PICKED: &[&[SoftwareId]] = &[
+    &[SoftwareId::CherryStudio],
+    &[SoftwareId::CherryStudio, SoftwareId::Vscode],
+    &[SoftwareId::Codex],
+    &[SoftwareId::Chatbox, SoftwareId::Node],
+];
+
+/// The fixture key for a hand-picked list: the ids joined, in the order given.
+fn picked_key(ids: &[SoftwareId]) -> String {
+    ids.iter().map(|id| id.key()).collect::<Vec<_>>().join("+")
+}
+
+/// One program's install strategy, in the shape `install_strategies` returns.
+fn strategy_json(cat: &catalog::Catalog, id: SoftwareId) -> Value {
+    let spec = install::spec_from(cat, id);
+    // A detect-only program has an empty chain, so `chain[0]` would panic. The
+    // UI still gets a row, with a description that says who does the work —
+    // silence here would render as a blank line.
+    let preferred = spec
+        .chain
+        .first()
+        .map(|f| install::describe_source(&f.source))
+        .unwrap_or_else(|| "本工具只检测，需要你手动安装".to_string());
+    json!({
+        "id": id,
+        "name": id.display_name(),
+        "purpose": id.purpose(),
+        "preferred": preferred,
+        "fallbacks": spec.chain.iter().skip(1)
+            .map(|f| format!("{}（{}）", f.rationale, install::describe_source(&f.source)))
+            .collect::<Vec<_>>(),
+    })
+}
+
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let state = AppState::new(Some(manifest));
@@ -83,26 +132,7 @@ fn main() {
         let strat: Vec<Value> = profile
             .software
             .iter()
-            .map(|id| {
-                let spec = install::spec_from(&cat, *id);
-                // A detect-only program has an empty chain, so `chain[0]` would
-                // panic. The UI still gets a row, with a description that says
-                // who does the work — silence here would render as a blank line.
-                let preferred = spec
-                    .chain
-                    .first()
-                    .map(|f| install::describe_source(&f.source))
-                    .unwrap_or_else(|| "本工具只检测，需要你手动安装".to_string());
-                json!({
-                    "id": id,
-                    "name": id.display_name(),
-                    "purpose": id.purpose(),
-                    "preferred": preferred,
-                    "fallbacks": spec.chain.iter().skip(1)
-                        .map(|f| format!("{}（{}）", f.rationale, install::describe_source(&f.source)))
-                        .collect::<Vec<_>>(),
-                })
-            })
+            .map(|id| strategy_json(&cat, *id))
             .collect();
         strategies.insert(profile.id.clone(), serde_json::to_value(strat).unwrap());
 
@@ -112,6 +142,28 @@ fn main() {
 
         let actions = config::config_actions_for(&profile.software, &state.localization);
         config_actions.insert(profile.id.clone(), serde_json::to_value(&actions).unwrap());
+    }
+
+    // --- Hand-picked programs (0.1.4) -----------------------------------------
+    //
+    // The software list's row buttons build a plan from the programs the student
+    // ticked instead of from a profile. That is the path the "I wanted Cherry
+    // Studio and was told to install Claude" bug lived on, and until now it had
+    // no fixture at all — so no frontend test could assert that pressing 安装 on
+    // Cherry Studio yields a Cherry Studio plan.
+    //
+    // The lists are keyed by their own joined id list, which is what the harness
+    // can reconstruct from the arguments the command receives. Every entry comes
+    // out of the same `build_plan_with` and `strategy_json` the commands call, so
+    // the fixture cannot drift from the product.
+    let mut picked_plans = serde_json::Map::new();
+    let mut picked_strategies = serde_json::Map::new();
+    for ids in PICKED {
+        let key = picked_key(ids);
+        let plan = install::build_plan_with(&cat, "", None, ids, &scan);
+        picked_plans.insert(key.clone(), serde_json::to_value(&plan).unwrap());
+        let strat: Vec<Value> = ids.iter().map(|id| strategy_json(&cat, *id)).collect();
+        picked_strategies.insert(key, serde_json::to_value(strat).unwrap());
     }
 
     // Use the widest profile as the default fixture.
@@ -397,6 +449,8 @@ fn main() {
         "scan": scan,
         "profiles": profiles,
         "plans": plans,
+        "pickedPlans": picked_plans,
+        "pickedStrategies": picked_strategies,
         "strategies": strategies,
         "verificationByProfile": verification_by_profile,
         "configActions": config_actions,
@@ -448,6 +502,15 @@ fn main() {
             // that promises the success one.
             "proEnforced": license::Entitlements::of(
                 &license::LicenseFile {
+                    // **`tier` must be set explicitly.** `LicenseFile::default()`
+                    // yields `Tier::Free` (only a *deserialised* record that lacks
+                    // the field defaults to `Pro`), so the `..Default::default()`
+                    // below silently produced a FREE activation. The fixture was
+                    // named `proEnforced` and reported `canInstall: false`, which
+                    // meant no frontend suite has ever exercised the PRO install
+                    // path — the one a paying customer uses, and the one where
+                    // "I wanted Cherry Studio and got Claude" lived.
+                    tier: license::Tier::Pro,
                     license_hash: Some(
                         "0000000000000000000000000000000000000000000000000000000000000000"
                             .to_string(),

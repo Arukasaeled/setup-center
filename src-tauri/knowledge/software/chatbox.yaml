@@ -1,0 +1,22 @@
+id: chatbox
+name: Chatbox
+category: AI 工具
+description: 轻量的多模型聊天客户端，体积小、打开快，适合当日常问答窗口用。
+purpose:
+  - 比浏览器网页版更顺手，不用每次重新登录
+  - 支持多家模型的 API Key，也可以接本地模型
+  - 可以保存对话历史，方便回头查
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - 只想有个随手能问的 AI 窗口的同学
+studentExplanation: |
+  和 Cherry Studio 属于同一类工具（多模型客户端），差别在侧重点：Chatbox
+  更轻、更简单，功能也少一些；Cherry Studio 功能更多（知识库、助手市场等）。
+
+  两个装在一起不冲突，也没必要都装。如果你不确定，先装一个用几天：觉得功能不够
+  再换另一个。
+
+  和别的聊天客户端一样，第一次用要自己填 API Key，或者指向本地模型。
+versions: []

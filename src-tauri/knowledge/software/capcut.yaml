@@ -1,0 +1,21 @@
+id: capcut
+name: CapCut
+category: AI 创作
+description: 剪映的海外版，同一套剪辑软件的国际发行版。
+purpose:
+  - 给海外平台投稿时使用，模板与素材库面向国际用户
+  - 英文字幕、英文配音、海外流行模板
+  - 与手机版账号互通，可以在手机粗剪后到电脑精修
+relatedCapabilities: []
+dependsOn: []
+commonlyUsedBy:
+  - 需要给海外平台投稿的同学
+studentExplanation: |
+  CapCut 和剪映专业版是**同一个软件的两种发行版**：功能主体一样，素材库、
+  模板、账号体系按地区分开。
+
+  怎么选：面向国内发布（课程作业、校内展示、B 站抖音）用剪映专业版，中文素材
+  和中文配音更全；面向海外平台投稿用 CapCut。两个都装没有冲突，但通常没必要。
+
+  它和写代码无关，需要出片子的时候再装。
+versions: []

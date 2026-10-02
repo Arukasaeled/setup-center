@@ -62,6 +62,7 @@ const SECTION_TITLES: Record<Section, string> = {
   // title bar saying 版本 above a sidebar item saying 版本与授权 is the kind of
   // disagreement that makes a user think they are on the wrong screen.
   license: "版本与授权",
+  style: "风格",
   about: "关于",
 };
 

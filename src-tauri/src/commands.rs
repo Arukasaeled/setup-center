@@ -252,32 +252,26 @@ pub fn build_install_plan(state: State<'_, AppState>, profile_id: String) -> App
     ))
 }
 
-/// Machine-readable description of the install strategy per program, so the UI
-/// can show *how* something will be installed before the user commits.
+/// Strategies for an explicit list of programs.
+///
+/// `install_strategies` is scoped to one profile, so a screen that lists every
+/// program in the catalog could only describe the ones that profile happened to
+/// name. A student picking Cherry Studio on a profile that does not include it
+/// then saw "安装方式还没有收录" for a program the catalog can install. This
+/// answers the same question for whatever the student actually ticked.
 #[tauri::command]
-pub fn install_strategies(profile_id: String, state: State<'_, AppState>) -> AppResult<Vec<InstallStrategy>> {
-    let profile = state.profiles.get(&profile_id)?;
-    Ok(profile
-        .software
-        .iter()
+pub fn install_strategies_for(ids: Vec<SoftwareId>) -> Vec<InstallStrategy> {
+    strategies_for(&ids)
+}
+
+fn strategies_for(ids: &[SoftwareId]) -> Vec<InstallStrategy> {
+    ids.iter()
         .map(|id| {
             let spec = install::spec_for(*id);
             InstallStrategy {
                 id: *id,
                 name: id.display_name().to_string(),
                 purpose: id.purpose().to_string(),
-                // An empty chain is a real catalog state, not an error: the
-                // entry is *detected but not managed* (MSVC, CMake, Docker,
-                // Cursor, WSL …). Indexing `chain[0]` unconditionally panicked
-                // here with "index out of bounds: the len is 0 but the index is
-                // 0" — and because this is a `#[tauri::command]`, the panic tore
-                // down the whole app instead of failing one screen. The
-                // `programmer` profile is the only profile that names such a
-                // program (MSVC + CMake), so *only* 程序员版 crashed on click.
-                //
-                // The empty string is the wire form of "no managed method"; the
-                // frontend already reads that as "detect only" through
-                // `descriptor.installable`, so no UI change is needed.
                 preferred: spec
                     .chain
                     .first()
@@ -291,7 +285,78 @@ pub fn install_strategies(profile_id: String, state: State<'_, AppState>) -> App
                     .collect(),
             }
         })
-        .collect())
+        .collect()
+}
+
+/// Machine-readable description of the install strategy per program, so the UI
+/// can show *how* something will be installed before the user commits.
+#[tauri::command]
+pub fn install_strategies(profile_id: String, state: State<'_, AppState>) -> AppResult<Vec<InstallStrategy>> {
+    let profile = state.profiles.get(&profile_id)?;
+    // An empty chain is a real catalog state, not an error: the entry is
+    // *detected but not managed* (MSVC, CMake, Docker, Cursor, WSL …). Indexing
+    // `chain[0]` unconditionally panicked here with "index out of bounds: the
+    // len is 0 but the index is 0" — and because this is a `#[tauri::command]`,
+    // the panic tore down the whole app instead of failing one screen. The
+    // `programmer` profile is the only profile that names such a program
+    // (MSVC + CMake), so *only* 程序员版 crashed on click.
+    //
+    // The empty string is the wire form of "no managed method"; the frontend
+    // already reads that as "detect only" through `descriptor.installable`.
+    Ok(strategies_for(&profile.software))
+}
+
+/// Builds an install plan from an **explicit list of programs**.
+///
+/// ## Why this exists, and why it is not a second planner
+///
+/// The other plan builder is [`build_install_plan`], which takes a profile id.
+/// That made the profile the ceiling of student choice: the plan contained
+/// exactly `profile.software`, and the only edit the install screen could apply
+/// was *removing* a step the student did not want. A student who wanted a
+/// program their profile happened not to name — Cherry Studio, say — had no
+/// route to it at all, and a profile that named Claude Code made Claude a step
+/// they could not decline without declining everything.
+///
+/// So this command takes the ids the student actually ticked and produces the
+/// same [`InstallPlan`] the profile path produces: same `build_plan_with`, same
+/// catalog, same inventory, same one-source-of-truth `InstallSource`. Nothing
+/// about *how* a program installs is restated here — only *which* programs are
+/// in scope changes, and that is the student's decision to make.
+///
+/// `profile_id` is kept in the signature and in the returned plan because the
+/// profile is still what `install_strategies` and `build_bootstrap_plan` are
+/// keyed by, and the report names the scenario the student began from. It is
+/// allowed to be empty: "I am installing three programs I picked, starting from
+/// no scenario" is a legitimate request, and `build_plan_with` never reads it.
+#[tauri::command]
+pub fn build_install_plan_for(
+    ids: Vec<SoftwareId>,
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<InstallPlan> {
+    // An empty selection is not a plan. Returning one would render an install
+    // screen with no steps and a run button that installs nothing, which reads
+    // as a silent failure — the same reason `startInstall` on the frontend
+    // refuses an empty effective plan.
+    if ids.is_empty() {
+        return Err(AppError::InvalidRequest {
+            reason: "至少要选择一项才需要安装方案".into(),
+        });
+    }
+
+    // Deduplicated, order preserved, so the plan reads in the order the
+    // software screen showed it.
+    let mut wanted: Vec<SoftwareId> = Vec::with_capacity(ids.len());
+    for id in ids {
+        if !wanted.contains(&id) {
+            wanted.push(id);
+        }
+    }
+
+    let catalog = catalog::Catalog::builtin();
+    let scan = scan_for(&state, &wanted);
+    Ok(install::build_plan_with(&catalog, &profile_id, None, &wanted, &scan))
 }
 
 /// Stage 1: returns the dry-run progress stream. Does not install anything.
@@ -692,12 +757,19 @@ pub fn verify_installation(
 }
 
 /// Localisation and configuration actions implied by a profile.
+///
+/// A profile that does not exist is not an error here. A plan the student
+/// assembled by hand has no scenario behind it, and the honest answer is "this
+/// scenario declares no configuration actions" — not a failed call that leaves
+/// the finishing screen showing an error for a legitimate route.
 #[tauri::command]
 pub fn planned_config_actions(
     profile_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<ConfigAction>> {
-    let profile = state.profiles.get(&profile_id)?;
+    let Ok(profile) = state.profiles.get(&profile_id) else {
+        return Ok(Vec::new());
+    };
     Ok(config::config_actions_for(&profile.software, &state.localization))
 }
 
@@ -710,14 +782,28 @@ pub fn generate_report(
     verification: VerificationReport,
     state: State<'_, AppState>,
 ) -> AppResult<RenderedReport> {
-    let profile = state.profiles.get(&profile_id)?;
-    let actions = config::config_actions_for(&profile.software, &state.localization);
+    // A hand-picked plan names no profile. The report still has to name the
+    // programs that were installed — that is the part a reader acts on — so the
+    // fallback takes them from the plan itself rather than reporting nothing.
+    let (report_profile_id, report_profile_name, software) = match state.profiles.get(&profile_id) {
+        Ok(profile) => (
+            profile.id.clone(),
+            profile.name.clone(),
+            profile.software.clone(),
+        ),
+        Err(_) => (
+            plan.profile_id.clone(),
+            "自选安装".to_string(),
+            plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
+        ),
+    };
+    let actions = config::config_actions_for(&software, &state.localization);
 
     let report = SetupReport {
         generated_at: detect::now_iso8601(),
         app_version: env!("CARGO_PKG_VERSION").to_string(),
-        profile_id: profile.id.clone(),
-        profile_name: profile.name.clone(),
+        profile_id: report_profile_id,
+        profile_name: report_profile_name,
         environment_score: environment.score,
         environment,
         plan,

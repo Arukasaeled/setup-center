@@ -1,0 +1,24 @@
+id: gemini_desktop
+name: Gemini 桌面版
+category: AI 工具
+description: Google 的桌面 AI 客户端，装完登录 Google 账号即可使用。
+purpose:
+  - 和 Gemini 对话、查资料、解释概念
+  - 桌面客户端形态，不用一直开着浏览器标签页
+  - 与 Google 账号体系打通，登录即用
+relatedCapabilities:
+  - ai-desktop-assistant
+dependsOn: []
+commonlyUsedBy:
+  - 已经在用 Google 服务的同学
+studentExplanation: |
+  名字上有一点容易混：**Gemini 桌面版**（这个）是聊天客户端；
+  **Gemini CLI** 是命令行编程助手，两个是不同的东西，可以都装。
+
+  它和 ChatGPT 桌面版、豆包、Cherry Studio 属于同一类：桌面 AI 助手。装一个就
+  够日常用了，装多个也不冲突。
+
+  注意网络环境：Google 的服务在国内多数网络下需要代理才能打开，这一点和别的
+  客户端不一样。如果你没有代理，装它可能连登录页都打不开——那种情况下先用豆包
+  或 ChatGPT 更省事。
+versions: []

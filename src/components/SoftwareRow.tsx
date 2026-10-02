@@ -113,14 +113,16 @@ export function SoftwareRow({
         )}
       />
 
-      <SoftwareIcon id={item.id} size={26} />
+      <div className="software-row-icon-tray shrink-0 flex items-center justify-center rounded-lg p-0.5 transition-transform group-hover:scale-105">
+        <SoftwareIcon id={item.id} size={26} />
+      </div>
 
       <span className="min-w-0 flex-1">
-        <span className="text-[color:var(--text-primary)] block truncate text-[13px] font-medium">
+        <span className="software-row-name text-[color:var(--text-primary)] block truncate text-[13px] font-medium">
           {name}
         </span>
         {version && (
-          <span className="text-[color:var(--text-quiet)] mt-[1px] block truncate text-[11px]">
+          <span className="software-row-version text-[color:var(--text-quiet)] mt-[1px] block truncate text-[11px] font-mono">
             {version}
           </span>
         )}
@@ -130,7 +132,10 @@ export function SoftwareRow({
         {/* The tier is secondary to the status — it says how strongly the
             capability table asks for the program, not whether it is present.
             Muted so twenty-four rows do not read as twenty-four verdicts. */}
-        <span className="text-[color:var(--text-quiet)] text-[10.5px]">
+        <span
+          data-tier={recommendation}
+          className="software-tier-tag text-[color:var(--text-quiet)] text-[10.5px] rounded px-1.5 py-0.5"
+        >
           {RECOMMENDATION_LABEL[recommendation]}
         </span>
         <StatusBadge confidence={mark} size="sm" />

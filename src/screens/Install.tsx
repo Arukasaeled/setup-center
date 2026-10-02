@@ -226,10 +226,16 @@ export function InstallScreen() {
   // The engine is started by the student's click, not by mount. `startedRef`
   // still guards against React's development double-invoke firing two runs —
   // for an installer that means two winget processes over one package.
+  //
+  // The key is the *step list*, not the profile id. A hand-picked plan has no
+  // profile (`profileId` is `""`), so two different self-chosen plans would share
+  // a key and the second 开始安装 would silently do nothing. The program list is
+  // what actually distinguishes one run from another.
+  const planKey = `${plan?.profileId ?? ""}#${(plan?.steps ?? []).map((s) => s.id).join(",")}`;
   const begin = () => {
     if (!plan || installing) return;
-    if (startedRef.current === plan.profileId) return;
-    startedRef.current = plan.profileId;
+    if (startedRef.current === planKey) return;
+    startedRef.current = planKey;
     setCommitted(true);
     void startInstall();
   };
@@ -254,7 +260,10 @@ export function InstallScreen() {
     void buildPlan();
   }
 
-  if (!plan || !profile) {
+  // A hand-picked plan has no profile: the student opened the software list and
+  // ticked programs without choosing a scenario. That plan is still installable.
+  // Only the profile-driven route needs a profile to recover from.
+  if (!plan) {
     return <EmptyState canRecover={profile !== null} />;
   }
 
@@ -265,7 +274,7 @@ export function InstallScreen() {
     return (
       <ChoosePhase
         plan={plan}
-        profileName={profile.name}
+        profileName={profile?.name ?? "自选安装"}
         catalogue={catalogue}
         chosen={chosenSteps}
         onChoose={setChosenSteps}
@@ -334,10 +343,10 @@ export function InstallScreen() {
           </h2>
           <p className="text-[color:var(--text-quiet)] mt-1 text-[13px]">
             {installing
-              ? `${profile.name} · 已完成 ${done} / ${plan.steps.length}`
+              ? `${profile?.name ?? "自选安装"} · 已完成 ${done} / ${plan.steps.length}`
               : finished
-                ? `${profile.name} · ${done} / ${plan.steps.length} 项就绪`
-                : `${profile.name} · 共 ${runnable.length} 项待安装`}
+                ? `${profile?.name ?? "自选安装"} · ${done} / ${plan.steps.length} 项就绪`
+                : `${profile?.name ?? "自选安装"} · 共 ${runnable.length} 项待安装`}
           </p>
         </div>
 
@@ -594,7 +603,10 @@ function ChoosePhase({
    * underestimate.
    */
   const estimateMinutes =
-    selected.size === 0 || plan.estimatedMinutes <= 0 || runnable.length === 0
+    selected.size === 0 ||
+    plan.estimatedMinutes == null ||
+    plan.estimatedMinutes <= 0 ||
+    runnable.length === 0
       ? null
       : Math.max(1, Math.round((plan.estimatedMinutes * selected.size) / runnable.length));
 

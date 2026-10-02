@@ -44,6 +44,8 @@ src-tauri/gen/
 # ledger, which is inside the repo, so this rule is the only thing standing
 # between a routine `git add -A` and a shipped-secret incident.
 src-tauri/codes_export_*.txt
+codes_export_*.txt
+**/codes_export_*.txt
 
 # The ledger itself is deliberately NOT ignored: it stores only hashes, so it is
 # safe to version and useful to — it records which codes exist, which are spent,

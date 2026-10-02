@@ -1438,7 +1438,7 @@ mod tests {
             }],
             ready_count: 1,
             satisfied_count: 0,
-            estimated_minutes: 5,
+            estimated_minutes: Some(5),
         };
         let ready = readiness(&plan, &cat, false);
         // Git has an official-installer fallback, so a missing winget is not a

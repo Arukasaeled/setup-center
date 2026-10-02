@@ -53,6 +53,7 @@ import {
   UpgradePrompt,
 } from "../components/ActivationPanel";
 import { PluginsSection } from "../components/PluginsSection";
+import { STYLE_REGISTRY } from "../styles";
 import type {
   CapabilityStatus,
   Confidence,
@@ -73,6 +74,7 @@ import type {
 const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "overview", label: "环境概览", hint: "总体状态与缺口" },
   { id: "software", label: "软件", hint: "这台电脑装了什么" },
+  { id: "style", label: "风格", hint: "视觉风格与主题试验场" },
   { id: "config", label: "配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
   { id: "plugins", label: "插件", hint: "Claude 中文与效率增强" },
@@ -173,6 +175,7 @@ export function Dashboard() {
             />
           )}
           {section === "software" && <SoftwareSection />}
+          {section === "style" && <StyleSection />}
           {section === "config" && <ConfigSection />}
           {section === "history" && <HistorySection />}
           {section === "plugins" && <PluginsSection />}
@@ -474,16 +477,22 @@ function OverviewSection({
           The first item is promoted out of the list and given the QuickAction
           treatment, because "推荐下一步：安装 Node.js" is the brief's single
           most-wanted line and a five-item list buries it. */}
-      {advisor && advisor.summary.recommendations.some((r) => r.kind !== "hardware") && (
+      {advisor && (
         <section className="rise">
           <SectionLabel>建议的下一步</SectionLabel>
           <div className="stagger flex flex-col gap-2">
-            {advisor.summary.recommendations
-              .filter((r) => r.kind !== "hardware")
-              .slice(0, 5)
-              .map((r) => (
-                <RecommendationRow key={`${r.order}-${r.title}`} recommendation={r} />
-              ))}
+            {advisor.summary.recommendations.some((r) => r.kind !== "hardware") ? (
+              advisor.summary.recommendations
+                .filter((r) => r.kind !== "hardware")
+                .slice(0, 5)
+                .map((r) => (
+                  <RecommendationRow key={`${r.order}-${r.title}`} recommendation={r} />
+                ))
+            ) : (
+              <div className="rounded-[10px] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/40 px-3 py-2 text-[12.5px] text-[color:var(--text-secondary)]">
+                当前核心工具已全部就绪，无需补装。你可以直接开始项目开发，或前往「软件」自选更多工具。
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -905,13 +914,18 @@ function SoftwareSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="rise">
-        <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
+      <header className="rise software-main-header">
+        <div className="software-badge-strip inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider mb-2">
+          AUDIT REPORT // 本机软件生态全景
+        </div>
+        <h1 className="text-[color:var(--text-strong)] text-[22px] font-bold tracking-[-0.02em] software-main-title">
           这台电脑装了什么
         </h1>
-        <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px]">
-          检查了 {items.length} 个程序，
-          {items.filter((i) => i.installed).length} 个已安装
+        <p className="text-[color:var(--text-tertiary)] mt-1.5 text-[13px] software-stat-line">
+          共审计了 <span className="stat-count text-[color:var(--text-strong)] font-semibold">{items.length}</span> 个程序，
+          <span className="stat-installed font-bold text-[color:var(--status-ok)] ml-1">
+            {items.filter((i) => i.installed).length} 个已安装就绪
+          </span>
           {items.some((i) => !i.installed && i.confidence === "unknown") &&
             `，${items.filter((i) => !i.installed && i.confidence === "unknown").length} 个无法确认`}
         </p>
@@ -926,6 +940,28 @@ function SoftwareSection() {
           </p>
         </div>
       )}
+
+      {/* Quick link banner to the rich card-grid self-select screen */}
+      <div className="rise software-hero-banner flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 shadow-sm">
+        <div>
+          <div className="text-[14px] font-bold text-[color:var(--text-strong)] banner-title">
+            自由自选软件卡片库
+          </div>
+          <p className="text-[color:var(--text-tertiary)] mt-0.5 text-[12px] banner-desc">
+            支持 36 款主流 AI 助手、代码编辑器与开发环境，以卡片形式自由勾选、一键批量安装
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="banner-cta"
+          onClick={() => {
+            useApp.getState().closeDashboard();
+            useApp.getState().goTo("software");
+          }}
+        >
+          打开自选卡片库 →
+        </Button>
+      </div>
 
       {/* The master-detail split. The right column is wider than the global
           `aside` because a software explanation carries a purpose paragraph, a
@@ -2076,6 +2112,166 @@ function LoadingBlock({ label }: { label: string }) {
  * *reliable*, because a mismatch on a machine where they were not is not
  * evidence of anything and must not read as an accusation.
  */
+
+/**
+ * Visual Style Playground & Laboratory.
+ *
+ * Allows instant live preview and toggling of Setup Center's design languages,
+ * featuring "P5 × Comic Impact" as the marquee expressive showcase.
+ */
+function StyleSection() {
+  const activeStyle = useApp((s) => s.activeStyle);
+  const setActiveStyle = useApp((s) => s.setActiveStyle);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="rise">
+        <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
+          DESIGN LAB // 视觉风格试验场
+        </div>
+        <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
+          前端视觉语言与交互范式
+        </h1>
+        <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
+          支持一键切换 Setup Center 的全套视觉系统。首套旗舰主题为 <strong>P5 × 美漫彩漫</strong>，以黑白灰为硬核基底，搭配电光高亮撞色与高对比分镜轮廓，让每个软件卡片都鲜明独立。
+        </p>
+      </header>
+
+      {/* Preset Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {STYLE_REGISTRY.map((preset) => {
+          const isActive = activeStyle === preset.id || (activeStyle === "p5-comic" && preset.id === "phantom-comic");
+          return (
+            <div
+              key={preset.id}
+              onClick={() => {
+                if (preset.implemented) setActiveStyle(preset.id);
+              }}
+              className={clsx(
+                "group relative flex flex-col justify-between rounded-xl border p-5 transition-all duration-200 select-none",
+                preset.implemented ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                isActive
+                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] ring-2 ring-[color:var(--status-accent)]/50 shadow-lg"
+                  : preset.implemented
+                    ? "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/60 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]"
+                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/20",
+              )}
+            >
+              <div>
+                {/* Header: Name, Subtitle and Status */}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[16px] font-bold text-[color:var(--text-strong)]">
+                        {preset.name}
+                      </span>
+                      {isActive && (
+                        <span className="rounded px-2 py-0.5 text-[11px] font-black bg-[color:var(--status-accent)] text-black">
+                          当前已启用
+                        </span>
+                      )}
+                      {!preset.implemented && (
+                        <span className="rounded bg-zinc-500/20 px-1.5 py-0.5 text-[10.5px] text-zinc-400">
+                          设计草案
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[color:var(--text-quiet)] text-[11.5px] mt-0.5 font-mono">
+                      {preset.subtitle}
+                    </div>
+                  </div>
+
+                  {/* Palette dots */}
+                  <div className="flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-1 shrink-0">
+                    <span
+                      className="h-3 w-3 rounded-full border border-black/20"
+                      style={{ backgroundColor: preset.palette.baseBg }}
+                      title="基底色"
+                    />
+                    <span
+                      className="h-3 w-3 rounded-full border border-black/20"
+                      style={{ backgroundColor: preset.palette.accent }}
+                      title="强调色"
+                    />
+                    {preset.palette.accentSecondary && (
+                      <span
+                        className="h-3 w-3 rounded-full border border-black/20"
+                        style={{ backgroundColor: preset.palette.accentSecondary }}
+                        title="次级色"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Inspiration source */}
+                <div className="mt-3 rounded-lg bg-[color:var(--surface-inset)] px-3 py-2 text-[12px]">
+                  <span className="font-semibold text-[color:var(--text-secondary)]">灵感来源：</span>
+                  <span className="text-[color:var(--text-tertiary)]">{preset.inspiration}</span>
+                </div>
+
+                {/* Description */}
+                <p className="mt-2.5 text-[12.5px] text-[color:var(--text-secondary)] leading-relaxed">
+                  {preset.description}
+                </p>
+
+                {/* Tags */}
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {preset.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Key features */}
+                <ul className="mt-3.5 space-y-1 text-[11.5px] text-[color:var(--text-tertiary)]">
+                  {preset.features.map((feat) => (
+                    <li key={feat} className="flex items-center gap-1.5">
+                      <span className="h-1 w-1 rounded-full bg-[color:var(--status-accent)] shrink-0" />
+                      <span>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Action Button */}
+              <div className="mt-5 pt-3 border-t border-[color:var(--line-subtle)] flex items-center justify-between">
+                <span className="text-[11.5px] text-[color:var(--text-quiet)]">
+                  {isActive
+                    ? "全局生效中"
+                    : preset.implemented
+                      ? "点击卡片或按钮应用"
+                      : "待后续扩充"}
+                </span>
+                <Button
+                  size="sm"
+                  disabled={!preset.implemented}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (preset.implemented) setActiveStyle(preset.id);
+                  }}
+                  className={clsx(
+                    "text-[12px] font-bold px-3 py-1",
+                    isActive
+                      ? "bg-[color:var(--status-accent)] text-black"
+                      : preset.implemented
+                        ? "bg-[color:var(--surface-active)] text-[color:var(--text-strong)]"
+                        : "opacity-40",
+                  )}
+                >
+                  {isActive ? "正在使用" : preset.implemented ? "立即应用" : "敬请期待"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /** The 关于 section: version facts, and what the tool does not do. */
 function AboutSection() {

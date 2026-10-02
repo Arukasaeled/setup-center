@@ -428,11 +428,25 @@ export interface InstallStep {
 }
 
 export interface InstallPlan {
+  /**
+   * The scenario the student started from, or `""` when they built the plan by
+   * picking programs directly.
+   *
+   * Nothing in the engine branches on it; it is carried so the session and the
+   * report can say where the run came from.
+   */
   profileId: string;
   steps: InstallStep[];
   readyCount: number;
   satisfiedCount: number;
-  estimatedMinutes: number;
+  /**
+   * `null` when no profile supplied a figure.
+   *
+   * Optional rather than defaulted to a number, because an estimate is a
+   * promise: with no profile to quote, any number here would be invented, and
+   * the run would then have to break it.
+   */
+  estimatedMinutes: number | null;
 }
 
 export type StepStatus =
