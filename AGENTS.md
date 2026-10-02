@@ -30,6 +30,8 @@ styles/     ──x core/installer/ (视觉层绝不直接侵入安装器底层�
 | :--- | :--- |
 | **流转外部资源 / 网址入库（Transfer）** | [`TRANSFER.md`](TRANSFER.md) |
 | **远程 Vault 架构与内容同步** | [`src/core/vault/types.ts`](src/core/vault/types.ts) |
+| **版本控制与双通道更新门禁** | [`src/core/vault/release.ts`](src/core/vault/release.ts) |
+| **统一跨品类详情弹层（DetailShell）** | [`src/components/DetailShell.tsx`](src/components/DetailShell.tsx) |
 | **增加 / 修改视觉风格（Style）** | [`src/styles/README.md`](src/styles/README.md) |
 | **增加 / 浏览开发资源（Resource）** | [`src/content/resources/README.md`](src/content/resources/README.md) |
 | **增加 / 收录新软件** | [`src/content/software/README.md`](src/content/software/README.md) |

@@ -93,3 +93,18 @@ Setup Center App 实现了真正的 **运行时内容热更新 (Runtime Content 
 - **无网络环境**：客户端启动时优先激活 `setup-center.vault-cache.v1` 本地快照，即使断网界面依然完整。
 - **清单损坏防护**：如果远端返回非法 JSON 或网络连接超时，系统自动保留上一份有效快照，绝不引发界面空白或奔溃。
 - **自定义数据源**：支持通过设置自定义 Vault Remote URL（私有镜像源、本地 Mock 服务器或内网 GitLab）。
+
+---
+
+## 5. Release-Gated 批次发布门禁 (Release-Gated Updates)
+
+Setup Center 确立了严格的双通道更新模型：
+
+1. **App Release (程序本体通道)**：
+   - 承载：Tauri 跨平台窗口、Rust 硬件探测内核、安装调度引擎与基础渲染器。
+   - 机制：通过 GitHub Releases / 官方安装包发布，客户端在 TitleBar 版本徽标提示更新。
+2. **Vault Release (内容资产通道)**：
+   - 承载：设计系统 Style、开源资源、项目脚手架与交互范式。
+   - 门禁机制：Vault 仓库的 `main` 分支作为日常资产捕获与规整工作区（Staging），不直接无脑推给用户；仅当沉淀为稳定批次并在 `releases/latest.json` 生成 Checkpoint 时，客户端才提示发现新内容批次。
+   - 价值：允许高频扩充内容而绝不骚扰用户，同时为终端提供极速增量热同步。
+
