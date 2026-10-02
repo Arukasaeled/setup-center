@@ -33,6 +33,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "../lib/ipc";
 import { useApp, type Section } from "../lib/store";
 import { VersionBadge } from "./VersionBadge";
+import { UpdateModal } from "./UpdateModal";
+import { ReleaseManagerInstance, type ReleaseStatusSnapshot } from "../core/vault/release";
 
 /**
  * What the centre cell of the title bar says.
@@ -76,6 +78,15 @@ export function TitleBar() {
   const pageTitle = dashboardOpen
     ? SECTION_TITLES[section]
     : (WIZARD_TITLES[screen] ?? "");
+
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [releaseSnapshot, setReleaseSnapshot] = useState<ReleaseStatusSnapshot>(() =>
+    ReleaseManagerInstance.getSnapshot(),
+  );
+
+  useEffect(() => {
+    return ReleaseManagerInstance.subscribe((s) => setReleaseSnapshot(s));
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -137,6 +148,21 @@ export function TitleBar() {
             cluster: every control on that side is an action, and a tier badge is
             not something to click. */}
         <VersionBadge />
+        <button
+          type="button"
+          onClick={() => setShowUpdateModal(true)}
+          className="titlebar-nodrag flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-quiet)] hover:border-[color:var(--line-strong)] hover:text-[color:var(--text-primary)] transition-colors ml-1"
+          title="点击打开版本与更新控制台 (Release Console)"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              releaseSnapshot.app.hasUpdate || releaseSnapshot.vault.hasUpdate
+                ? "bg-[color:var(--status-accent)] animate-pulse"
+                : "bg-emerald-400"
+            }`}
+          />
+          <span>v0.1.4</span>
+        </button>
       </div>
 
       {/* Centre: the current page's title. Kept in the bar rather than repeated
@@ -196,6 +222,13 @@ export function TitleBar() {
           </svg>
         </ControlButton>
       </div>
+
+      {showUpdateModal && (
+        <UpdateModal
+          isOpen={true}
+          onClose={() => setShowUpdateModal(false)}
+        />
+      )}
     </div>
   );
 }
