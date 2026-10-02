@@ -14,15 +14,15 @@ export function TransferHistoryTimeline() {
   const getActionBadge = (type: TransferHistoryEntry["type"]) => {
     switch (type) {
       case "install":
-        return { label: "软件安装", icon: "📦", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" };
+        return { label: "软件安装", icon: "↓", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" };
       case "download":
         return { label: "资产下载", icon: "⤓", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
       case "scaffold":
         return { label: "脚手架创建", icon: "◩", color: "text-purple-400 bg-purple-500/10 border-purple-500/20" };
       case "sync":
-        return { label: "Vault 同步", icon: "⚡", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
+        return { label: "Vault 同步", icon: "↻", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
       case "style-switch":
-        return { label: "风格切换", icon: "🎨", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" };
+        return { label: "风格切换", icon: "◈", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" };
       case "bookmark":
         return { label: "个人收藏", icon: "★", color: "text-amber-300 bg-amber-400/10 border-amber-400/20" };
       default:

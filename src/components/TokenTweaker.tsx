@@ -14,7 +14,15 @@ export interface CustomTokens {
   surfaceOpacity?: number; // 50 - 100
 }
 
-export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
+export function TokenTweaker({
+  activeStyleId,
+  isCollapsed = false,
+  onToggleCollapse,
+}: {
+  activeStyleId: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+}) {
   const currentStyleDef = getStyle(activeStyleId);
 
   const [tokens, setTokens] = useState<CustomTokens>(() => {
@@ -98,6 +106,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
         surfaceOpacity: `${tokens.surfaceOpacity}%`,
       },
     };
+
     navigator.clipboard?.writeText(JSON.stringify(exportData, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -112,20 +121,43 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
     });
   };
 
+  if (isCollapsed) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[12.5px] font-bold text-[color:var(--text-strong)]">
+            令牌微调器 (Token Tweaker)
+          </span>
+          <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
+            {activeStyleId}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={handleReset}>
+            重置
+          </Button>
+          <Button size="sm" variant="quiet" onClick={onToggleCollapse}>
+            展开调节面板 ↓
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[color:var(--line-subtle)]">
+    <div className="rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] p-4 sm:p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[color:var(--line-subtle)]">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[13.5px] font-bold text-[color:var(--text-strong)]">
-              🎨 样式检查器与设计令牌微调 (Token Tweaker)
+            <span className="text-[13px] font-bold text-[color:var(--text-strong)]">
+              设计令牌检查器 (Token Tweaker)
             </span>
-            <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] font-mono text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
+            <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
               {activeStyleId}
             </span>
           </div>
-          <p className="text-[12px] text-[color:var(--text-tertiary)] mt-0.5">
-            实时微调当前设计系统的全局几何圆角、阴影位移、强调光晕与不透明度
+          <p className="text-[11.5px] text-[color:var(--text-tertiary)] mt-0.5">
+            实时微调当前设计系统的全局几何圆角、阴影位移、强调色与不透明度
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -133,15 +165,20 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
             重置默认
           </Button>
           <Button size="sm" variant="quiet" onClick={handleExport}>
-            {copied ? "已复制 JSON ✓" : "导出令牌 (JSON)"}
+            {copied ? "已复制 JSON" : "导出令牌 (JSON)"}
           </Button>
+          {onToggleCollapse && (
+            <Button size="sm" variant="ghost" onClick={onToggleCollapse}>
+              收起 ↑
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3.5">
         {/* Border Radius */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-[11.5px]">
+          <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold text-[color:var(--text-secondary)]">容器圆角 (Radius)</span>
             <span className="font-mono text-[color:var(--text-quiet)]">{tokens.borderRadius}</span>
           </div>
@@ -152,7 +189,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
                 type="button"
                 onClick={() => setTokens((t) => ({ ...t, borderRadius: r }))}
                 className={clsx(
-                  "px-2 py-0.5 text-[11px] font-mono rounded border transition-all",
+                  "px-2 py-0.5 text-[10.5px] font-mono rounded border transition-all",
                   tokens.borderRadius === r
                     ? "border-[color:var(--status-accent)] bg-[color:var(--status-accent)] text-black font-bold"
                     : "border-[color:var(--line-subtle)] bg-[color:var(--surface-base)] text-[color:var(--text-secondary)] hover:border-[color:var(--line-strong)]",
@@ -166,7 +203,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
 
         {/* Border Width */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-[11.5px]">
+          <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold text-[color:var(--text-secondary)]">边框线宽 (Border)</span>
             <span className="font-mono text-[color:var(--text-quiet)]">{tokens.borderWidth}</span>
           </div>
@@ -177,7 +214,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
                 type="button"
                 onClick={() => setTokens((t) => ({ ...t, borderWidth: w }))}
                 className={clsx(
-                  "px-2 py-0.5 text-[11px] font-mono rounded border transition-all",
+                  "px-2 py-0.5 text-[10.5px] font-mono rounded border transition-all",
                   tokens.borderWidth === w
                     ? "border-[color:var(--status-accent)] bg-[color:var(--status-accent)] text-black font-bold"
                     : "border-[color:var(--line-subtle)] bg-[color:var(--surface-base)] text-[color:var(--text-secondary)] hover:border-[color:var(--line-strong)]",
@@ -191,8 +228,8 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
 
         {/* Shadow Depth */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-[11.5px]">
-            <span className="font-semibold text-[color:var(--text-secondary)]">硬阴影深度 (Shadow)</span>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-semibold text-[color:var(--text-secondary)]">硬阴影 (Shadow)</span>
             <span className="font-mono text-[color:var(--text-quiet)]">{tokens.shadowDepth}</span>
           </div>
           <div className="flex flex-wrap gap-1">
@@ -202,7 +239,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
                 type="button"
                 onClick={() => setTokens((t) => ({ ...t, shadowDepth: s }))}
                 className={clsx(
-                  "px-2 py-0.5 text-[11px] font-mono rounded border transition-all",
+                  "px-2 py-0.5 text-[10.5px] font-mono rounded border transition-all",
                   tokens.shadowDepth === s
                     ? "border-[color:var(--status-accent)] bg-[color:var(--status-accent)] text-black font-bold"
                     : "border-[color:var(--line-subtle)] bg-[color:var(--surface-base)] text-[color:var(--text-secondary)] hover:border-[color:var(--line-strong)]",
@@ -216,7 +253,7 @@ export function TokenTweaker({ activeStyleId }: { activeStyleId: string }) {
 
         {/* Accent Color */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-[11.5px]">
+          <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold text-[color:var(--text-secondary)]">强调色 (Accent)</span>
             <span className="font-mono text-[color:var(--text-quiet)]">{tokens.accentColor}</span>
           </div>

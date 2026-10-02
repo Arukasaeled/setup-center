@@ -51,7 +51,7 @@ export const BUILTIN_CATEGORIES: ResourceCategoryMeta[] = [
   {
     id: "animation",
     name: "动效与三维交互",
-    icon: "⚡",
+    icon: "◎",
     description: "物理弹簧、复杂时间轴、Three.js 3D 与平滑滚动",
   },
   {
@@ -69,7 +69,7 @@ export const BUILTIN_CATEGORIES: ResourceCategoryMeta[] = [
   {
     id: "tools",
     name: "开发效率工具",
-    icon: "⚙",
+    icon: "⌘",
     description: "次世代编辑器、极速检索、终端提示符与版本管理",
   },
   {
@@ -87,7 +87,7 @@ export const BUILTIN_CATEGORIES: ResourceCategoryMeta[] = [
   {
     id: "learning",
     name: "学习路径与技能树",
-    icon: "📖",
+    icon: "⎘",
     description: "全景路线图、分布式系统架构与 MIT 工具链公开课",
   },
   {
