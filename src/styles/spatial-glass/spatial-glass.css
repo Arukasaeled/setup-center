@@ -1,0 +1,127 @@
+/* ==========================================================================
+   STYLE SPECIMEN: spatial-glass (空间微光毛玻璃)
+   ========================================================================== */
+
+:root[data-style="spatial-glass"]:not([data-theme="light"]) {
+  --surface-base: #060911;
+  --surface-raised: rgba(18, 25, 40, 0.65);
+  --surface-overlay: rgba(22, 31, 50, 0.75);
+  --surface-overlay-soft: rgba(18, 25, 40, 0.55);
+  --surface-sunken: rgba(5, 7, 12, 0.7);
+  --surface-hover: rgba(56, 189, 248, 0.08);
+  --surface-active: #38bdf8;
+  --surface-inset: rgba(255, 255, 255, 0.04);
+
+  --text-strong: #ffffff;
+  --text-primary: #f0f6fc;
+  --text-secondary: #c0cbe0;
+  --text-tertiary: #8b99b5;
+  --text-quiet: #5e6b85;
+  --text-inverse: #000000;
+
+  --line-subtle: rgba(255, 255, 255, 0.08);
+  --line-default: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(56, 189, 248, 0.6);
+
+  --status-ok: #34d399;
+  --status-warn: #fbbf24;
+  --status-bad: #f87171;
+  --status-accent: #38bdf8;
+  --status-accent-soft: rgba(56, 189, 248, 0.16);
+
+  --radius-panel: 20px;
+  --radius-control: 12px;
+}
+
+:root[data-style="spatial-glass"][data-theme="light"] {
+  --surface-base: #f0f4f9;
+  --surface-raised: rgba(255, 255, 255, 0.75);
+  --surface-overlay: rgba(255, 255, 255, 0.88);
+  --surface-overlay-soft: rgba(255, 255, 255, 0.65);
+  --surface-sunken: rgba(225, 232, 242, 0.6);
+  --surface-hover: rgba(56, 189, 248, 0.08);
+  --surface-active: #0284c7;
+  --surface-inset: rgba(0, 0, 0, 0.03);
+
+  --text-strong: #0f172a;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-quiet: #94a3b8;
+  --text-inverse: #ffffff;
+
+  --line-subtle: rgba(0, 0, 0, 0.06);
+  --line-default: rgba(0, 0, 0, 0.12);
+  --line-strong: #0284c7;
+
+  --status-ok: #059669;
+  --status-warn: #d97706;
+  --status-bad: #e11d48;
+  --status-accent: #0284c7;
+  --status-accent-soft: rgba(2, 132, 199, 0.14);
+
+  --radius-panel: 20px;
+  --radius-control: 12px;
+}
+
+/* Rounded curvature everywhere */
+[data-style="spatial-glass"] .rounded-xl,
+[data-style="spatial-glass"] .rounded-\[12px\],
+[data-style="spatial-glass"] .rounded-\[10px\] {
+  border-radius: 18px !important;
+}
+
+[data-style="spatial-glass"] button {
+  border-radius: 12px !important;
+}
+
+/* Nav */
+[data-style="spatial-glass"] nav[aria-label="导航"] {
+  background: var(--surface-base);
+  border-right: 1px solid var(--line-subtle);
+}
+
+[data-style="spatial-glass"] nav[aria-label="导航"] button[aria-current="page"] {
+  background: rgba(56, 189, 248, 0.15) !important;
+  color: var(--status-accent) !important;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 4px 16px -4px rgba(56, 189, 248, 0.25);
+}
+
+/* Optical glass cards with backdrop-filter blur and top refraction highlight */
+[data-style="spatial-glass"] [data-software-row] {
+  backdrop-filter: blur(28px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(160%) !important;
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: 18px !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 12px 30px -10px rgba(0, 0, 0, 0.5) !important;
+  transition: all 180ms ease !important;
+}
+
+[data-style="spatial-glass"] [data-software-row]:hover {
+  border-color: rgba(56, 189, 248, 0.5) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 16px 36px -10px rgba(56, 189, 248, 0.2) !important;
+  transform: translateY(-2px);
+}
+
+[data-style="spatial-glass"] [data-software-row][aria-pressed="true"],
+[data-style="spatial-glass"] [data-software-row][aria-expanded="true"] {
+  border-color: var(--status-accent) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.3), 0 0 0 2px rgba(56, 189, 248, 0.3) !important;
+}
+
+[data-style="spatial-glass"] [data-software-row] .software-row-icon-tray {
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Glass buttons */
+[data-style="spatial-glass"] button.bg-\[color\:var\(--status-accent\)\] {
+  background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 18px -2px rgba(56, 189, 248, 0.4);
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

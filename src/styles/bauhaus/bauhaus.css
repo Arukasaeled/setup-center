@@ -1,0 +1,139 @@
+/* ==========================================================================
+   STYLE SPECIMEN: bauhaus (包豪斯几何现代)
+   ========================================================================== */
+
+:root[data-style="bauhaus"]:not([data-theme="light"]) {
+  --surface-base: #101216;
+  --surface-raised: #181b22;
+  --surface-overlay: rgba(24, 27, 34, 0.98);
+  --surface-overlay-soft: rgba(29, 33, 42, 0.94);
+  --surface-sunken: #0a0b0d;
+  --surface-hover: rgba(255, 190, 11, 0.08);
+  --surface-active: #ffbe0b;
+  --surface-inset: #1f232d;
+
+  --text-strong: #ffffff;
+  --text-primary: #f8f9fa;
+  --text-secondary: #c9ced8;
+  --text-tertiary: #9299a9;
+  --text-quiet: #697182;
+  --text-inverse: #000000;
+
+  --line-subtle: #272c38;
+  --line-default: #3d4557;
+  --line-strong: #ffbe0b;
+
+  --status-ok: #00d26a;
+  --status-warn: #ffbe0b;
+  --status-bad: #d90429;
+  --status-accent: #ffbe0b;
+  --status-accent-soft: rgba(255, 190, 11, 0.16);
+
+  --font-sans: "Futura", "Trebuchet MS", Arial, sans-serif;
+  --radius-panel: 14px 0px 14px 0px;
+  --radius-control: 8px 0px 8px 0px;
+}
+
+:root[data-style="bauhaus"][data-theme="light"] {
+  --surface-base: #f7f5ef;
+  --surface-raised: #ffffff;
+  --surface-overlay: rgba(255, 255, 255, 0.98);
+  --surface-overlay-soft: rgba(247, 245, 239, 0.94);
+  --surface-sunken: #ede9dc;
+  --surface-hover: rgba(29, 78, 216, 0.06);
+  --surface-active: #ffbe0b;
+  --surface-inset: #eee9dc;
+
+  --text-strong: #0a0b0d;
+  --text-primary: #1a1c22;
+  --text-secondary: #404452;
+  --text-tertiary: #676d80;
+  --text-quiet: #8f95a6;
+  --text-inverse: #000000;
+
+  --line-subtle: #dbd6c7;
+  --line-default: #b4ac96;
+  --line-strong: #000000;
+
+  --status-ok: #059669;
+  --status-warn: #d97706;
+  --status-bad: #d90429;
+  --status-accent: #ffbe0b;
+  --status-accent-soft: rgba(255, 190, 11, 0.2);
+
+  --font-sans: "Futura", "Trebuchet MS", Arial, sans-serif;
+  --radius-panel: 14px 0px 14px 0px;
+  --radius-control: 8px 0px 8px 0px;
+}
+
+/* Bauhaus asymmetric corner radius */
+[data-style="bauhaus"] .rounded-xl,
+[data-style="bauhaus"] .rounded-lg,
+[data-style="bauhaus"] .rounded-\[12px\],
+[data-style="bauhaus"] .rounded-\[10px\] {
+  border-radius: 14px 0px 14px 0px !important;
+}
+
+[data-style="bauhaus"] button {
+  border-radius: 8px 0px 8px 0px !important;
+}
+
+/* Nav */
+[data-style="bauhaus"] nav[aria-label="导航"] {
+  border-right: 2px solid var(--line-default);
+  background: var(--surface-base);
+}
+
+[data-style="bauhaus"] nav[aria-label="导航"] button[aria-current="page"] {
+  background: #ffbe0b !important;
+  color: #000000 !important;
+  font-weight: 800;
+  border: 2px solid #000000;
+  box-shadow: 3px 3px 0px #1d4ed8;
+}
+
+/* Software card */
+[data-style="bauhaus"] [data-software-row] {
+  border: 2px solid var(--line-default) !important;
+  border-radius: 14px 0px 14px 0px !important;
+  background: var(--surface-raised) !important;
+  box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.4) !important;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+[data-style="bauhaus"] [data-software-row]:hover {
+  transform: translate(-2px, -2px);
+  border-color: #ffbe0b !important;
+  box-shadow: 5px 5px 0px #1d4ed8 !important;
+}
+
+[data-style="bauhaus"] [data-software-row][aria-pressed="true"],
+[data-style="bauhaus"] [data-software-row][aria-expanded="true"] {
+  border-color: #ffbe0b !important;
+  box-shadow: 5px 5px 0px #d90429 !important;
+}
+
+[data-style="bauhaus"] [data-software-row] .software-row-icon-tray {
+  border: 2px solid var(--line-default);
+  border-radius: 8px 0px 8px 0px !important;
+  background: var(--surface-base);
+}
+
+[data-style="bauhaus"] [data-software-row] .software-row-name {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Action button */
+[data-style="bauhaus"] button.bg-\[color\:var\(--status-accent\)\] {
+  background: #ffbe0b !important;
+  color: #000000 !important;
+  font-weight: 800;
+  border: 2px solid #000000;
+  box-shadow: 2px 2px 0px #000000;
+}
+
+[data-style="bauhaus"] button.bg-\[color\:var\(--status-accent\)\]:hover {
+  box-shadow: 4px 4px 0px #1d4ed8;
+  transform: translate(-1px, -1px);
+}

@@ -23,5 +23,12 @@ export const defaultStyle: SetupStyle = {
     hardShadow: "0 12px 32px -12px rgba(0, 0, 0, 0.7)",
     borderRadius: "10px",
   },
+  designPrinciples: [
+    "Neutral Utility — 界面以中性质感退后，最大化保证可读性",
+    "Restrained Lighting — 摒弃耀眼光效，采用微弱灰阶透光",
+    "Linear Typographic Discipline — 严苛的字重与间距梯度",
+  ],
   implemented: true,
+  license: "MIT",
+  updatedAt: "2026-10-02",
 };

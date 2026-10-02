@@ -41,5 +41,13 @@ export const phantomComicStyle: SetupStyle = {
     borderRadius: "8px",
     accentHue: "#ffe600",
   },
+  designPrinciples: [
+    "Hard Silhouette — 粗硬轮廓打破界面与背景的模糊边界",
+    "Offset Geometry — 几何斜切与阴影偏移营造动感张力",
+    "High Contrast Drama — 极黑基底与纯亮撞色营造强烈戏剧感",
+    "Comic Panel Cadence — 将每个独立模块视为一格引人瞩目的分镜",
+  ],
   implemented: true,
+  license: "MIT",
+  updatedAt: "2026-10-02",
 };

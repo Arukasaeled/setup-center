@@ -2204,8 +2204,8 @@ function StyleSection() {
                 </div>
 
                 {/* Inspiration source */}
-                <div className="mt-3 rounded-lg bg-[color:var(--surface-inset)] px-3 py-2 text-[12px]">
-                  <span className="font-semibold text-[color:var(--text-secondary)]">灵感来源：</span>
+                <div className="mt-3 rounded-lg bg-[color:var(--surface-inset)] px-3 py-2 text-[12px] border border-[color:var(--line-subtle)]">
+                  <span className="font-semibold text-[color:var(--text-secondary)]">设计语言灵感：</span>
                   <span className="text-[color:var(--text-tertiary)]">{preset.inspiration}</span>
                 </div>
 
@@ -2235,6 +2235,23 @@ function StyleSection() {
                     </li>
                   ))}
                 </ul>
+
+                {/* Design principles / 学习参考 */}
+                {preset.designPrinciples && preset.designPrinciples.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2.5">
+                    <div className="text-[10.5px] font-bold text-[color:var(--text-tertiary)] uppercase tracking-wider">
+                      设计规范与原则参考
+                    </div>
+                    <ul className="mt-1.5 space-y-1 text-[11px] text-[color:var(--text-secondary)] font-mono">
+                      {preset.designPrinciples.map((dp, i) => (
+                        <li key={i} className="flex items-start gap-1.5">
+                          <span className="text-[color:var(--status-accent)] shrink-0">•</span>
+                          <span>{dp}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Action Button */}

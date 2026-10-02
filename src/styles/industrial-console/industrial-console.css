@@ -1,0 +1,140 @@
+/* ==========================================================================
+   STYLE SPECIMEN: industrial-console (工业工程控制台)
+   ========================================================================== */
+
+:root[data-style="industrial-console"]:not([data-theme="light"]) {
+  --surface-base: #0f1115;
+  --surface-raised: #161920;
+  --surface-overlay: rgba(22, 25, 32, 0.98);
+  --surface-overlay-soft: rgba(26, 30, 39, 0.94);
+  --surface-sunken: #090a0d;
+  --surface-hover: rgba(249, 115, 22, 0.08);
+  --surface-active: #f97316;
+  --surface-inset: #1d212b;
+
+  --text-strong: #ffffff;
+  --text-primary: #e5e9f0;
+  --text-secondary: #b8c1d1;
+  --text-tertiary: #8490a6;
+  --text-quiet: #596478;
+  --text-inverse: #000000;
+
+  --line-subtle: #232834;
+  --line-default: #353d4f;
+  --line-strong: #f97316;
+
+  --status-ok: #10b981;
+  --status-warn: #f59e0b;
+  --status-bad: #ef4444;
+  --status-accent: #f97316;
+  --status-accent-soft: rgba(249, 115, 22, 0.16);
+
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --radius-panel: 6px;
+  --radius-control: 4px;
+}
+
+:root[data-style="industrial-console"][data-theme="light"] {
+  --surface-base: #e5e7eb;
+  --surface-raised: #f3f4f6;
+  --surface-overlay: rgba(243, 244, 246, 0.98);
+  --surface-overlay-soft: rgba(235, 237, 241, 0.94);
+  --surface-sunken: #d1d5db;
+  --surface-hover: rgba(234, 88, 12, 0.08);
+  --surface-active: #ea580c;
+  --surface-inset: #dbe0e8;
+
+  --text-strong: #111827;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --text-tertiary: #6b7280;
+  --text-quiet: #9ca3af;
+  --text-inverse: #ffffff;
+
+  --line-subtle: #cbd5e1;
+  --line-default: #94a3b8;
+  --line-strong: #ea580c;
+
+  --status-ok: #059669;
+  --status-warn: #d97706;
+  --status-bad: #dc2626;
+  --status-accent: #ea580c;
+  --status-accent-soft: rgba(234, 88, 12, 0.18);
+
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --radius-panel: 6px;
+  --radius-control: 4px;
+}
+
+[data-style="industrial-console"] .rounded-xl,
+[data-style="industrial-console"] .rounded-lg,
+[data-style="industrial-console"] .rounded-\[12px\],
+[data-style="industrial-console"] .rounded-\[10px\] {
+  border-radius: 4px !important;
+}
+
+[data-style="industrial-console"] button {
+  border-radius: 4px !important;
+}
+
+/* Nav */
+[data-style="industrial-console"] nav[aria-label="导航"] {
+  border-right: 1.5px solid var(--line-default);
+  background: var(--surface-base);
+}
+
+[data-style="industrial-console"] nav[aria-label="导航"] button[aria-current="page"] {
+  background: var(--surface-inset) !important;
+  color: var(--status-accent) !important;
+  border-left: 3px solid #f97316 !important;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+/* Software Rack Slot card */
+[data-style="industrial-console"] [data-software-row] {
+  border: 1px solid var(--line-default) !important;
+  background: var(--surface-raised) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  position: relative;
+  transition: all 120ms ease;
+}
+
+[data-style="industrial-console"] [data-software-row]:hover {
+  border-color: #f97316 !important;
+  box-shadow: inset 0 0 0 1px #f97316 !important;
+}
+
+[data-style="industrial-console"] [data-software-row][aria-pressed="true"],
+[data-style="industrial-console"] [data-software-row][aria-expanded="true"] {
+  border-color: #f97316 !important;
+  background: var(--surface-inset) !important;
+  box-shadow: inset 0 0 0 1px #f97316, 0 0 8px rgba(249, 115, 22, 0.3) !important;
+}
+
+[data-style="industrial-console"] [data-software-row] .software-row-icon-tray {
+  border: 1px solid var(--line-default);
+  background: var(--surface-sunken);
+  border-radius: 3px !important;
+}
+
+[data-style="industrial-console"] [data-software-row] .software-row-name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Industrial Action Button */
+[data-style="industrial-console"] button.bg-\[color\:var\(--status-accent\)\] {
+  background: #f97316 !important;
+  color: #000000 !important;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid #ff9248;
+}
+
+[data-style="industrial-console"] button.bg-\[color\:var\(--status-accent\)\]:hover {
+  background: #ea580c !important;
+}
