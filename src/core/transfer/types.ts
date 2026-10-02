@@ -11,7 +11,11 @@ export type TransferActionType =
   | "scaffold"
   | "sync"
   | "style-switch"
-  | "bookmark";
+  | "bookmark"
+  | "command"
+  | "copy"
+  | "clone"
+  | "setup";
 
 export interface TransferHistoryEntry {
   id: string;

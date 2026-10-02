@@ -17,6 +17,9 @@ import { VaultSync, type VaultSyncStatus, type VaultSyncResult } from "../core/v
 import { ScaffoldModal } from "../components/ScaffoldModal";
 import { TransferInboxDrawer } from "../components/TransferInboxDrawer";
 import { DetailShell } from "../components/DetailShell";
+import { SetupActionButton } from "../components/SetupActionButton";
+import { resolveSetupAction } from "../core/setup";
+import { useApp } from "../lib/store";
 
 function openUrl(url?: string) {
   if (!url) return;
@@ -117,6 +120,27 @@ export function ResourceSection() {
     const cat = RESOURCE_CATEGORIES.find((c) => c.id === catId);
     return cat ? cat.name : catId;
   };
+
+  const inventory = useApp((s) => s.inventory);
+
+  const currentResourceIdx = useMemo(() => {
+    if (!selectedResourceForDetail) return -1;
+    return filteredResources.findIndex((r) => r.id === selectedResourceForDetail.id);
+  }, [selectedResourceForDetail, filteredResources]);
+
+  const hasPrev = currentResourceIdx > 0;
+  const hasNext = currentResourceIdx >= 0 && currentResourceIdx < filteredResources.length - 1;
+  const handlePrev = () => {
+    if (hasPrev) setSelectedResourceForDetail(filteredResources[currentResourceIdx - 1]);
+  };
+  const handleNext = () => {
+    if (hasNext) setSelectedResourceForDetail(filteredResources[currentResourceIdx + 1]);
+  };
+
+  const resolvedSetup = useMemo(() => {
+    if (!selectedResourceForDetail) return null;
+    return resolveSetupAction({ type: "resource", data: selectedResourceForDetail }, inventory);
+  }, [selectedResourceForDetail, inventory]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -541,6 +565,10 @@ export function ResourceSection() {
         <DetailShell
           isOpen={true}
           onClose={() => setSelectedResourceForDetail(null)}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
           title={selectedResourceForDetail.name}
           subtitle={`作者 / 组织：${selectedResourceForDetail.author} · 分类：${getCategoryLabel(
             selectedResourceForDetail.category,
@@ -581,63 +609,19 @@ export function ResourceSection() {
                 </button>
               </div>
 
-              <div className="flex items-center gap-2">
-                {selectedResourceForDetail.category === "templates" && (
-                  <Button
-                    size="sm"
-                    className="font-bold text-[12px]"
-                    onClick={() => {
-                      setScaffoldTemplate({
-                        id: selectedResourceForDetail.id,
-                        name: selectedResourceForDetail.name,
-                        description: selectedResourceForDetail.description,
-                        defaultDir: selectedResourceForDetail.name
-                          .toLowerCase()
-                          .replace(/[^a-z0-9]/g, "-"),
-                      });
-                      setSelectedResourceForDetail(null);
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {resolvedSetup && (
+                  <SetupActionButton
+                    action={resolvedSetup.primaryAction}
+                    secondaryActions={resolvedSetup.secondaryActions}
+                    availablePackageManagers={resolvedSetup.availablePackageManagers}
+                    prerequisites={resolvedSetup.prerequisites}
+                    itemMeta={{
+                      id: selectedResourceForDetail.id,
+                      name: selectedResourceForDetail.name,
+                      type: "resource",
                     }}
-                  >
-                    创建工程 ◩
-                  </Button>
-                )}
-
-                {selectedResourceForDetail.actionType === "download" &&
-                  selectedResourceForDetail.downloadUrl && (
-                    <Button
-                      size="sm"
-                      className="font-bold text-[12px] bg-emerald-400 text-black hover:bg-emerald-300"
-                      onClick={() => {
-                        AssetDownloader.startDownload(
-                          selectedResourceForDetail.downloadUrl!,
-                          `${selectedResourceForDetail.name.toLowerCase().replace(/\s+/g, "_")}.zip`,
-                          selectedResourceForDetail.name,
-                        );
-                        setSelectedResourceForDetail(null);
-                      }}
-                    >
-                      下载离线资产 ⤓
-                    </Button>
-                  )}
-
-                {selectedResourceForDetail.repository && (
-                  <Button
-                    size="sm"
-                    variant="quiet"
-                    onClick={() => openUrl(selectedResourceForDetail.repository)}
-                  >
-                    访问 GitHub ↗
-                  </Button>
-                )}
-
-                {selectedResourceForDetail.homepage && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => openUrl(selectedResourceForDetail.homepage)}
-                  >
-                    访问官网 ↗
-                  </Button>
+                  />
                 )}
 
                 <Button

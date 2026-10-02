@@ -45,6 +45,7 @@ import { WelcomeScreen } from "./screens/Welcome";
 import { useApp, type Screen } from "./lib/store";
 import { readEntryChoice } from "./lib/entry";
 import { VaultSync } from "./core/vault";
+import { CommandPalette } from "./components/CommandPalette";
 
 /**
  * The wizard's steps.
@@ -134,6 +135,24 @@ export default function App() {
    * `Welcome`, and in that case the customer can close it again.
    */
   const [forcedGate, setForcedGate] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    const handleCustomOpen = () => setCommandPaletteOpen(true);
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("setup:open-palette", handleCustomOpen);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("setup:open-palette", handleCustomOpen);
+    };
+  }, []);
 
   useEffect(() => {
     void loadStatus();
@@ -299,6 +318,11 @@ export default function App() {
       )}
 
       {notice && <Notice message={notice} onDismiss={dismissNotice} />}
+
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
     </div>
   );
 }

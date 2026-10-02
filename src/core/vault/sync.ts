@@ -26,6 +26,7 @@ import { VaultClient } from "./client";
 import { registerResourcesBatch, type ResourceItem } from "../../content/resources";
 import { registerStyle, type SetupStyle } from "../../styles";
 import { ContentRegistry } from "../../content/registry";
+import { TransferHistory } from "../transfer/history";
 
 type SyncListener = (status: VaultSyncStatus, result?: VaultSyncResult) => void;
 
@@ -98,25 +99,55 @@ class VaultSyncManager {
   }
 
   /**
-   * Synchronize with remote Setup Center Vault
+   * Synchronize with remote Setup Center Vault via Immutable Release Gate
    */
   public async sync(options?: { force?: boolean; remoteUrl?: string }): Promise<VaultSyncResult> {
     const config = loadVaultConfig();
-    const url = options?.remoteUrl || config.remoteUrl;
-    const client = new VaultClient(url);
+    const rawVaultOrigin = (options?.remoteUrl || config.remoteUrl).replace(/\/+$/, "");
+    const checkpointUrl = `${rawVaultOrigin.replace(/\/main\/?$/, "")}/main/releases/latest.json`;
 
     this.notify("checking");
 
     try {
+      let targetBaseUrl = rawVaultOrigin;
+      let releaseCheckpoint: {
+        releaseVersion?: string;
+        commitSha?: string;
+        snapshotTag?: string;
+        summary?: string;
+      } | null = null;
+
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const checkpointRes = await fetch(checkpointUrl, {
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        });
+        clearTimeout(timer);
+        if (checkpointRes.ok) {
+          releaseCheckpoint = await checkpointRes.json();
+          if (releaseCheckpoint?.commitSha || releaseCheckpoint?.snapshotTag) {
+            const pin = releaseCheckpoint.commitSha || releaseCheckpoint.snapshotTag;
+            targetBaseUrl = `${rawVaultOrigin.replace(/\/main\/?$/, "")}/${pin}`;
+          }
+        }
+      } catch {
+        // network or offline, fallback to rawVaultOrigin
+      }
+
+      const client = new VaultClient(targetBaseUrl);
       const remoteManifest = await client.fetchManifest();
       const cached = loadVaultCache();
 
+      const targetVersion = releaseCheckpoint?.releaseVersion || remoteManifest.contentVersion;
+
       // Check if update is needed
-      if (!options?.force && cached && cached.manifest.contentVersion === remoteManifest.contentVersion) {
+      if (!options?.force && cached && (cached.manifest.contentVersion === targetVersion || cached.manifest.contentVersion === remoteManifest.contentVersion)) {
         const result: VaultSyncResult = {
           ok: true,
           updated: false,
-          contentVersion: remoteManifest.contentVersion,
+          contentVersion: cached.manifest.contentVersion,
           fromCache: true,
           itemCounts: {
             styles: Object.keys(cached.styles).length,
@@ -223,6 +254,15 @@ class VaultSyncManager {
           patterns: patternsList.length,
         },
       };
+
+      TransferHistory.record({
+        type: "sync",
+        title: "Setup Vault 内容库同步成功",
+        targetId: `vault-${remoteManifest.contentVersion}`,
+        targetName: `Vault v${remoteManifest.contentVersion}`,
+        status: "success",
+        summary: `已同步最新批次资产 (Styles: ${Object.keys(stylesRecord).length}, Resources: ${resourcesList.length}, Templates: ${templatesList.length})`,
+      });
 
       this.notify("success", successResult);
       return successResult;

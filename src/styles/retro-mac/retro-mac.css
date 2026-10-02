@@ -1,0 +1,84 @@
+/* ==========================================================================
+   STYLE SPECIMEN: retro-mac (复古苹果麦金塔 System 7)
+   ========================================================================== */
+
+:root[data-style="retro-mac"]:not([data-theme="light"]) {
+  --surface-base: #282a2e;
+  --surface-raised: #34373d;
+  --surface-overlay: rgba(52, 55, 61, 0.98);
+  --surface-overlay-soft: rgba(40, 42, 46, 0.95);
+  --surface-sunken: #1e2024;
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-active: #5c6b8f;
+  --surface-inset: #232529;
+
+  --text-strong: #ffffff;
+  --text-primary: #eceff4;
+  --text-secondary: #c0c5d0;
+  --text-tertiary: #8f95a5;
+  --text-quiet: #656b7c;
+  --text-inverse: #101216;
+
+  --line-subtle: #3a3d45;
+  --line-default: #1e2024;
+  --line-strong: #000000;
+
+  --status-ok: #a3be8c;
+  --status-warn: #ebcb8b;
+  --status-bad: #bf616a;
+  --status-accent: #7b88aa;
+  --status-accent-soft: rgba(123, 136, 170, 0.2);
+
+  --font-sans: "Geneva", "Lucida Grande", "Segoe UI", sans-serif;
+  --radius-panel: 3px;
+  --radius-control: 2px;
+}
+
+:root[data-style="retro-mac"][data-theme="light"] {
+  --surface-base: #d6d6d6;
+  --surface-raised: #e8e8e8;
+  --surface-overlay: rgba(232, 232, 232, 0.98);
+  --surface-overlay-soft: rgba(214, 214, 214, 0.95);
+  --surface-sunken: #c0c0c0;
+  --surface-hover: rgba(0, 0, 0, 0.06);
+  --surface-active: #000080;
+  --surface-inset: #bcbcbc;
+
+  --text-strong: #000000;
+  --text-primary: #111111;
+  --text-secondary: #333333;
+  --text-tertiary: #666666;
+  --text-quiet: #888888;
+  --text-inverse: #ffffff;
+
+  --line-subtle: #a0a0a0;
+  --line-default: #000000;
+  --line-strong: #000000;
+
+  --status-ok: #2e7d32;
+  --status-warn: #e65100;
+  --status-bad: #c62828;
+  --status-accent: #334466;
+  --status-accent-soft: rgba(51, 68, 102, 0.15);
+
+  --font-sans: "Geneva", "Lucida Grande", "Segoe UI", sans-serif;
+  --radius-panel: 3px;
+  --radius-control: 2px;
+}
+
+:root[data-style="retro-mac"] [data-software-row],
+:root[data-style="retro-mac"] [data-resource-card],
+:root[data-style="retro-mac"] [data-style-card] {
+  border-radius: 3px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #000000;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.35);
+  transition: all 0.1s ease;
+}
+
+:root[data-style="retro-mac"] [data-software-row]:active,
+:root[data-style="retro-mac"] [data-resource-card]:active {
+  box-shadow: 1px 1px 0px rgba(0, 0, 0, 0.5);
+  transform: translate(1px, 1px);
+}

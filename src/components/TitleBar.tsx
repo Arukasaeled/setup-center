@@ -187,6 +187,16 @@ export function TitleBar() {
           dashboard to fix it. The dashboard's segmented control stays: it is
           the one that shows all three states at once. */}
       <div className="titlebar-nodrag flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("setup:open-palette"))}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-[6px] border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--surface-hover)] transition-colors text-[11px] font-mono mr-1 cursor-pointer"
+          title="打开全局指令与资产检索 (Ctrl+K / ⌘K)"
+        >
+          <span>⌘K</span>
+          <span className="hidden sm:inline text-[10px]">检索</span>
+        </button>
+
         <ThemeToggleButton />
 
         <span className="bg-[color:var(--line-subtle)] mx-1 h-4 w-px" />

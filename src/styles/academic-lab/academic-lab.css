@@ -1,0 +1,83 @@
+/* ==========================================================================
+   STYLE SPECIMEN: academic-lab (科学实验室仪器报告)
+   ========================================================================== */
+
+:root[data-style="academic-lab"]:not([data-theme="light"]) {
+  --surface-base: #0b1218;
+  --surface-raised: #121c26;
+  --surface-overlay: rgba(18, 28, 38, 0.98);
+  --surface-overlay-soft: rgba(13, 20, 28, 0.95);
+  --surface-sunken: #070c10;
+  --surface-hover: rgba(14, 165, 233, 0.08);
+  --surface-active: #0ea5e9;
+  --surface-inset: #162330;
+
+  --text-strong: #ffffff;
+  --text-primary: #e6f1f8;
+  --text-secondary: #9db2c4;
+  --text-tertiary: #6b8296;
+  --text-quiet: #455768;
+  --text-inverse: #0b1218;
+
+  --line-subtle: #192736;
+  --line-default: #263c52;
+  --line-strong: #0ea5e9;
+
+  --status-ok: #10b981;
+  --status-warn: #f59e0b;
+  --status-bad: #ef4444;
+  --status-accent: #0ea5e9;
+  --status-accent-soft: rgba(14, 165, 233, 0.16);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --radius-panel: 4px;
+  --radius-control: 3px;
+}
+
+:root[data-style="academic-lab"][data-theme="light"] {
+  --surface-base: #f4f8fb;
+  --surface-raised: #ffffff;
+  --surface-overlay: rgba(255, 255, 255, 0.98);
+  --surface-overlay-soft: rgba(244, 248, 251, 0.95);
+  --surface-sunken: #eaf0f5;
+  --surface-hover: rgba(2, 132, 199, 0.05);
+  --surface-active: #0284c7;
+  --surface-inset: #e5edf4;
+
+  --text-strong: #0c1822;
+  --text-primary: #192b3a;
+  --text-secondary: #455d72;
+  --text-tertiary: #758ca0;
+  --text-quiet: #9eb2c3;
+  --text-inverse: #ffffff;
+
+  --line-subtle: #dce7f0;
+  --line-default: #bcd0e0;
+  --line-strong: #0284c7;
+
+  --status-ok: #059669;
+  --status-warn: #d97706;
+  --status-bad: #dc2626;
+  --status-accent: #0284c7;
+  --status-accent-soft: rgba(2, 132, 199, 0.12);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --radius-panel: 4px;
+  --radius-control: 3px;
+}
+
+:root[data-style="academic-lab"] [data-software-row],
+:root[data-style="academic-lab"] [data-resource-card],
+:root[data-style="academic-lab"] [data-style-card] {
+  border-radius: 4px;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-style="academic-lab"] [data-software-row]:hover,
+:root[data-style="academic-lab"] [data-resource-card]:hover,
+:root[data-style="academic-lab"] [data-style-card]:hover {
+  border-color: var(--status-accent);
+  box-shadow: 0 4px 18px rgba(14, 165, 233, 0.12);
+}

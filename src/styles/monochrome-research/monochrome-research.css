@@ -1,0 +1,83 @@
+/* ==========================================================================
+   STYLE SPECIMEN: monochrome-research (黑白学术论文研讨论壇)
+   ========================================================================== */
+
+:root[data-style="monochrome-research"]:not([data-theme="light"]) {
+  --surface-base: #060606;
+  --surface-raised: #101010;
+  --surface-overlay: rgba(16, 16, 16, 0.98);
+  --surface-overlay-soft: rgba(10, 10, 10, 0.95);
+  --surface-sunken: #000000;
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-active: #ffffff;
+  --surface-inset: #181818;
+
+  --text-strong: #ffffff;
+  --text-primary: #f0f0f0;
+  --text-secondary: #b0b0b0;
+  --text-tertiary: #757575;
+  --text-quiet: #4a4a4a;
+  --text-inverse: #000000;
+
+  --line-subtle: #202020;
+  --line-default: #383838;
+  --line-strong: #ffffff;
+
+  --status-ok: #ffffff;
+  --status-warn: #cccccc;
+  --status-bad: #ffffff;
+  --status-accent: #ffffff;
+  --status-accent-soft: rgba(255, 255, 255, 0.15);
+
+  --font-sans: "Computer Modern Serif", "Times New Roman", Times, Georgia, serif;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="monochrome-research"][data-theme="light"] {
+  --surface-base: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-overlay: rgba(251, 251, 251, 0.98);
+  --surface-overlay-soft: rgba(255, 255, 255, 0.95);
+  --surface-sunken: #f0f0f0;
+  --surface-hover: rgba(0, 0, 0, 0.06);
+  --surface-active: #000000;
+  --surface-inset: #f4f4f4;
+
+  --text-strong: #000000;
+  --text-primary: #111111;
+  --text-secondary: #444444;
+  --text-tertiary: #777777;
+  --text-quiet: #aaaaaa;
+  --text-inverse: #ffffff;
+
+  --line-subtle: #e0e0e0;
+  --line-default: #111111;
+  --line-strong: #000000;
+
+  --status-ok: #000000;
+  --status-warn: #444444;
+  --status-bad: #000000;
+  --status-accent: #000000;
+  --status-accent-soft: rgba(0, 0, 0, 0.12);
+
+  --font-sans: "Computer Modern Serif", "Times New Roman", Times, Georgia, serif;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="monochrome-research"] [data-software-row],
+:root[data-style="monochrome-research"] [data-resource-card],
+:root[data-style="monochrome-research"] [data-style-card] {
+  border-radius: 0px;
+  border-width: 1.5px;
+  border-style: solid;
+  transition: all 0.15s ease-out;
+}
+
+:root[data-style="monochrome-research"] [data-software-row]:hover,
+:root[data-style="monochrome-research"] [data-resource-card]:hover,
+:root[data-style="monochrome-research"] [data-style-card]:hover {
+  border-color: var(--line-strong);
+  box-shadow: 2px 2px 0px var(--line-strong);
+}

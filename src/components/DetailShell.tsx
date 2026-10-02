@@ -4,6 +4,10 @@ import clsx from "clsx";
 export interface DetailShellProps {
   isOpen: boolean;
   onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
   title: string;
   subtitle?: string;
   badge?: ReactNode;
@@ -17,11 +21,15 @@ export interface DetailShellProps {
  * Unified detail overlay shell for Style, Resource, Template and Pattern items.
  *
  * Provides a refined modal/dialog surface with backdrop blur, keyboard dismissal,
- * clean typography, and decoupled deep content presentation.
+ * arrow-key pagination, clean typography, and decoupled deep content presentation.
  */
 export function DetailShell({
   isOpen,
   onClose,
+  onPrev,
+  onNext,
+  hasPrev = true,
+  hasNext = true,
   title,
   subtitle,
   badge,
@@ -34,14 +42,28 @@ export function DetailShell({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input or textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
       if (e.key === "Escape") {
         onClose();
+      } else if (e.key === "ArrowLeft" && onPrev && hasPrev) {
+        e.preventDefault();
+        onPrev();
+      } else if (e.key === "ArrowRight" && onNext && hasNext) {
+        e.preventDefault();
+        onNext();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, onPrev, onNext, hasPrev, hasNext]);
 
   if (!isOpen) return null;
 
@@ -107,14 +129,51 @@ export function DetailShell({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭详情"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors shrink-0"
-          >
-            <span className="text-[14px] leading-none">✕</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onPrev && (
+              <button
+                type="button"
+                onClick={onPrev}
+                disabled={!hasPrev}
+                aria-label="上一个条目 (←)"
+                title="上一个条目 (快捷键: ←)"
+                className={clsx(
+                  "flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] transition-colors",
+                  hasPrev
+                    ? "hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] cursor-pointer"
+                    : "opacity-30 cursor-not-allowed",
+                )}
+              >
+                <span className="text-[14px] leading-none">‹</span>
+              </button>
+            )}
+            {onNext && (
+              <button
+                type="button"
+                onClick={onNext}
+                disabled={!hasNext}
+                aria-label="下一个条目 (→)"
+                title="下一个条目 (快捷键: →)"
+                className={clsx(
+                  "flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] transition-colors",
+                  hasNext
+                    ? "hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] cursor-pointer"
+                    : "opacity-30 cursor-not-allowed",
+                )}
+              >
+                <span className="text-[14px] leading-none">›</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭详情 (Esc)"
+              title="关闭详情 (快捷键: Esc)"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors ml-1"
+            >
+              <span className="text-[14px] leading-none">✕</span>
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}

@@ -1,0 +1,85 @@
+/* ==========================================================================
+   STYLE SPECIMEN: dos-utility (IBM PC DOS 经典控制台)
+   ========================================================================== */
+
+:root[data-style="dos-utility"]:not([data-theme="light"]) {
+  --surface-base: #000080;
+  --surface-raised: #0000aa;
+  --surface-overlay: rgba(0, 0, 170, 0.98);
+  --surface-overlay-soft: rgba(0, 0, 140, 0.95);
+  --surface-sunken: #000055;
+  --surface-hover: #0055aa;
+  --surface-active: #ffff55;
+  --surface-inset: #000066;
+
+  --text-strong: #ffffff;
+  --text-primary: #ffffff;
+  --text-secondary: #55ffff;
+  --text-tertiary: #a8a8a8;
+  --text-quiet: #5555ff;
+  --text-inverse: #000000;
+
+  --line-subtle: #0000aa;
+  --line-default: #00aaaa;
+  --line-strong: #ffffff;
+
+  --status-ok: #55ff55;
+  --status-warn: #ffff55;
+  --status-bad: #ff5555;
+  --status-accent: #ffff55;
+  --status-accent-soft: rgba(255, 255, 85, 0.2);
+
+  --font-sans: "Consolas", "IBM Plex Mono", "Courier New", monospace;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="dos-utility"][data-theme="light"] {
+  --surface-base: #000080;
+  --surface-raised: #0000aa;
+  --surface-overlay: rgba(0, 0, 170, 0.98);
+  --surface-overlay-soft: rgba(0, 0, 140, 0.95);
+  --surface-sunken: #000055;
+  --surface-hover: #0055aa;
+  --surface-active: #ffff55;
+  --surface-inset: #000066;
+
+  --text-strong: #ffffff;
+  --text-primary: #ffffff;
+  --text-secondary: #55ffff;
+  --text-tertiary: #a8a8a8;
+  --text-quiet: #5555ff;
+  --text-inverse: #000000;
+
+  --line-subtle: #0000aa;
+  --line-default: #00aaaa;
+  --line-strong: #ffffff;
+
+  --status-ok: #55ff55;
+  --status-warn: #ffff55;
+  --status-bad: #ff5555;
+  --status-accent: #ffff55;
+  --status-accent-soft: rgba(255, 255, 85, 0.2);
+
+  --font-sans: "Consolas", "IBM Plex Mono", "Courier New", monospace;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="dos-utility"] [data-software-row],
+:root[data-style="dos-utility"] [data-resource-card],
+:root[data-style="dos-utility"] [data-style-card] {
+  border-radius: 0px;
+  border-width: 2px;
+  border-style: solid;
+  border-color: #00aaaa;
+  box-shadow: 3px 3px 0px #000000;
+  transition: none;
+}
+
+:root[data-style="dos-utility"] [data-software-row]:hover,
+:root[data-style="dos-utility"] [data-resource-card]:hover,
+:root[data-style="dos-utility"] [data-style-card]:hover {
+  background-color: #0055aa;
+  border-color: #ffff55;
+}

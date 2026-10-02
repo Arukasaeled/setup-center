@@ -1,0 +1,83 @@
+/* ==========================================================================
+   STYLE SPECIMEN: japanese-editorial (和风意境编辑排印)
+   ========================================================================== */
+
+:root[data-style="japanese-editorial"]:not([data-theme="light"]) {
+  --surface-base: #141517;
+  --surface-raised: #1c1d20;
+  --surface-overlay: rgba(28, 29, 32, 0.98);
+  --surface-overlay-soft: rgba(22, 23, 26, 0.95);
+  --surface-sunken: #0d0e0f;
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --surface-active: #e5484d;
+  --surface-inset: #18191c;
+
+  --text-strong: #ffffff;
+  --text-primary: #efeee8;
+  --text-secondary: #b5b3aa;
+  --text-tertiary: #7d7a72;
+  --text-quiet: #57554e;
+  --text-inverse: #141517;
+
+  --line-subtle: #24252a;
+  --line-default: #33353c;
+  --line-strong: #e5484d;
+
+  --status-ok: #46a758;
+  --status-warn: #f76808;
+  --status-bad: #e5484d;
+  --status-accent: #e5484d;
+  --status-accent-soft: rgba(229, 72, 77, 0.15);
+
+  --font-sans: "Hiragino Mincho ProN", "Yu Mincho", "Source Han Serif SC", -apple-system, serif;
+  --radius-panel: 3px;
+  --radius-control: 2px;
+}
+
+:root[data-style="japanese-editorial"][data-theme="light"] {
+  --surface-base: #f7f6f0;
+  --surface-raised: #ffffff;
+  --surface-overlay: rgba(255, 255, 255, 0.98);
+  --surface-overlay-soft: rgba(247, 246, 240, 0.95);
+  --surface-sunken: #eeede5;
+  --surface-hover: rgba(0, 0, 0, 0.03);
+  --surface-active: #d9383a;
+  --surface-inset: #edece4;
+
+  --text-strong: #17181a;
+  --text-primary: #28292d;
+  --text-secondary: #585961;
+  --text-tertiary: #7f818d;
+  --text-quiet: #a5a7b3;
+  --text-inverse: #ffffff;
+
+  --line-subtle: #e6e4dc;
+  --line-default: #d1cebf;
+  --line-strong: #17181a;
+
+  --status-ok: #2f8e43;
+  --status-warn: #cf5600;
+  --status-bad: #d9383a;
+  --status-accent: #d9383a;
+  --status-accent-soft: rgba(217, 56, 58, 0.12);
+
+  --font-sans: "Hiragino Mincho ProN", "Yu Mincho", "Source Han Serif SC", -apple-system, serif;
+  --radius-panel: 3px;
+  --radius-control: 2px;
+}
+
+:root[data-style="japanese-editorial"] [data-software-row],
+:root[data-style="japanese-editorial"] [data-resource-card],
+:root[data-style="japanese-editorial"] [data-style-card] {
+  border-radius: 3px;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-style="japanese-editorial"] [data-software-row]:hover,
+:root[data-style="japanese-editorial"] [data-resource-card]:hover,
+:root[data-style="japanese-editorial"] [data-style-card]:hover {
+  border-color: var(--status-accent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}

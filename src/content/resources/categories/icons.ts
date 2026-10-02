@@ -113,4 +113,20 @@ export const iconResources: ResourceItem[] = [
     actionType: "external",
     homepage: "https://hugeicons.com",
   },
+  {
+    id: "res:svgl",
+    name: "svgl",
+    category: "icons",
+    description: "超高质量、精美统一的现代科技公司与开源项目高精度 SVG Logo 资源库。",
+    recommendedReason: "React 组件与直链 SVG 开箱即用，是搭建技术栈墙、集成目录与合作方展示的利器。",
+    author: "Pheralb",
+    tags: ["Logo库", "科技品牌", "高精度SVG", "开发者标配"],
+    actionType: "github",
+    repository: "https://github.com/pheralb/svgl",
+    homepage: "https://svgl.app",
+    stars: "7k+",
+    license: "MIT",
+    featured: true,
+  },
 ];
+

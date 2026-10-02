@@ -1,0 +1,82 @@
+/* ==========================================================================
+   STYLE SPECIMEN: swiss-dark (瑞士国际暗黑先锋)
+   ========================================================================== */
+
+:root[data-style="swiss-dark"]:not([data-theme="light"]) {
+  --surface-base: #050608;
+  --surface-raised: #0d0f13;
+  --surface-overlay: rgba(13, 15, 19, 0.98);
+  --surface-overlay-soft: rgba(8, 9, 12, 0.95);
+  --surface-sunken: #020304;
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: #ff5500;
+  --surface-inset: #12151b;
+
+  --text-strong: #ffffff;
+  --text-primary: #f4f5f8;
+  --text-secondary: #b8bdc9;
+  --text-tertiary: #7d8494;
+  --text-quiet: #4d5360;
+  --text-inverse: #000000;
+
+  --line-subtle: #191c24;
+  --line-default: #2a2f3d;
+  --line-strong: #ffffff;
+
+  --status-ok: #00e676;
+  --status-warn: #ffab00;
+  --status-bad: #ff5500;
+  --status-accent: #ff5500;
+  --status-accent-soft: rgba(255, 85, 0, 0.18);
+
+  --font-sans: "Helvetica Neue", -apple-system, Arial, sans-serif;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="swiss-dark"][data-theme="light"] {
+  --surface-base: #111215;
+  --surface-raised: #1a1c22;
+  --surface-overlay: rgba(26, 28, 34, 0.98);
+  --surface-overlay-soft: rgba(17, 18, 21, 0.95);
+  --surface-sunken: #0a0b0d;
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-active: #ff5500;
+  --surface-inset: #22252e;
+
+  --text-strong: #ffffff;
+  --text-primary: #ffffff;
+  --text-secondary: #c5c9d4;
+  --text-tertiary: #888e9e;
+  --text-quiet: #585d6b;
+  --text-inverse: #000000;
+
+  --line-subtle: #242833;
+  --line-default: #383e4f;
+  --line-strong: #ff5500;
+
+  --status-ok: #00e676;
+  --status-warn: #ffab00;
+  --status-bad: #ff5500;
+  --status-accent: #ff5500;
+  --status-accent-soft: rgba(255, 85, 0, 0.2);
+
+  --font-sans: "Helvetica Neue", -apple-system, Arial, sans-serif;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}
+
+:root[data-style="swiss-dark"] [data-software-row],
+:root[data-style="swiss-dark"] [data-resource-card],
+:root[data-style="swiss-dark"] [data-style-card] {
+  border-radius: 0px;
+  border-width: 1.5px;
+  border-style: solid;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-style="swiss-dark"] [data-software-row]:hover,
+:root[data-style="swiss-dark"] [data-resource-card]:hover,
+:root[data-style="swiss-dark"] [data-style-card]:hover {
+  border-color: #ff5500;
+}
