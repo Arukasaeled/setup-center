@@ -54,8 +54,10 @@ import {
 } from "../components/ActivationPanel";
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
+import type { SetupStyle } from "../styles/types";
 import { ResourceSection } from "./ResourceSection";
 import { TokenTweaker } from "../components/TokenTweaker";
+import { DetailShell } from "../components/DetailShell";
 import { TransferHistoryTimeline } from "../components/TransferHistoryTimeline";
 import { Bookmarks } from "../core/transfer";
 import type {
@@ -197,15 +199,17 @@ export function Dashboard() {
             It still serves every other section: a capability, a machine fact and
             a config requirement all select into it, and none of them has a list
             of its own to sit beside. */}
-        {!(section === "software" && selectedItemId?.startsWith("sw:")) && (
-          <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
-            <DetailPane
-              selectedId={selectedItemId}
-              capabilities={capabilities}
-              onClear={() => selectItem(null)}
-            />
-          </aside>
-        )}
+        {section !== "style" &&
+          section !== "resources" &&
+          !(section === "software" && selectedItemId?.startsWith("sw:")) && (
+            <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
+              <DetailPane
+                selectedId={selectedItemId}
+                capabilities={capabilities}
+                onClear={() => selectItem(null)}
+              />
+            </aside>
+          )}
       </div>
     </div>
   );
@@ -1462,9 +1466,9 @@ function DetailPane({
 
   if (selectedId.startsWith("fact:")) {
     return (
-      <DetailShell title={factTitle(selectedId)} onClear={onClear}>
+      <DetailPaneShell title={factTitle(selectedId)} onClear={onClear}>
         <MachineFactDetail id={selectedId} machine={machine} />
-      </DetailShell>
+      </DetailPaneShell>
     );
   }
 
@@ -1487,7 +1491,7 @@ function DetailPlaceholder() {
   );
 }
 
-function DetailShell({
+function DetailPaneShell({
   title,
   subtitle,
   onClear,
@@ -1537,7 +1541,7 @@ function CapabilityDetail({
   const optional = capability.requirements.filter((r) => r.necessity === "optional");
 
   return (
-    <DetailShell
+    <DetailPaneShell
       title={capability.name}
       subtitle={capability.description}
       onClear={onClear}
@@ -1580,7 +1584,7 @@ function CapabilityDetail({
           </p>
         </div>
       )}
-    </DetailShell>
+    </DetailPaneShell>
   );
 }
 
@@ -1631,7 +1635,7 @@ function SoftwareDetail({
   const k = knowledge?.knowledge ?? null;
 
   return (
-    <DetailShell
+    <DetailPaneShell
       // The knowledge name wins when there is one: a school can correct it
       // without a rebuild, which is the reason the file exists.
       title={k?.name ?? descriptor.name}
@@ -1826,7 +1830,7 @@ function SoftwareDetail({
           ))}
         </div>
       </div>
-    </DetailShell>
+    </DetailPaneShell>
   );
 }
 
@@ -1921,7 +1925,7 @@ function RequirementDetail({
   onClear: () => void;
 }) {
   return (
-    <DetailShell title={requirement.label} onClear={onClear}>
+    <DetailPaneShell title={requirement.label} onClear={onClear}>
       <div className="flex items-center gap-2">
         <StatusMark confidence={requirementConfidence(requirement)} />
         <span className="text-[color:var(--text-primary)] text-[12.5px]">
@@ -1942,7 +1946,7 @@ function RequirementDetail({
             : "这一项需要你在本机自行完成，本工具不会代劳。"}
         </p>
       )}
-    </DetailShell>
+    </DetailPaneShell>
   );
 }
 
@@ -2123,181 +2127,246 @@ function LoadingBlock({ label }: { label: string }) {
  */
 
 /**
- * Visual Style Playground & Laboratory.
+ * Visual Style Gallery & Laboratory.
  *
- * Allows instant live preview and toggling of Setup Center's design languages,
- * featuring "P5 × Comic Impact" as the marquee expressive showcase.
+ * High-density gallery grid for browsing design systems, inspectable
+ * with deep DetailShell overlays and a collapsible design token tweaker.
  */
 function StyleSection() {
   const activeStyle = useApp((s) => s.activeStyle);
   const setActiveStyle = useApp((s) => s.setActiveStyle);
   const [styleBookmarks, setStyleBookmarks] = useState<string[]>(() => Bookmarks.getAll());
+  const [selectedStyleForDetail, setSelectedStyleForDetail] = useState<SetupStyle | null>(null);
+  const [showTweaker, setShowTweaker] = useState(false);
+  const [filter, setFilter] = useState<"all" | "implemented" | "bookmarks">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     return Bookmarks.subscribe((b) => setStyleBookmarks(b));
   }, []);
 
+  const filteredStyles = useMemo(() => {
+    return STYLE_REGISTRY.filter((preset) => {
+      if (filter === "implemented" && !preset.implemented) return false;
+      if (filter === "bookmarks" && !styleBookmarks.includes(preset.id)) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = preset.name.toLowerCase().includes(q);
+        const matchesSub = preset.subtitle.toLowerCase().includes(q);
+        const matchesInspiration = preset.inspiration.toLowerCase().includes(q);
+        const matchesTags = preset.tags.some((t) => t.toLowerCase().includes(q));
+        if (!matchesName && !matchesSub && !matchesInspiration && !matchesTags) return false;
+      }
+      return true;
+    });
+  }, [filter, styleBookmarks, searchQuery]);
+
   return (
     <div className="flex flex-col gap-6">
-      <header className="rise">
-        <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
-          DESIGN LAB // 视觉风格试验场
+      {/* Header */}
+      <header className="rise flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
+            STYLE GALLERY // 视觉语言画廊
+          </div>
+          <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
+            设计系统与交互范式画廊
+          </h1>
+          <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
+            收录 Setup Center 的多套完整视觉语言。以小卡片画廊形式高密度浏览，点击卡片展开详情与设计规范。
+          </p>
         </div>
-        <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
-          前端视觉语言与交互范式
-        </h1>
-        <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
-          支持一键切换 Setup Center 的全套视觉系统。首套旗舰主题为 <strong>P5 × 美漫彩漫</strong>，以黑白灰为硬核基底，搭配电光高亮撞色与高对比分镜轮廓，让每个软件卡片都鲜明独立。
-        </p>
+
+        {/* Header Action: Token Tweaker Toggle */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant={showTweaker ? "primary" : "quiet"}
+            onClick={() => setShowTweaker((prev) => !prev)}
+          >
+            {showTweaker ? "收起令牌调节" : "⌗ 调节设计令牌"}
+          </Button>
+        </div>
       </header>
 
-      {/* Style Inspector & Token Tweaker */}
-      <TokenTweaker activeStyleId={activeStyle} />
+      {/* Collapsible Token Tweaker */}
+      {showTweaker && (
+        <div className="rise">
+          <TokenTweaker
+            activeStyleId={activeStyle}
+            isCollapsed={false}
+            onToggleCollapse={() => setShowTweaker(false)}
+          />
+        </div>
+      )}
 
-      {/* Preset Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {STYLE_REGISTRY.map((preset) => {
-          const isActive = activeStyle === preset.id || (activeStyle === "p5-comic" && preset.id === "phantom-comic");
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setFilter("all")}
+            className={clsx(
+              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              filter === "all"
+                ? "bg-[color:var(--status-accent)] text-black border-transparent font-bold shadow-sm"
+                : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
+            )}
+          >
+            全部风格 ({STYLE_REGISTRY.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter("implemented")}
+            className={clsx(
+              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              filter === "implemented"
+                ? "bg-[color:var(--status-accent)] text-black border-transparent font-bold shadow-sm"
+                : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
+            )}
+          >
+            已实装 ({STYLE_REGISTRY.filter((s) => s.implemented).length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter("bookmarks")}
+            className={clsx(
+              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              filter === "bookmarks"
+                ? "bg-amber-400 text-black border-transparent font-bold shadow-sm"
+                : "border-amber-500/30 bg-amber-500/5 text-amber-300 hover:bg-amber-500/10",
+            )}
+          >
+            ★ 收藏 ({styleBookmarks.filter((id) => STYLE_REGISTRY.some((s) => s.id === id)).length})
+          </button>
+        </div>
+
+        <div className="relative max-w-xs w-full">
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索风格名称、灵感、标签…"
+            className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+          />
+        </div>
+      </div>
+
+      {/* Gallery Cards Grid (High Density) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+        {filteredStyles.map((preset) => {
+          const isActive =
+            activeStyle === preset.id ||
+            (activeStyle === "p5-comic" && preset.id === "phantom-comic");
+          const isStarred = styleBookmarks.includes(preset.id);
+
           return (
             <div
               key={preset.id}
-              onClick={() => {
-                if (preset.implemented) setActiveStyle(preset.id);
-              }}
+              onClick={() => setSelectedStyleForDetail(preset)}
               className={clsx(
-                "group relative flex flex-col justify-between rounded-xl border p-5 transition-all duration-200 select-none",
-                preset.implemented ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                "group relative flex flex-col justify-between rounded-xl border p-4 transition-all duration-200 cursor-pointer select-none",
                 isActive
-                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] ring-2 ring-[color:var(--status-accent)]/50 shadow-lg"
+                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] ring-2 ring-[color:var(--status-accent)]/50 shadow-md"
                   : preset.implemented
-                    ? "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/60 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]"
-                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/20",
+                    ? "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/70 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]"
+                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/30 opacity-70 hover:opacity-100",
               )}
             >
               <div>
-                {/* Header: Name, Subtitle and Status */}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[16px] font-bold text-[color:var(--text-strong)]">
+                {/* Top bar: Name + Favorite + Status */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[14.5px] font-bold text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors truncate">
                         {preset.name}
                       </span>
                       {isActive && (
-                        <span className="rounded px-2 py-0.5 text-[11px] font-black bg-[color:var(--status-accent)] text-black">
-                          当前已启用
+                        <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-black">
+                          已启用
                         </span>
                       )}
                       {!preset.implemented && (
-                        <span className="rounded bg-zinc-500/20 px-1.5 py-0.5 text-[10.5px] text-zinc-400">
-                          设计草案
+                        <span className="rounded bg-zinc-500/20 px-1.5 py-0.2 text-[10px] text-zinc-400">
+                          草案
                         </span>
                       )}
                     </div>
-                    <div className="text-[color:var(--text-quiet)] text-[11.5px] mt-0.5 font-mono">
+                    <div className="text-[color:var(--text-quiet)] text-[11px] font-mono mt-0.5 truncate">
                       {preset.subtitle}
                     </div>
                   </div>
 
-                  {/* Actions & Palette dots */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        Bookmarks.toggle(preset.id, preset.name);
-                      }}
-                      className={`text-[14px] p-0.5 hover:scale-125 transition-transform ${
-                        styleBookmarks.includes(preset.id)
-                          ? "text-amber-400 font-bold"
-                          : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
-                      }`}
-                      title={styleBookmarks.includes(preset.id) ? "取消收藏" : "收藏此风格"}
-                    >
-                      {styleBookmarks.includes(preset.id) ? "★" : "☆"}
-                    </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      Bookmarks.toggle(preset.id, preset.name);
+                    }}
+                    className={`text-[13px] p-0.5 shrink-0 hover:scale-125 transition-transform ${
+                      isStarred ? "text-amber-400 font-bold" : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
+                    }`}
+                    title={isStarred ? "取消收藏" : "收藏"}
+                  >
+                    {isStarred ? "★" : "☆"}
+                  </button>
+                </div>
 
-                    <div className="flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-1">
+                {/* Color Palette Preview */}
+                <div className="mt-3 flex items-center gap-2">
+                  <div className="flex items-center gap-1 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-0.8">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full border border-black/20"
+                      style={{ backgroundColor: preset.palette.baseBg }}
+                      title={`基底色: ${preset.palette.baseBg}`}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full border border-black/20"
+                      style={{ backgroundColor: preset.palette.accent }}
+                      title={`强调色: ${preset.palette.accent}`}
+                    />
+                    {preset.palette.accentSecondary && (
                       <span
-                        className="h-3 w-3 rounded-full border border-black/20"
-                        style={{ backgroundColor: preset.palette.baseBg }}
-                        title="基底色"
+                        className="h-2.5 w-2.5 rounded-full border border-black/20"
+                        style={{ backgroundColor: preset.palette.accentSecondary }}
+                        title={`次级色: ${preset.palette.accentSecondary}`}
                       />
-                      <span
-                        className="h-3 w-3 rounded-full border border-black/20"
-                        style={{ backgroundColor: preset.palette.accent }}
-                        title="强调色"
-                      />
-                      {preset.palette.accentSecondary && (
-                        <span
-                          className="h-3 w-3 rounded-full border border-black/20"
-                          style={{ backgroundColor: preset.palette.accentSecondary }}
-                          title="次级色"
-                        />
-                      )}
-                    </div>
+                    )}
                   </div>
+                  <span className="text-[11px] text-[color:var(--text-quiet)] truncate">
+                    {preset.author}
+                  </span>
                 </div>
 
-                {/* Inspiration source */}
-                <div className="mt-3 rounded-lg bg-[color:var(--surface-inset)] px-3 py-2 text-[12px] border border-[color:var(--line-subtle)]">
-                  <span className="font-semibold text-[color:var(--text-secondary)]">设计语言灵感：</span>
-                  <span className="text-[color:var(--text-tertiary)]">{preset.inspiration}</span>
-                </div>
-
-                {/* Description */}
-                <p className="mt-2.5 text-[12.5px] text-[color:var(--text-secondary)] leading-relaxed">
+                {/* Inspiration snippet */}
+                <p className="mt-2.5 text-[11.5px] text-[color:var(--text-tertiary)] line-clamp-2 leading-relaxed">
                   {preset.description}
                 </p>
 
                 {/* Tags */}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {preset.tags.map((tag) => (
+                <div className="mt-2.5 flex flex-wrap gap-1">
+                  {preset.tags.slice(0, 3).map((tag) => (
                     <span
                       key={tag}
-                      className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]"
+                      className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]"
                     >
                       {tag}
                     </span>
                   ))}
+                  {preset.tags.length > 3 && (
+                    <span className="text-[10px] text-[color:var(--text-quiet)] font-mono self-center">
+                      +{preset.tags.length - 3}
+                    </span>
+                  )}
                 </div>
-
-                {/* Key features */}
-                <ul className="mt-3.5 space-y-1 text-[11.5px] text-[color:var(--text-tertiary)]">
-                  {preset.features.map((feat) => (
-                    <li key={feat} className="flex items-center gap-1.5">
-                      <span className="h-1 w-1 rounded-full bg-[color:var(--status-accent)] shrink-0" />
-                      <span>{feat}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Design principles / 学习参考 */}
-                {preset.designPrinciples && preset.designPrinciples.length > 0 && (
-                  <div className="mt-3 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2.5">
-                    <div className="text-[10.5px] font-bold text-[color:var(--text-tertiary)] uppercase tracking-wider">
-                      设计规范与原则参考
-                    </div>
-                    <ul className="mt-1.5 space-y-1 text-[11px] text-[color:var(--text-secondary)] font-mono">
-                      {preset.designPrinciples.map((dp, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <span className="text-[color:var(--status-accent)] shrink-0">•</span>
-                          <span>{dp}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
 
-              {/* Action Button */}
-              <div className="mt-5 pt-3 border-t border-[color:var(--line-subtle)] flex items-center justify-between">
-                <span className="text-[11.5px] text-[color:var(--text-quiet)]">
-                  {isActive
-                    ? "全局生效中"
-                    : preset.implemented
-                      ? "点击卡片或按钮应用"
-                      : "待后续扩充"}
+              {/* Bottom Actions */}
+              <div className="mt-3.5 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center justify-between">
+                <span className="text-[11px] text-[color:var(--status-accent)] group-hover:underline">
+                  查看详情 ↗
                 </span>
+
                 <Button
                   size="sm"
                   disabled={!preset.implemented}
@@ -2306,21 +2375,234 @@ function StyleSection() {
                     if (preset.implemented) setActiveStyle(preset.id);
                   }}
                   className={clsx(
-                    "text-[12px] font-bold px-3 py-1",
+                    "text-[11px] font-bold px-2.5 py-0.8",
                     isActive
                       ? "bg-[color:var(--status-accent)] text-black"
                       : preset.implemented
-                        ? "bg-[color:var(--surface-active)] text-[color:var(--text-strong)]"
-                        : "opacity-40",
+                        ? "bg-[color:var(--surface-active)] text-[color:var(--text-strong)] hover:bg-[color:var(--status-accent)] hover:text-black"
+                        : "opacity-30",
                   )}
                 >
-                  {isActive ? "正在使用" : preset.implemented ? "立即应用" : "敬请期待"}
+                  {isActive ? "正在使用" : preset.implemented ? "应用" : "敬请期待"}
                 </Button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Style Detail Modal (DetailShell) */}
+      {selectedStyleForDetail && (
+        <DetailShell
+          isOpen={true}
+          onClose={() => setSelectedStyleForDetail(null)}
+          title={selectedStyleForDetail.name}
+          subtitle={`${selectedStyleForDetail.subtitle} · v${selectedStyleForDetail.version} · 由 ${selectedStyleForDetail.author} 维护`}
+          tags={selectedStyleForDetail.tags}
+          badge={
+            selectedStyleForDetail.id === activeStyle ||
+            (activeStyle === "p5-comic" && selectedStyleForDetail.id === "phantom-comic") ? (
+              <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-black">
+                全局已启用
+              </span>
+            ) : selectedStyleForDetail.implemented ? (
+              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+                可立即使用
+              </span>
+            ) : (
+              <span className="rounded bg-zinc-500/20 px-2 py-0.5 text-[11px] text-zinc-400">
+                设计草案
+              </span>
+            )
+          }
+          actions={
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    Bookmarks.toggle(selectedStyleForDetail.id, selectedStyleForDetail.name);
+                  }}
+                  className="rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors"
+                >
+                  {styleBookmarks.includes(selectedStyleForDetail.id) ? "★ 已收藏" : "☆ 加入收藏"}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedStyleForDetail(null)}
+                >
+                  关闭
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!selectedStyleForDetail.implemented}
+                  onClick={() => {
+                    if (selectedStyleForDetail.implemented) {
+                      setActiveStyle(selectedStyleForDetail.id);
+                      setSelectedStyleForDetail(null);
+                    }
+                  }}
+                  className={clsx(
+                    "font-bold text-[12px]",
+                    selectedStyleForDetail.id === activeStyle
+                      ? "bg-[color:var(--status-accent)] text-black"
+                      : "bg-[color:var(--surface-active)] text-[color:var(--text-strong)]",
+                  )}
+                >
+                  {selectedStyleForDetail.id === activeStyle ? "正在生效中" : "应用为此风格"}
+                </Button>
+              </div>
+            </>
+          }
+        >
+          {/* Palette Deep Breakdown */}
+          <div>
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+              色彩语义调色板 (Color Palette)
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                <span
+                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                  style={{ backgroundColor: selectedStyleForDetail.palette.baseBg }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-[color:var(--text-quiet)]">基底色 (Base)</div>
+                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                    {selectedStyleForDetail.palette.baseBg}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                <span
+                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                  style={{ backgroundColor: selectedStyleForDetail.palette.surface }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-[color:var(--text-quiet)]">面板色 (Surface)</div>
+                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                    {selectedStyleForDetail.palette.surface}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                <span
+                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                  style={{ backgroundColor: selectedStyleForDetail.palette.accent }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-[color:var(--text-quiet)]">强调色 (Accent)</div>
+                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                    {selectedStyleForDetail.palette.accent}
+                  </div>
+                </div>
+              </div>
+
+              {selectedStyleForDetail.palette.accentSecondary && (
+                <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                  <span
+                    className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                    style={{ backgroundColor: selectedStyleForDetail.palette.accentSecondary }}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-[color:var(--text-quiet)]">次级强调 (Secondary)</div>
+                    <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                      {selectedStyleForDetail.palette.accentSecondary}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                <span
+                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                  style={{ backgroundColor: selectedStyleForDetail.palette.text }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-[color:var(--text-quiet)]">正文字色 (Text)</div>
+                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                    {selectedStyleForDetail.palette.text}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
+                <span
+                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
+                  style={{ backgroundColor: selectedStyleForDetail.palette.cardBorder }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-[color:var(--text-quiet)]">边框色 (Border)</div>
+                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                    {selectedStyleForDetail.palette.cardBorder}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-1.5">
+              设计语言概述
+            </h3>
+            <p className="text-[13px] text-[color:var(--text-secondary)] leading-relaxed">
+              {selectedStyleForDetail.description}
+            </p>
+          </div>
+
+          {/* Inspiration Source */}
+          <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
+            <div className="text-[11px] font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
+              设计语言灵感来源
+            </div>
+            <p className="text-[12px] text-[color:var(--text-tertiary)] mt-1 leading-relaxed">
+              {selectedStyleForDetail.inspiration}
+            </p>
+          </div>
+
+          {/* Key Features */}
+          <div>
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+              关键视觉特征
+            </h3>
+            <ul className="space-y-1.5 text-[12.5px] text-[color:var(--text-secondary)]">
+              {selectedStyleForDetail.features.map((feat, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">•</span>
+                  <span>{feat}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Design Principles / Guidelines */}
+          {selectedStyleForDetail.designPrinciples &&
+            selectedStyleForDetail.designPrinciples.length > 0 && (
+              <div>
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+                  设计规范与原则参考
+                </h3>
+                <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
+                  <ul className="space-y-2 text-[12px] text-[color:var(--text-secondary)] font-mono">
+                    {selectedStyleForDetail.designPrinciples.map((dp, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">◈</span>
+                        <span>{dp}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+        </DetailShell>
+      )}
     </div>
   );
 }
