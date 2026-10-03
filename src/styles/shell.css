@@ -1326,3 +1326,35 @@ html[data-experience] [data-software-row] {
     padding-right: 1.5rem;
   }
 }
+
+/* ==========================================================================
+   EXPERIENCE PREVIEW WORKSPACE — Neutral Tool Chrome Isolation
+   ========================================================================== */
+
+[data-experience-workspace] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-sans);
+  color-scheme: dark;
+}
+
+/* Neutralize style leaks (e.g. phantom-comic transforms, dos borders, terminal-crt monospace) on workspace chrome */
+[data-experience-workspace] button,
+[data-experience-workspace] [role="tab"],
+[data-experience-workspace] [role="tablist"] {
+  transform: none !important;
+  font-family: var(--font-sans) !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+:is([data-style="terminal-crt"], [data-style="swiss-editorial"], [data-style="phantom-comic"]) [data-experience-workspace] :not([data-specimen-stage] *) {
+  font-family: var(--font-sans) !important;
+  border-radius: revert;
+  transform: none !important;
+}
+
+:is([data-style="terminal-crt"], [data-style="phantom-comic"]) [data-experience-workspace] :not([data-specimen-stage] *) :is(h1, h2)::before {
+  content: none !important;
+}
+

@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 
 export interface DetailShellProps {
@@ -74,7 +75,7 @@ export function DetailShell({
     xl: "max-w-4xl",
   }[width];
 
-  return (
+  const modal = (
     <div
       role="dialog"
       aria-modal="true"
@@ -190,4 +191,6 @@ export function DetailShell({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }

@@ -76,8 +76,9 @@ import { STYLE_REGISTRY } from "../styles";
 import type { PageLayoutContract, SetupStyle } from "../styles/types";
 import { ResourceSection } from "./ResourceSection";
 import { DetailShell } from "../components/DetailShell";
+import { ExperiencePreviewWorkspace } from "../components/ExperiencePreviewWorkspace";
 import { SetupActionButton } from "../components/SetupActionButton";
-import { ExperienceSpecimen, ExperienceThumbnail } from "../components/ExperienceSpecimen";
+import { ExperienceThumbnail } from "../components/ExperienceSpecimen";
 import { ExperiencePlayground } from "../components/TokenTweaker";
 import { TransferHistoryTimeline } from "../components/TransferHistoryTimeline";
 import { Bookmarks } from "../core/transfer";
@@ -2341,7 +2342,8 @@ function StyleSection() {
   // STYLE_REGISTRY from outside React, so the grid has to be told to re-render.
   const customVersion = useApp((s) => s.customExperiencesVersion);
   const [styleBookmarks, setStyleBookmarks] = useState<string[]>(() => Bookmarks.getAll());
-  const [previewStyle, setPreviewStyle] = useState<SetupStyle | null>(null);
+  const [previewWorkspaceStyle, setPreviewWorkspaceStyle] = useState<SetupStyle | null>(null);
+  const [quickDetailStyle, setQuickDetailStyle] = useState<SetupStyle | null>(null);
   const [playgroundStyleId, setPlaygroundStyleId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "implemented" | "bookmarks">("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -2355,7 +2357,8 @@ function StyleSection() {
   useEffect(() => {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<{ styleId?: string }>).detail;
-      setPreviewStyle(null);
+      setPreviewWorkspaceStyle(null);
+      setQuickDetailStyle(null);
       setPlaygroundStyleId(detail?.styleId ?? activeStyle);
     };
     window.addEventListener("setup:open-playground", onOpen);
@@ -2516,7 +2519,7 @@ function StyleSection() {
               key={preset.id}
               data-style-card={preset.id}
               data-tier={profile.tier}
-              onClick={() => setPreviewStyle(preset)}
+              onClick={() => setQuickDetailStyle(preset)}
               className={clsx(
                 "group relative flex flex-col justify-between rounded-[var(--radius-panel)] border p-3.5 transition-all duration-200 cursor-pointer select-none",
                 isActive
@@ -2568,15 +2571,19 @@ function StyleSection() {
                   </button>
                 </div>
 
-                {/* The specimen replaces three colour dots. A design gallery has
-                    to show what the product becomes, and a palette swatch can
-                    only ever answer "which hues" — never "which layout". */}
-                <div className="mt-3 overflow-hidden rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)]">
+                {/* The specimen thumbnail — clicking it opens the full workspace */}
+                <div
+                  className="mt-3 overflow-hidden rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] hover:border-[color:var(--status-accent)] transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewWorkspaceStyle(preset);
+                  }}
+                  title="点击打开完整预览工作区"
+                >
                   <ExperienceThumbnail style={preset} className="h-[132px] w-full" />
                 </div>
 
-                {/* Grammar readout: what makes this entry Tier 3/4 rather than a
-                    palette, stated plainly so the difference is not inferred. */}
+                {/* Grammar readout */}
                 <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10px] text-[color:var(--text-quiet)]">
                   <span className="truncate">{SHELL_LABEL[profile.shell ?? "sidebar"]}</span>
                   <span className="truncate">{NAV_LABEL[profile.navigation ?? "sidebar"]}</span>
@@ -2589,9 +2596,7 @@ function StyleSection() {
                 </p>
               </div>
 
-              {/* Primary Setup Action, straight from the resolver — the card and
-                  the detail view cannot disagree about what applying means,
-                  because neither of them wrote the action. */}
+              {/* Primary Setup Action */}
               <div className="mt-3 pt-2.5 border-t border-[color:var(--line-subtle)]">
                 <SetupActionButton
                   action={resolved.primaryAction}
@@ -2605,11 +2610,12 @@ function StyleSection() {
                 />
                 <button
                   type="button"
+                  data-preview-trigger={preset.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setPreviewStyle(preset);
+                    setPreviewWorkspaceStyle(preset);
                   }}
-                  className="mt-2 w-full text-left text-[11px] text-[color:var(--status-accent)] hover:underline"
+                  className="mt-2 w-full text-left text-[11px] text-[color:var(--status-accent)] hover:underline cursor-pointer"
                 >
                   预览完整样张 ↗
                 </button>
@@ -2626,19 +2632,51 @@ function StyleSection() {
         />
       )}
 
-      {/* Preview-before-Apply. Applying a style used to be the only way to see
-          it, which meant every browse repainted the whole app; the specimen
-          shows the tokens, the shell grammar and the card language without
-          committing anything. */}
-      {previewStyle && (
-        <StylePreviewShell
-          style={previewStyle}
+      {/* Quick Detail modal for brief inspection (DetailShell) */}
+      {quickDetailStyle && (
+        <StyleQuickDetailModal
+          style={quickDetailStyle}
           inventory={inventory}
-          active={isActiveStyle(previewStyle.id)}
-          starred={styleBookmarks.includes(previewStyle.id)}
-          onToggleStar={() => Bookmarks.toggle(previewStyle.id, previewStyle.name)}
-          onClose={() => setPreviewStyle(null)}
+          active={isActiveStyle(quickDetailStyle.id)}
+          starred={styleBookmarks.includes(quickDetailStyle.id)}
+          onToggleStar={() => Bookmarks.toggle(quickDetailStyle.id, quickDetailStyle.name)}
+          onOpenWorkspace={() => {
+            const target = quickDetailStyle;
+            setQuickDetailStyle(null);
+            setPreviewWorkspaceStyle(target);
+          }}
+          onClose={() => setQuickDetailStyle(null)}
           onNotice={setNotice}
+        />
+      )}
+
+      {/* Dedicated Experience Preview Workspace */}
+      {previewWorkspaceStyle && (
+        <ExperiencePreviewWorkspace
+          isOpen={true}
+          style={previewWorkspaceStyle}
+          active={isActiveStyle(previewWorkspaceStyle.id)}
+          starred={styleBookmarks.includes(previewWorkspaceStyle.id)}
+          onToggleStar={() => Bookmarks.toggle(previewWorkspaceStyle.id, previewWorkspaceStyle.name)}
+          onClose={() => setPreviewWorkspaceStyle(null)}
+          onNotice={setNotice}
+          hasPrev={
+            filteredStyles.findIndex((s) => s.id === previewWorkspaceStyle.id) > 0
+          }
+          hasNext={
+            filteredStyles.findIndex((s) => s.id === previewWorkspaceStyle.id) >= 0 &&
+            filteredStyles.findIndex((s) => s.id === previewWorkspaceStyle.id) < filteredStyles.length - 1
+          }
+          onPrev={() => {
+            const idx = filteredStyles.findIndex((s) => s.id === previewWorkspaceStyle.id);
+            if (idx > 0) setPreviewWorkspaceStyle(filteredStyles[idx - 1]);
+          }}
+          onNext={() => {
+            const idx = filteredStyles.findIndex((s) => s.id === previewWorkspaceStyle.id);
+            if (idx >= 0 && idx < filteredStyles.length - 1) {
+              setPreviewWorkspaceStyle(filteredStyles[idx + 1]);
+            }
+          }}
         />
       )}
     </div>
@@ -2646,18 +2684,17 @@ function StyleSection() {
 }
 
 /**
- * The Style preview + detail surface: a full-size specimen on the left and the
- * experience's declared grammar, palette and design principles on the right.
- *
- * It exists as its own component because it needs the hook order of a component
- * (it resolves actions) while `StyleSection` renders it conditionally.
+ * Lightweight Style Quick Detail surface: rendered when clicking a Style Card.
+ * Uses DetailShell for concise information without the giant specimen,
+ * and provides a direct entry into ExperiencePreviewWorkspace.
  */
-function StylePreviewShell({
+function StyleQuickDetailModal({
   style,
   inventory,
   active,
   starred,
   onToggleStar,
+  onOpenWorkspace,
   onClose,
   onNotice,
 }: {
@@ -2666,6 +2703,7 @@ function StylePreviewShell({
   active: boolean;
   starred: boolean;
   onToggleStar: () => void;
+  onOpenWorkspace: () => void;
   onClose: () => void;
   onNotice: (msg: string) => void;
 }) {
@@ -2705,7 +2743,7 @@ function StylePreviewShell({
       title={style.name}
       subtitle={`${style.subtitle} · v${style.version} · 由 ${style.author} 维护`}
       tags={style.tags}
-      width="xl"
+      width="lg"
       badge={
         active ? (
           <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-[color:var(--accent-on)]">
@@ -2726,7 +2764,7 @@ function StylePreviewShell({
           <button
             type="button"
             onClick={onToggleStar}
-            className="rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors"
+            className="rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
           >
             {starred ? "★ 已收藏" : "☆ 加入收藏"}
           </button>
@@ -2745,10 +2783,24 @@ function StylePreviewShell({
         </>
       }
     >
-      {/* Live Specimen Preview (brief §34): the whole point is that seeing an
-          experience must not require becoming it app-wide. */}
-      <div data-specimen-frame className="overflow-hidden rounded-[var(--radius-panel)] border border-[color:var(--line-default)]">
-        <ExperienceSpecimen style={style} scale="full" />
+      {/* Prominent CTA to Full Preview Workspace */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-[color:var(--line-strong)] bg-[color:var(--surface-raised)]/90 shadow-sm">
+        <div>
+          <h4 className="text-[13.5px] font-bold text-[color:var(--text-strong)]">
+            想要查看大尺寸真实界面样张与令牌度量？
+          </h4>
+          <p className="text-[12px] text-[color:var(--text-tertiary)] mt-0.5">
+            在专属中性工作区中预览导航、卡片、表单与全套语法参数。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenWorkspace}
+          className="flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[color:var(--status-accent)] px-3.5 py-1.5 text-[12px] font-bold text-[color:var(--accent-on)] hover:opacity-90 transition-opacity cursor-pointer shrink-0 shadow-sm"
+        >
+          <span>进入完整预览工作区</span>
+          <span>↗</span>
+        </button>
       </div>
 
       <div>
