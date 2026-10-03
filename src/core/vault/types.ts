@@ -68,6 +68,17 @@ export interface VaultStyleManifest {
     fontHeading?: string;
     fontBody?: string;
   };
+  /**
+   * Vault Style Contract V2 — optional declarative Experience profile.
+   *
+   * A published style that supplies only palette + tokens is a Tier-1/Tier-2
+   * reskin. This field is what lets a Vault release ship a Tier-3/Tier-4
+   * experience — shell, navigation, detail, card and composition grammar — with
+   * no client rebuild, because every grammar token is a closed enum the runtime
+   * already renders. Omitted by older vault entries, which is why the field is
+   * optional and why `registerStyle` keeps any locally declared profile.
+   */
+  experience?: import("../../styles/types").ExperienceProfile;
   designPrinciples?: string[];
 }
 
@@ -127,6 +138,13 @@ export interface VaultSyncResult {
   contentVersion: string;
   error?: string;
   fromCache?: boolean;
+  /**
+   * Set when the release checkpoint's pinned revision could not be fetched and
+   * the sync succeeded against the un-pinned origin instead. The sync is still
+   * a success — but the build is no longer reproducible, and the user should be
+   * able to see that rather than it being a console.warn nobody reads.
+   */
+  pinFallback?: string;
   itemCounts?: {
     styles: number;
     resources: number;

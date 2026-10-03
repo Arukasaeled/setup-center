@@ -10,6 +10,7 @@
 
 import type {
   CachedVaultData,
+  VaultManifest,
   VaultPatternItem,
   VaultStyleManifest,
   VaultSyncResult,
@@ -127,8 +128,17 @@ class VaultSyncManager {
         clearTimeout(timer);
         if (checkpointRes.ok) {
           releaseCheckpoint = await checkpointRes.json();
-          if (releaseCheckpoint?.commitSha || releaseCheckpoint?.snapshotTag) {
-            const pin = releaseCheckpoint.commitSha || releaseCheckpoint.snapshotTag;
+          // A pin is a git revision. Anything else is a typo that would 404
+          // every asset in the release, so validate the shape before trusting
+          // it rather than discovering it as 404s later.
+          const rawPin = releaseCheckpoint?.commitSha || releaseCheckpoint?.snapshotTag;
+          const pin = typeof rawPin === "string" && /^[0-9a-f]{7,40}$|^v?[\w.-]+$/.test(rawPin.trim())
+            ? rawPin.trim()
+            : null;
+          if (!pin && rawPin) {
+            console.warn(`[VaultSync] Ignoring malformed release pin: ${JSON.stringify(rawPin)}`);
+          }
+          if (pin) {
             targetBaseUrl = `${rawVaultOrigin.replace(/\/main\/?$/, "")}/${pin}`;
           }
         }
@@ -136,8 +146,35 @@ class VaultSyncManager {
         // network or offline, fallback to rawVaultOrigin
       }
 
-      const client = new VaultClient(targetBaseUrl);
-      const remoteManifest = await client.fetchManifest();
+      // Immutable pinning is only an optimisation: it makes a release
+      // reproducible. It must never be able to take the whole Vault offline,
+      // and it did — a checkpoint once shipped a commitSha that did not exist
+      // on the remote, so every fetch 404'd, the error was swallowed as a
+      // console.warn, and a clean install silently received no remote Styles,
+      // Resources, Templates or Patterns at all while still reporting "cache
+      // preserved". So: try the pinned revision, and on failure fall back to
+      // the un-pinned origin and say so out loud.
+      const candidates = [targetBaseUrl, rawVaultOrigin].filter(
+        (u, i, all) => Boolean(u) && all.indexOf(u) === i,
+      );
+      let client = new VaultClient(candidates[0]);
+      let remoteManifest: VaultManifest | null = null;
+      let pinFallbackReason: string | null = null;
+      for (let i = 0; i < candidates.length; i++) {
+        try {
+          remoteManifest = await new VaultClient(candidates[i]).fetchManifest();
+          client = new VaultClient(candidates[i]);
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (i === candidates.length - 1) throw err;
+          pinFallbackReason = msg;
+          console.warn(
+            `[VaultSync] Pinned revision ${candidates[i]} unavailable (${msg}); falling back to ${candidates[i + 1]}`,
+          );
+        }
+      }
+      if (!remoteManifest) throw new Error("Vault manifest unavailable");
       const cached = loadVaultCache();
 
       const targetVersion = releaseCheckpoint?.releaseVersion || remoteManifest.contentVersion;
@@ -247,6 +284,7 @@ class VaultSyncManager {
         updated: true,
         contentVersion: remoteManifest.contentVersion,
         fromCache: false,
+        ...(pinFallbackReason ? { pinFallback: pinFallbackReason } : {}),
         itemCounts: {
           styles: Object.keys(stylesRecord).length,
           resources: resourcesList.length,
@@ -353,6 +391,13 @@ class VaultSyncManager {
             fontBody: s.tokens?.fontBody,
           },
           designPrinciples: s.designPrinciples ?? [],
+          // Vault Style Contract V2. A published style may declare a full
+          // declarative Experience profile (grammar + tweakable tokens + tier),
+          // which is what lets a remote style change the shape of the product
+          // rather than only its colours — without shipping any React.
+          // `registerStyle` keeps the local profile when the payload has none,
+          // so a legacy vault entry can never downgrade a local experience.
+          ...(s.experience ? { experience: s.experience } : {}),
         };
         registerStyle(setupStyle);
       }
