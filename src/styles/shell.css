@@ -1,0 +1,1328 @@
+/* ==========================================================================
+   Shell Grammar — the layout half of the Experience System
+   ==========================================================================
+
+   WHY THIS FILE EXISTS
+
+   The old Style System could only reach colour, radius, border and shadow.
+   Every style was therefore pinned to one arrangement — a 188px left sidebar,
+   a scrolling content column, and an optional 340px right rail — and that
+   single fixed arrangement is the real reason twenty "styles" read as one
+   product with twenty palettes.
+
+   Fixing that with React would mean `if (style === "dos") … else if (style ===
+   "mac") …` in the shell, which AGENTS.md forbids and which no remote/Vault
+   style could ever participate in. So the shell is expressed as *data*: the
+   Experience runtime writes `data-shell`, `data-nav`, `data-detail` and
+   `data-composition` onto <html>, and the rules below arrange the same
+   business DOM accordingly.
+
+   The consequence worth stating plainly: adding a shell-experience style
+   requires no React change at all. It declares `shell: "dock"` in its manifest
+   and inherits everything here.
+
+   STRUCTURE CONTRACT
+
+   The dashboard renders one tree, and every grammar rearranges *this* tree:
+
+     [data-shell-root]                 flex container, the only box that is laid out
+       > nav[data-nav]                 navigation grammar
+       > [data-shell-body]             display:contents — see note below
+           > section[data-page]        primary content
+           > aside[data-detail]        detail presentation
+
+   `[data-shell-body]` is `display: contents` deliberately. It exists only to
+   group the page and the detail for React; for layout it is transparent, so
+   `section` and `aside` become direct flex children of the root and a grammar
+   can reorder or resize them without fighting a wrapper that hardcodes
+   `flex-1`. Removing the wrapper in JSX would change the DOM contract that
+   several other features (software master-detail, detail dispatch) rely on.
+   ========================================================================== */
+
+[data-shell-root] {
+  display: flex;
+  height: 100%;
+}
+
+/* `html[data-shell]` rather than a bare attribute selector: this rule fights a
+   Tailwind `flex` utility on the same element, and the two have equal
+   specificity. Raising one step makes the outcome depend on specificity instead
+   of on which stylesheet the bundler happened to emit last. */
+html[data-shell] [data-shell-body] {
+  display: contents;
+}
+
+/* --------------------------------------------------------------------------
+   Base geometry for the three slots.
+   These read tokens rather than literals so a sidebar's width is not a fourth
+   thing a style has to override, while its *presence or absence* is grammar.
+   -------------------------------------------------------------------------- */
+
+[data-shell-root] nav[data-nav] {
+  flex-direction: column;
+  padding: 1.75rem 0.75rem;
+}
+
+[data-shell-root] section[data-page] {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+[data-shell-root] aside[data-detail] {
+  flex: 0 0 auto;
+  overflow-y: auto;
+}
+
+/* Row-reversal and wrapping are set per grammar; declare them here so a
+   grammar only has to state what it changes.
+ *
+ * This base rule used to be written as the full chain
+ * `html[data-shell] [data-shell-root] > nav[data-nav] > [data-nav-list]`.
+ * That is four attribute selectors plus two element selectors — specificity
+ * (0,4,2) — while every per-grammar override below is written as the much
+ * shorter `html[data-shell="windowed"] [data-nav-list]`, i.e. (0,2,1). The
+ * base therefore won every conflict and `flex-direction: column` was pinned on
+ * the nav list for *all nine* shells: the topbar, menu-bar, command-bar, dock
+ * and editorial grammars each declared `flex-direction: row` and none of them
+ * ever took effect. The visible symptom was a 370px-tall "menu bar" — a column
+ * of nine buttons that merely happened to be laid out across the top.
+ *
+ * The base stays a base: one attribute selector, so any grammar that names the
+ * shell or the nav wins on specificity rather than on source order. A single
+ * `[data-nav-list]` cannot collide with anything else either — the attribute is
+ * emitted in exactly one place (`src/screens/Dashboard.tsx`). */
+[data-nav-list] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+/* ==========================================================================
+   SHELL: sidebar  (the historical default — left rail, content, right rail)
+   ========================================================================== */
+
+html[data-shell="sidebar"] [data-shell-root] nav[data-nav] {
+  width: 188px;
+}
+
+/* ==========================================================================
+   SHELL: topbar  (navigation becomes a horizontal header above the content)
+   ========================================================================== */
+
+html[data-shell="topbar"] [data-shell-root],
+html[data-shell="stacked"] [data-shell-root] {
+  flex-direction: column;
+}
+
+html[data-shell="topbar"] [data-shell-root] > nav[data-nav],
+html[data-shell="stacked"] [data-shell-root] nav[data-nav] {
+  /* `width: auto` + `flex: 0 0 auto` because the sidebar width is a token the
+     sidebar grammar owns; a header must not inherit it. */
+  width: auto;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.875rem 1.75rem;
+}
+
+html[data-shell="topbar"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The footer holds the theme switch and the exit button. In a row it needs
+   `margin-left: auto` instead of the sidebar's `margin-top: auto`, which is
+   inert horizontally. */
+html[data-shell="topbar"] [data-nav-foot],
+html[data-shell="stacked"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  margin-left: auto;
+  padding-top: 0;
+}
+
+html[data-shell="topbar"] [data-nav] > button[aria-current="page"],
+html[data-shell="stacked"] [data-nav] > button[aria-current="page"] {
+  border-bottom-width: 2px;
+}
+
+/* stacked is the tab-strip variant of topbar: same skeleton, but navigation
+   sits directly on the content edge on a single hairline instead of floating
+   above it. */
+html[data-shell="stacked"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  gap: 0;
+}
+
+html[data-shell="stacked"] [data-shell-root] nav[data-nav] {
+  padding: 0 1.5rem;
+  gap: 1rem;
+}
+
+/* ==========================================================================
+   SHELL: dock  (navigation detaches from the edge and floats)
+   ========================================================================== */
+
+html[data-shell="dock"] [data-shell-root] {
+  /* column-reverse puts the first child — the nav — at the bottom without
+     reordering the JSX, which keeps the DOM order meaningful for screen
+     readers (navigation still precedes content in reading order). */
+  flex-direction: column-reverse;
+}
+
+html[data-shell="dock"] [data-shell-root] nav[data-nav] {
+  align-self: center;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  max-width: calc(100% - 2rem);
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  margin: 0 1rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-hard);
+  backdrop-filter: blur(18px);
+}
+
+html[data-shell="dock"] [data-nav-list] {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+html[data-shell="dock"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  padding-top: 0;
+  border-left: var(--border-width) solid var(--line-subtle);
+  padding-left: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+/* The dock is the one grammar where the brand block is genuinely noise: the
+   dock is an affordance, not a letterhead. Hidden visually, kept in the
+   accessibility tree so navigation is still announced with its label. */
+html[data-shell="dock"] [data-nav-brand] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   SHELL: command-centered  (a command bar over a centred reading column)
+   ========================================================================== */
+
+html[data-shell="command-centered"] [data-shell-root] {
+  flex-direction: column;
+}
+
+html[data-shell="command-centered"] [data-shell-root] nav[data-nav] {
+  width: auto;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1.5rem;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  background: var(--surface-base);
+}
+
+html[data-shell="command-centered"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: 0.125rem;
+}
+
+html[data-shell="command-centered"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+html[data-shell="command-centered"] [data-shell-root] section[data-page] {
+  /* A centred measure. Command-centred experiences are read top-to-bottom, so
+     an 1800px line length would be the failure mode, not a feature. */
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+/* ==========================================================================
+   SHELL: editorial  (masthead above an asymmetric, wide reading surface)
+   ========================================================================== */
+
+html[data-shell="editorial"] [data-shell-root] {
+  flex-direction: column;
+}
+
+html[data-shell="editorial"] [data-shell-root] nav[data-nav] {
+  width: auto;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2rem;
+  padding: 1.75rem 2.5rem 0;
+  border-bottom: var(--border-width) solid var(--line-strong);
+}
+
+html[data-shell="editorial"] [data-nav-brand] {
+  padding: 0 0 1rem;
+}
+
+html[data-shell="editorial"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  gap: 0;
+}
+
+html[data-shell="editorial"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  padding: 0 0 1rem;
+}
+
+html[data-shell="editorial"] [data-shell-root] section[data-page] {
+  /* Asymmetry is the point: a magazine gutter is not a centred column. The
+     left margin is deliberately larger than the right, which is what makes an
+     editorial page read as composed rather than as a form. */
+  width: 100%;
+  max-width: none;
+  padding-left: 4.5rem;
+  padding-right: 2.5rem;
+}
+
+/* ==========================================================================
+   SHELL: canvas  (content floats on the surface; navigation is an overlay)
+   ========================================================================== */
+
+html[data-shell="canvas"] [data-shell-root] {
+  flex-direction: column;
+  position: relative;
+}
+
+html[data-shell="canvas"] [data-shell-root] nav[data-nav] {
+  position: absolute;
+  z-index: 20;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  max-width: calc(100% - 3rem);
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border: var(--border-width) solid var(--line-subtle);
+  border-radius: 999px;
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+html[data-shell="canvas"] [data-nav-list] {
+  flex-direction: row;
+  gap: 0.25rem;
+}
+
+html[data-shell="canvas"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  padding-top: 0;
+  border-left: var(--border-width) solid var(--line-subtle);
+  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+html[data-shell="canvas"] [data-shell-root] section[data-page] {
+  /* Bottom padding clears the floating dock so the last row is never trapped
+     under it. This is the kind of bug a purely visual shell change ships with
+     if the overlay height is not accounted for in the scroll container. */
+  width: 100%;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 4rem 3rem 7rem;
+}
+
+/* ==========================================================================
+   SHELL: windowed  (a classic desktop: menu bar, then a window with chrome)
+   ========================================================================== */
+
+html[data-shell="windowed"] [data-shell-root] {
+  flex-direction: column;
+  padding: 0 0 1.25rem;
+  background-image: repeating-linear-gradient(
+    var(--window-pattern, 0deg),
+    transparent 0 3px,
+    rgba(0, 0, 0, 0.12) 3px 4px
+  );
+}
+
+html[data-shell="windowed"] [data-shell-root] nav[data-nav] {
+  width: auto;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  background: var(--surface-raised);
+}
+
+html[data-shell="windowed"] [data-nav-brand] {
+  padding: 0;
+  font-weight: 700;
+}
+
+html[data-shell="windowed"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  gap: 0.125rem;
+}
+
+html[data-shell="windowed"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+html[data-shell="windowed"] [data-shell-root] section[data-page] {
+  flex: 1 1 auto;
+  margin: 1.25rem 1.5rem 0;
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-hard);
+}
+
+/* The title bar. Drawn as a pseudo-element so the real content stays semantic
+   and no style has to inject chrome markup into a business page. */
+html[data-shell="windowed"] [data-shell-root] section[data-page]::before {
+  content: attr(data-window-title);
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 0.375rem 0.75rem;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  background: var(--window-titlebar, var(--surface-raised));
+  color: var(--text-strong);
+}
+
+/* ==========================================================================
+   SHELL: dual-pane  (content and detail carry comparable weight, always)
+   ========================================================================== */
+
+html[data-shell="dual-pane"] [data-shell-root] nav[data-nav] {
+  width: 164px;
+}
+
+html[data-shell="dual-pane"] [data-shell-root] section[data-page] {
+  flex: 1 1 54%;
+  border-right: var(--border-width) solid var(--line-subtle);
+}
+
+html[data-shell="dual-pane"] [data-shell-root] aside[data-detail] {
+  flex: 1 1 46%;
+  width: auto;
+}
+
+/* ==========================================================================
+   DETAIL GRAMMAR — how a selected item is presented
+   ========================================================================== */
+
+html[data-detail="rail"] [data-shell-root] aside[data-detail] {
+  width: 340px;
+  border-left: var(--border-width) solid var(--line-subtle);
+}
+
+html[data-detail="floating-inspector"] [data-shell-root] aside[data-detail] {
+  width: 380px;
+  margin: 1.25rem 1.25rem 1.25rem 0;
+  padding: 1.25rem;
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-hard);
+}
+
+html[data-detail="window"] [data-shell-root] aside[data-detail] {
+  width: 420px;
+  margin: 1.25rem 1.25rem 1.25rem 0;
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-hard);
+}
+
+html[data-detail="sheet"] [data-shell-root] aside[data-detail] {
+  width: 400px;
+  border-left: var(--border-width) solid var(--line-strong);
+  background: var(--surface-overlay);
+  box-shadow: -24px 0 48px -24px rgba(0, 0, 0, 0.6);
+}
+
+/* `modal` centres the detail over a scrim.
+   ==========================================================================
+
+   The scrim is drawn by the aside's own enormous spread shadow rather than by a
+   second element, because the business renders exactly one detail node and
+   adding a sibling scrim would mean the shell had to know whether a detail
+   existed. `0 0 0 100vmax` paints the whole viewport from one box.
+
+   Like `full-page`, every positioning rule is gated on `[data-detail-open]`. A
+   modal grammar with nothing selected must look like the page, not like a
+   centred dialog apologising for being empty. */
+html[data-detail="modal"] [data-shell-root][data-detail-open] {
+  position: relative;
+}
+
+html[data-detail="modal"] [data-shell-root]:not([data-detail-open]) aside[data-detail] {
+  display: none;
+}
+
+html[data-detail="modal"] [data-shell-root][data-detail-open] aside[data-detail] {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 40;
+  width: min(680px, 88vw);
+  max-height: 84vh;
+  margin: 0;
+  padding: 1.5rem;
+  transform: translate(-50%, -50%);
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-overlay);
+  box-shadow:
+    0 0 0 100vmax var(--scrim),
+    0 32px 64px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* `full-page` lets the detail take the whole *content* area.
+   ==========================================================================
+
+   The detail claims the page's flex space instead of being overlaid on it: the
+   page collapses to zero width and the detail becomes the document. Flex rather
+   than absolute positioning so the navigation column is never covered — the
+   brief's rule is that a grammar may change presentation but must not make an
+   entry point disappear, and a full-bleed overlay would have swallowed the nav.
+
+   The collapse is keyed on `[data-detail-open]`, which the shell sets only when
+   a selection genuinely exists. Keying it on the aside being *mounted* would
+   have collapsed the page behind an empty placeholder on every selectable page
+   that nobody had clicked yet — the grammar would have destroyed the page it
+   was supposed to let you browse.
+
+   Nothing is display:none'd. The page keeps its scroll position and its state,
+   so dismissing the detail returns the customer exactly where they were rather
+   than to a remounted page. */
+html[data-detail="full-page"] [data-shell-root][data-detail-open] section[data-page] {
+  flex: 0 1 0;
+  overflow: hidden;
+}
+
+html[data-detail="full-page"] [data-shell-root] aside[data-detail] {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+html[data-detail="full-page"] [data-shell-root]:not([data-detail-open]) aside[data-detail] {
+  display: none;
+}
+
+html[data-detail="full-page"] [data-shell-root][data-detail-open] aside[data-detail] {
+  flex: 1 1 100%;
+  padding: 2rem 3rem;
+  border: none;
+  background: var(--surface-base);
+}
+
+/* `inline` stacks the detail under the content. It is the right grammar for
+   narrow windows and for editorial experiences where a side rail would break
+   the column structure — and it is why the detail slot must not be styled with
+   a fixed width in the base rules.
+
+   HOW THE STACK IS BUILT MATTERS, AND THE FIRST ATTEMPT WAS WRONG.
+
+   This grammar originally stacked by putting `flex-wrap: wrap` on the shell root
+   and `flex: 1 1 100%` on both slots. That looks like "stack them vertically"
+   and is not: a wrapping row flex container sizes its flex *line* to its
+   content, so the line is free to be taller than the container, and the shell's
+   `height: 100%` stops constraining anything. The page then grew to whatever
+   the content was — measured at **81247px** inside a 724px shell on the
+   Resource page under `dos-utility`.
+
+   The damage was not cosmetic. `section[data-page]` had `flex: 1 1 100%` with a
+   real scroll height but no bounded height, so `overflow-y: auto` never
+   engaged (`scrollHeight === clientHeight`), and the tail of the list was
+   clipped by `<main>`'s `overflow: hidden` with no way to reach it: measured
+   `lastCardVisible: false`, ~427 resource cards where only the first screenful
+   could ever be seen. `dos-utility` is the only experience declaring
+   `detail: "inline"`, so this was DOS's page — the experience whose whole
+   premise is browsing a long directory listing.
+
+   The fix is to drop `wrap` entirely and let the shell body become the column.
+   `[data-shell-body]` is `display: contents` in the base rules (see the note at
+   the top of this file) precisely so a grammar can take it over; under `inline`
+   it becomes a real `flex-direction: column` box that owns the vertical split.
+   The shell root stays `nowrap`, so its own height constraint survives, and the
+   page goes back to `flex: 1 1 auto` + `min-height: 0` — the standard
+   scroll-container recipe, which is what makes `overflow-y: auto` actually
+   scroll instead of being sized by its content.
+
+   The detail slot is capped at half the body rather than given a share of the
+   flex, so a short detail is a short strip and a long one scrolls inside itself
+   instead of eating the page you are browsing. It keeps its `border-top` and
+   loses the `border-left` it inherited from the base rail styling, because a
+   horizontal divider is what a stacked pane actually needs. */
+html[data-detail="inline"] [data-shell-root] {
+  flex-wrap: nowrap;
+}
+
+html[data-detail="inline"] [data-shell-root] [data-shell-body] {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+html[data-detail="inline"] [data-shell-root] section[data-page] {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-right: none;
+}
+
+html[data-detail="inline"] [data-shell-root] aside[data-detail] {
+  flex: 0 1 auto;
+  width: auto;
+  max-height: 50%;
+  min-height: 0;
+  border-left: none;
+  border-top: var(--border-width) solid var(--line-subtle);
+}
+
+/* ==========================================================================
+   COMPOSITION GRAMMAR — how a page of like items is arranged
+   ==========================================================================
+
+   The resource grid is one element with one class today. Rather than a second
+   grid per style, the runtime names the composition and the grid answers. This
+   is what stops every experience from being "three rounded cards in a row with
+   a different border".
+   ========================================================================== */
+
+[data-composition-grid] {
+  display: grid;
+  gap: var(--density-gap, 0.875rem);
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+/* Explicit per-composition columns keyed on the runtime attribute, so the
+   arrangement is chosen by the experience and not by the viewport alone. */
+html[data-composition="solid-grid"] [data-composition-grid] {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--density-gap, 0.875rem);
+}
+
+html[data-composition="magazine-index"] [data-composition-grid] {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+html[data-composition="news-columns"] [data-composition-grid] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2.25rem;
+  row-gap: 0;
+}
+
+html[data-composition="finder-list"] [data-composition-grid],
+html[data-composition="drafting-index"] [data-composition-grid] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html[data-composition="character-list"] [data-composition-grid],
+html[data-composition="roadmap"] [data-composition-grid],
+html[data-composition="ledger"] [data-composition-grid] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+/* The three single-column compositions share a track count but not a shape, and
+   a shared track count is where a viewer stops seeing a difference. Each gets
+   its own internal rhythm so the page reads as a rule-separated column, a
+   numbered sequence, or a character grid — three structures, not one list with
+   three palettes.
+
+   IMPORTANT: these rules touch the CARD, and the card already owns its internal
+   layout (title, description, tags, action bar). So they may only change what
+   surrounds the card — rules, padding, a gutter marker — never the card's own
+   `display`, or the card's contents get re-flowed into these columns and the
+   entry stops being readable. */
+
+/* ledger: a ruled account. A hairline under every row, the way a book of
+   accounts has always been set. */
+html[data-composition="ledger"] [data-composition-grid] > * {
+  border-bottom: var(--border-width) solid var(--line-subtle);
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+
+html[data-composition="ledger"] [data-composition-grid] > *:first-child {
+  border-top: var(--border-width) solid var(--line-strong);
+}
+
+html[data-composition="ledger"] [data-composition-grid] > *:last-child {
+  border-bottom: var(--border-width) solid var(--line-strong);
+}
+
+/* roadmap: a numbered sequence. The counter is generated, so no content change
+   is needed to make the page read as ordered steps rather than as a list. The
+   marker lives in the gutter the padding opens up; the connecting rule is drawn
+   from the marker down to the next row's marker. */
+html[data-composition="roadmap"] [data-composition-grid] {
+  counter-reset: roadmap-step;
+}
+
+html[data-composition="roadmap"] [data-composition-grid] > * {
+  position: relative;
+  counter-increment: roadmap-step;
+  padding-left: 3.25rem;
+  border-bottom: var(--border-width) solid var(--line-subtle);
+}
+
+html[data-composition="roadmap"] [data-composition-grid] > *::before {
+  content: counter(roadmap-step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  font-family: var(--type-heading-family, inherit);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--status-accent);
+}
+
+html[data-composition="roadmap"] [data-composition-grid] > *::after {
+  content: "";
+  position: absolute;
+  left: 1.05rem;
+  top: 1.75rem;
+  bottom: 0;
+  width: var(--border-width);
+  background: var(--line-subtle);
+}
+
+html[data-composition="roadmap"] [data-composition-grid] > *:last-child::after {
+  display: none;
+}
+
+/* character-list: a character-cell grid. Monospace, a hanging margin mark, and
+   very tight vertical rhythm — rows sit on the cell, not inside a box. */
+html[data-composition="character-list"] [data-composition-grid] {
+  font-family: var(--type-mono-family, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+html[data-composition="character-list"] [data-composition-grid] > * {
+  position: relative;
+  padding-left: 1.625rem;
+}
+
+html[data-composition="character-list"] [data-composition-grid] > *::before {
+  content: "\203A";
+  position: absolute;
+  left: 0.4rem;
+  top: 0;
+  color: var(--status-accent);
+}
+
+html[data-composition="character-list"] [data-composition-grid] > *:nth-child(2n) {
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+html[data-composition="floating-panels"] [data-composition-grid] {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: calc(var(--density-gap, 0.875rem) * 1.75);
+}
+
+html[data-composition="poster-wall"] [data-composition-grid] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--density-gap, 0.875rem) * 1.5);
+  align-items: start;
+}
+
+/* magazine-index leans on an irregular rhythm rather than uniform cells: a
+   magazine page is composed, and a composed page is not a table. Every third
+   entry spans wide, which produces the asymmetry without any per-item data. */
+html[data-composition="magazine-index"] [data-composition-grid] > * {
+  grid-column: span 6;
+}
+
+html[data-composition="magazine-index"] [data-composition-grid] > *:nth-child(3n + 1) {
+  grid-column: span 12;
+}
+
+html[data-composition="poster-wall"] [data-composition-grid] > *:nth-child(2n) {
+  transform: rotate(-0.6deg);
+}
+
+html[data-composition="poster-wall"] [data-composition-grid] > *:nth-child(3n) {
+  transform: rotate(0.9deg);
+}
+
+html[data-composition="poster-wall"] [data-composition-grid] > *:nth-child(5n) {
+  transform: translateY(1.5rem);
+}
+
+/* The composition attribute is the arrangement authority, so Tailwind's
+   responsive grid utilities must not re-impose their own column count at wider
+   viewports. This overrides only the `grid-template-columns` property, leaving
+   the utility's other declarations intact. */
+html[data-composition] [data-composition-grid] {
+  grid-auto-flow: row;
+}
+
+/* ==========================================================================
+   MOTION GRAMMAR
+   ========================================================================== */
+
+html[data-motion="reduced"] [data-shell-root] *,
+html[data-motion="reduced"] [data-shell-root] *::before,
+html[data-motion="reduced"] [data-shell-root] *::after {
+  animation-duration: 1ms !important;
+  transition-duration: 1ms !important;
+}
+
+html[data-motion="expressive"] [data-shell-root] section[data-page] {
+  animation: experience-arrive var(--motion-base, 420ms) var(--motion-ease, ease-out) both;
+}
+
+@keyframes experience-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   NAVIGATION GRAMMAR  (independent of shell)
+   ==========================================================================
+
+   Shell and navigation are two axes, and conflating them is what produced the
+   "all styles are the same product" problem in a subtler form: a Topbar shell
+   with a Tab Strip and a Topbar shell with a Command Bar are visibly different
+   products, but a single `data-shell` attribute can only express one of them.
+
+   These rules therefore key off `data-nav` and are applied *after* the shell
+   rules, so a grammar can reshape the navigation without restating the shell.
+   ========================================================================== */
+
+/* --- tab-strip: labels in a row, the active one underlined by the accent --- */
+
+html[data-nav="tab-strip"] [data-shell-root] nav[data-nav] {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 0.75rem;
+  border-bottom: var(--border-width) solid var(--line-default);
+}
+
+html[data-nav="tab-strip"] [data-nav-brand] {
+  display: none;
+}
+
+html[data-nav="tab-strip"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  gap: 0.25rem;
+}
+
+html[data-nav="tab-strip"] [data-nav-list] > button {
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0.625rem 0.875rem;
+}
+
+html[data-nav="tab-strip"] [data-nav-list] > button[aria-current="page"] {
+  border-bottom-color: var(--status-accent);
+  font-weight: 700;
+}
+
+html[data-nav="tab-strip"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  margin-left: auto;
+  padding-top: 0;
+}
+
+/* --- command-bar: a mode line. Uppercase, monospace, accent-marked current --- */
+
+html[data-nav="command-bar"] [data-shell-root] nav[data-nav] {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  background: var(--surface-sunken, var(--surface-raised));
+}
+
+html[data-nav="command-bar"] [data-nav-brand] {
+  padding: 0 0.75rem 0 0;
+  border-right: var(--border-width) solid var(--line-default);
+  margin-right: 0.25rem;
+}
+
+html[data-nav="command-bar"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  gap: 0;
+}
+
+html[data-nav="command-bar"] [data-nav-list] > button {
+  border-radius: 0;
+  padding: 0.375rem 0.625rem;
+  font-family: var(--experience-font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Reverse video, not a highlight tint: this is the DOS/console convention and
+   it is legible in greyscale, which the outline test requires. */
+html[data-nav="command-bar"] [data-nav-list] > button[aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+  font-weight: 700;
+}
+
+html[data-nav="command-bar"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  margin-left: auto;
+  padding-top: 0;
+}
+
+/* --- menu-bar: the classic desktop menu. Always-on row, no box per item. --- */
+
+html[data-nav="menu-bar"] [data-shell-root] nav[data-nav] {
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 0.125rem 0.5rem;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  background: var(--surface-raised);
+  box-shadow: inset 0 1px 0 0 var(--edge-highlight);
+}
+
+html[data-nav="menu-bar"] [data-nav-brand] {
+  padding: 0 0.75rem 0 0.25rem;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+html[data-nav="menu-bar"] [data-nav-list] {
+  flex-direction: row;
+  flex: 1 1 auto;
+  gap: 0;
+}
+
+html[data-nav="menu-bar"] [data-nav-list] > button {
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0.625rem;
+  font-size: 12.5px;
+}
+
+html[data-nav="menu-bar"] [data-nav-list] > button[aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+}
+
+html[data-nav="menu-bar"] [data-nav-foot] {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+  margin-left: auto;
+  padding-top: 0;
+}
+
+/* --- keyboard-menu: keycap-labelled entries in a single character column --- */
+
+html[data-nav="keyboard-menu"] [data-nav-list] {
+  gap: 0;
+}
+
+html[data-nav="keyboard-menu"] [data-nav-list] > button {
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  padding: 0.1875rem 0.375rem;
+  font-family: var(--experience-font-mono);
+  font-size: 12px;
+  justify-content: flex-start;
+}
+
+html[data-nav="keyboard-menu"] [data-nav-list] > button::before {
+  counter-increment: nav-key;
+  content: counter(nav-key) " ";
+  color: var(--text-quiet);
+  margin-right: 0.375rem;
+}
+
+html[data-nav="keyboard-menu"] [data-nav-list] {
+  counter-reset: nav-key;
+}
+
+/* Reverse-video selection, the Turbo Vision / Norton Commander convention. */
+html[data-nav="keyboard-menu"] [data-nav-list] > button[aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+  font-weight: 700;
+}
+
+/* --- dock: icon-and-label buttons in a floating rounded bar --- */
+
+html[data-nav="dock"] [data-nav-list] > button {
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0.625rem;
+  border: none;
+  background: transparent;
+}
+
+html[data-nav="dock"] [data-nav-list] > button[aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+}
+
+/* ==========================================================================
+   CARD GRAMMAR
+   ==========================================================================
+
+   Not every experience uses a rounded rectangle. The four card surfaces the
+   business renders — resource cards, software rows, style cards, and composition
+   tiles — read `data-card` and reshape themselves, so a style never has to
+   target a Tailwind utility class (which is how `button.bg-\[color\:var\(--status-accent\)\]`
+   ended up in a stylesheet and broke the moment the button was refactored).
+
+   These rules are deliberately AFTER the shell rules so a card grammar is never
+   fighting a shell grammar for the same property.
+   ========================================================================== */
+
+html[data-card] [data-resource-card],
+html[data-card] [data-style-card],
+html[data-card] [data-software-row] {
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
+  border-style: var(--ornament-rule-style, solid);
+}
+
+/* --- panel: the historical card. Nothing to restate. --- */
+
+/* --- flat-row: no box at all; a rule between rows instead. --- */
+
+html[data-card="flat-row"] [data-resource-card],
+html[data-card="flat-row"] [data-style-card],
+html[data-card="flat-row"] [data-software-row] {
+  border: none;
+  border-top: var(--ornament-rule-width) solid var(--line-default);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html[data-card="flat-row"] [data-composition-grid] {
+  gap: 0;
+}
+
+/* --- editorial-block: a headline-weight block with a rule above it. --- */
+
+html[data-card="editorial-block"] [data-resource-card],
+html[data-card="editorial-block"] [data-style-card] {
+  border: none;
+  border-top: 2px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* --- terminal-line: one line per entry, monospace, no chrome. --- */
+
+html[data-card="terminal-line"] [data-resource-card],
+html[data-card="terminal-line"] [data-style-card],
+html[data-card="terminal-line"] [data-software-row] {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0.125rem 0.375rem;
+  font-family: var(--experience-font-mono);
+}
+
+html[data-card="terminal-line"] [data-resource-card]:hover,
+html[data-card="terminal-line"] [data-software-row]:hover {
+  background: var(--status-accent);
+  color: var(--accent-on);
+}
+
+html[data-card="terminal-line"] [data-composition-grid] {
+  gap: 0;
+}
+
+/* --- window: a bordered frame with a title strip, like a classic dialog. --- */
+
+html[data-card="window"] [data-resource-card],
+html[data-card="window"] [data-style-card] {
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-hard);
+  background: var(--surface-raised);
+}
+
+html[data-card="window"] [data-style-card] > *:first-child {
+  border-bottom: var(--border-width) solid var(--line-subtle);
+}
+
+/* --- tile: square-ish, no rounding, tight. --- */
+
+html[data-card="tile"] [data-resource-card],
+html[data-card="tile"] [data-style-card] {
+  border-radius: var(--ornament-corner, 0px);
+  box-shadow: none;
+}
+
+/* --- index-entry: a numbered catalogue line. --- */
+
+html[data-card="index-entry"] [data-resource-card],
+html[data-card="index-entry"] [data-style-card] {
+  border: none;
+  border-bottom: var(--ornament-rule-width, 1px) solid var(--line-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html[data-card="index-entry"] [data-composition-grid] {
+  gap: 0;
+}
+
+/* --- floating-surface: lifted off the canvas, no visible border. --- */
+
+html[data-card="floating-surface"] [data-resource-card],
+html[data-card="floating-surface"] [data-style-card] {
+  border-color: transparent;
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-hard);
+  background: var(--surface-raised);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+
+/* --- borderless-group: no card, and no rule either — pure spacing. --- */
+
+html[data-card="borderless-group"] [data-resource-card],
+html[data-card="borderless-group"] [data-style-card] {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* --- poster: oversized, high-contrast, allowed to tilt and to overlap. --- */
+
+/* This is the grammar that states most loudly that an experience is not a
+   palette. A poster card is deliberately larger than its neighbours, carries a
+   heavy rule across its top, and sits on the diagonal; the *content* inside is
+   unchanged, so the resource data did not have to learn anything new. */
+html[data-card="poster"] [data-resource-card],
+html[data-card="poster"] [data-style-card] {
+  border: var(--border-width) solid var(--line-strong);
+  border-top-width: calc(var(--border-width) * 2.5);
+  border-radius: var(--ornament-corner, 0px);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-hard);
+  padding: 1.25rem 1.1rem;
+  transform: rotate(-0.8deg);
+}
+
+html[data-card="poster"] [data-resource-card]:nth-child(2n),
+html[data-card="poster"] [data-style-card]:nth-child(2n) {
+  transform: rotate(0.9deg);
+}
+
+html[data-card="poster"] [data-resource-card]:nth-child(3n),
+html[data-card="poster"] [data-style-card]:nth-child(3n) {
+  transform: rotate(-0.3deg) translateY(-0.35rem);
+}
+
+html[data-card="poster"] [data-resource-card]:hover,
+html[data-card="poster"] [data-style-card]:hover {
+  transform: rotate(0deg);
+  z-index: 2;
+}
+
+/* The first line of a poster card is its headline, so it takes display weight
+   rather than body weight. */
+html[data-card="poster"] [data-resource-card] > *:first-child,
+html[data-card="poster"] [data-style-card] > *:first-child {
+  font-size: calc(1rem * var(--type-heading-scale, 1));
+  font-weight: 900;
+  letter-spacing: var(--type-heading-tracking, normal);
+}
+
+/* --- sticker: rotated, outlined, offset — a card that was pasted on. --- */
+
+html[data-card="sticker"] [data-resource-card],
+html[data-card="sticker"] [data-style-card] {
+  border: var(--border-width) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-hard);
+  transform: rotate(-0.5deg);
+}
+
+html[data-card="sticker"] [data-resource-card]:nth-child(2n),
+html[data-card="sticker"] [data-style-card]:nth-child(2n) {
+  transform: rotate(0.7deg);
+}
+
+/* ==========================================================================
+   TYPOGRAPHY + ORNAMENT
+   ==========================================================================
+
+   Both are declared grammar rather than tunable tokens, but they still arrive as
+   variables so a Vault-published experience can change them without a rebuild.
+   ========================================================================== */
+
+html[data-experience] [data-page] h1,
+html[data-experience] [data-page] h2 {
+  font-family: var(--experience-font-heading);
+  font-weight: var(--type-heading-weight);
+  letter-spacing: var(--type-heading-tracking);
+  text-transform: var(--type-heading-transform);
+}
+
+html[data-experience] [data-page] h1 {
+  font-size: calc(22px * var(--type-heading-scale));
+}
+
+html[data-experience] [data-page] p,
+html[data-experience] [data-page] li {
+  line-height: var(--type-body-leading);
+}
+
+/* The ornament decoration is applied to the page, behind the content, so it is
+   texture rather than furniture — it must never intercept a click. */
+html[data-experience] [data-shell-root] section[data-page] {
+  background-image: var(--ornament-decoration, none);
+  background-size: var(--ornament-size, 16px 16px);
+  background-position: var(--ornament-position, 0 0);
+  background-repeat: repeat;
+  pointer-events: auto;
+}
+
+html[data-experience] [data-ornament-layer] {
+  pointer-events: none;
+}
+
+/* A halftone dot texture must stay fine enough to read as paper. One rule per
+   decoration that needs a non-default tile size. */
+html[data-experience][data-style="phantom-comic"] [data-shell-root] section[data-page] {
+  --ornament-size: 5px 5px;
+}
+
+html[data-experience][data-style="blueprint"] [data-shell-root] section[data-page] {
+  --ornament-size: 24px 24px;
+}
+
+/* ==========================================================================
+   DENSITY
+   ==========================================================================
+
+   Density is a token (`--density-gap/-pad/-row`), so these rules only have to
+   point the generic surfaces at it. A style that never declared density still
+   gets the same numbers as before, because `normal` is the historical default.
+   ========================================================================== */
+
+html[data-experience] [data-composition-grid] {
+  gap: var(--density-gap);
+}
+
+html[data-experience] [data-resource-card],
+html[data-experience] [data-style-card] {
+  padding: var(--density-pad);
+}
+
+html[data-experience] [data-software-row] {
+  min-height: var(--density-row);
+}
+
+/* ==========================================================================
+   ACCESSIBILITY FLOOR
+   ==========================================================================
+
+   An extreme grammar must not cost a keyboard user their ability to see where
+   they are or reach a control. These rules are deliberately last so they win
+   over any grammar above without needing !important.
+   ========================================================================== */
+
+[data-shell-root] > nav[data-nav] button:focus-visible,
+[data-shell-root] section[data-page] button:focus-visible,
+[data-shell-root] aside[data-detail] button:focus-visible,
+[data-shell-root] [data-composition-grid] button:focus-visible {
+  outline: 2px solid var(--status-accent);
+  outline-offset: 2px;
+}
+
+/* The floating grammars (dock, canvas) overlay content. At the minimum
+   supported window size they must not swallow the surface they float over, so
+   they collapse to a full-width bar instead of shrinking indefinitely. */
+@media (max-width: 900px) {
+  html[data-shell="canvas"] [data-shell-root] nav[data-nav] {
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    max-width: none;
+  }
+
+  html[data-shell="editorial"] [data-shell-root] section[data-page] {
+    padding-left: 2rem;
+    padding-right: 1.5rem;
+  }
+}
