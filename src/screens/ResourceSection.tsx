@@ -211,10 +211,10 @@ export function ResourceSection() {
             <span
               className={`h-2 w-2 rounded-full ${
                 syncStatus === "syncing" || syncStatus === "checking"
-                  ? "bg-amber-400 animate-pulse"
+                  ? "bg-[color:var(--status-warn)] animate-pulse"
                   : syncStatus === "error"
-                    ? "bg-rose-400"
-                    : "bg-emerald-400"
+                    ? "bg-[color:var(--status-bad)]"
+                    : "bg-[color:var(--status-ok)]"
               }`}
             />
             <span className="font-mono text-[color:var(--text-secondary)]">
@@ -269,14 +269,14 @@ export function ResourceSection() {
                             Bookmarks.toggle(feat.id, feat.name);
                           }}
                           className={`text-[12px] p-0.5 hover:scale-125 transition-transform ${
-                            isStarred ? "text-amber-400" : "text-[color:var(--text-quiet)] opacity-50"
+                            isStarred ? "text-[color:var(--status-warn)]" : "text-[color:var(--text-quiet)] opacity-50"
                           }`}
                           title={isStarred ? "取消收藏" : "收藏"}
                         >
                           {isStarred ? "★" : "☆"}
                         </button>
                         {feat.stars && (
-                          <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[color:var(--status-warn)]/10 text-[color:var(--status-warn)] border border-[color:var(--status-warn)]/20">
                             ★ {feat.stars}
                           </span>
                         )}

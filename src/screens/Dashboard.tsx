@@ -2482,8 +2482,8 @@ function StyleSection() {
             className={clsx(
               "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
               filter === "bookmarks"
-                ? "bg-amber-400 text-black border-transparent font-bold"
-                : "border-amber-500/30 bg-amber-500/5 text-amber-300 hover:bg-amber-500/10",
+                ? "bg-[color:var(--status-warn)] text-[color:var(--accent-on)] border-transparent font-bold"
+                : "border-[color:var(--status-warn)]/30 bg-[color:var(--status-warn)]/5 text-[color:var(--status-warn)] hover:bg-[color:var(--status-warn)]/10",
             )}
           >
             ★ 收藏 ({styleBookmarks.filter((id) => STYLE_REGISTRY.some((s) => s.id === id)).length})
@@ -2540,7 +2540,7 @@ function StyleSection() {
                         </span>
                       )}
                       {!live && (
-                        <span className="rounded bg-zinc-500/20 px-1.5 py-0.2 text-[10px] text-zinc-400">
+                        <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)]">
                           需要更新应用
                         </span>
                       )}
@@ -2558,7 +2558,7 @@ function StyleSection() {
                     }}
                     className={`text-[13px] p-0.5 shrink-0 hover:scale-125 transition-transform ${
                       isStarred
-                        ? "text-amber-400 font-bold"
+                        ? "text-[color:var(--status-warn)] font-bold"
                         : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
                     }`}
                     title={isStarred ? "取消收藏" : "收藏"}
@@ -2712,11 +2712,11 @@ function StylePreviewShell({
             全局已启用
           </span>
         ) : live ? (
-          <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+          <span className="rounded bg-[color:var(--status-ok)]/20 px-2 py-0.5 text-[11px] font-bold text-[color:var(--status-ok)] border border-[color:var(--status-ok)]/30">
             可立即使用
           </span>
         ) : (
-          <span className="rounded bg-zinc-500/20 px-2 py-0.5 text-[11px] text-zinc-400">
+          <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] text-[color:var(--text-quiet)]">
             需要更新应用
           </span>
         )

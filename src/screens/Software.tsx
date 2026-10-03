@@ -230,7 +230,7 @@ export function SoftwareScreen() {
                     className={clsx(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all",
                       active
-                        ? "bg-primary text-white shadow-sm"
+                        ? "bg-primary text-[color:var(--accent-on)] shadow-sm"
                         : "bg-[color:var(--surface-raised)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-primary)]",
                     )}
                   >
@@ -238,7 +238,9 @@ export function SoftwareScreen() {
                     <span
                       className={clsx(
                         "rounded-full px-1.5 py-0.2 text-[11px]",
-                        active ? "bg-white/25 text-white" : "text-[color:var(--text-quiet)]",
+                        active
+                          ? "bg-[color:var(--accent-on)]/25 text-[color:var(--accent-on)]"
+                          : "text-[color:var(--text-quiet)]",
                       )}
                     >
                       {count}
@@ -287,7 +289,7 @@ export function SoftwareScreen() {
                 size="sm"
                 disabled={batchInstalling}
                 onClick={() => void handleBatchInstall()}
-                className="bg-primary hover:bg-primary-hover text-white font-medium shadow-md shadow-primary/20 px-4 h-9"
+                className="bg-primary hover:bg-primary-hover text-[color:var(--accent-on)] font-medium shadow-md shadow-primary/20 px-4 h-9"
               >
                 {batchInstalling ? "正在生成方案…" : `一键安装已选 (${selectedIds.size})`}
               </Button>
@@ -624,14 +626,21 @@ function SoftwareCard({
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <span
                   className={clsx(
-                    "rounded px-1.5 py-[1px] text-[10.5px] font-semibold",
+                    "rounded px-1.5 py-[1px] text-[10.5px] font-semibold border",
+                    // Semantic tokens, not Tailwind palette names. Two reasons:
+                    // the palette is frozen at build time, so a style's accent
+                    // could never reach these badges; and the `dark:` variant
+                    // keys off `prefers-color-scheme`, while this app switches
+                    // theme through `<html data-theme>` — so on a machine whose
+                    // OS is dark but whose app is light, `dark:` applied the
+                    // dark colour to a light surface.
                     kidMeta.badge === "必备"
-                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25"
+                      ? "bg-[color:var(--status-warn)]/15 text-[color:var(--status-warn)] border-[color:var(--status-warn)]/25"
                       : kidMeta.badge === "推荐"
-                        ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25"
+                        ? "bg-[color:var(--status-accent)]/15 text-[color:var(--status-accent)] border-[color:var(--status-accent)]/25"
                         : kidMeta.badge === "仅检测"
-                          ? "bg-zinc-500/15 text-zinc-500 border border-zinc-500/25"
-                          : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25",
+                          ? "bg-[color:var(--surface-hover)] text-[color:var(--text-quiet)] border-[color:var(--line-subtle)]"
+                          : "bg-[color:var(--status-ok)]/15 text-[color:var(--status-ok)] border-[color:var(--status-ok)]/25",
                   )}
                 >
                   {kidMeta.badge}

@@ -144,7 +144,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
         {/* Feedback Banner */}
         {feedback && (
-          <div className="bg-[color:var(--accent)] text-white px-4 py-2 text-[12px] font-medium flex items-center justify-between animate-fade-in">
+          <div className="bg-[color:var(--accent)] text-[color:var(--accent-on)] px-4 py-2 text-[12px] font-medium flex items-center justify-between animate-fade-in">
             <span>✓ {feedback}</span>
             <span className="text-[10px] opacity-75 font-mono">自动处理中...</span>
           </div>
@@ -195,7 +195,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                       className={clsx(
                         "text-[11px] font-mono px-2 py-1 rounded-md transition-colors",
                         isSelected
-                          ? "bg-[color:var(--accent)] text-white font-medium"
+                          ? "bg-[color:var(--accent)] text-[color:var(--accent-on)] font-medium"
                           : "bg-[color:var(--surface-inset)] text-[color:var(--text-tertiary)]",
                       )}
                     >

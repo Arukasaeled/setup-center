@@ -145,7 +145,7 @@ export function SetupActionButton({
 
         {/* Package Manager Quick Selector */}
         {showPmSelector && availablePackageManagers && availablePackageManagers.length > 1 && (
-          <div className="flex items-center border-l border-white/20 bg-[color:var(--accent)]/90 px-1 py-1">
+          <div className="flex items-center border-l border-[color:var(--accent-on)]/20 bg-[color:var(--accent)]/90 px-1 py-1">
             {availablePackageManagers.map((pm) => (
               <button
                 key={pm}
@@ -164,8 +164,8 @@ export function SetupActionButton({
                 className={clsx(
                   "px-1.5 py-0.5 text-[10px] font-mono rounded transition-colors",
                   activePm === pm
-                    ? "bg-white text-[color:var(--accent)] font-bold shadow-xs"
-                    : "text-white/80 hover:text-white hover:bg-white/10",
+                    ? "bg-[color:var(--accent-on)] text-[color:var(--accent)] font-bold shadow-xs"
+                    : "text-[color:var(--accent-on)]/80 hover:text-[color:var(--accent-on)] hover:bg-[color:var(--accent-on)]/10",
                 )}
                 title={`切换至 ${pm} 命令并直接执行`}
               >

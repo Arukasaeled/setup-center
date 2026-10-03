@@ -87,6 +87,23 @@
   --color-accent-dim: #3d9c8b;
   --color-accent-deep: #0f766e;
 
+  /* `primary` is the accent in its role as *the action colour*, which is the
+     name nineteen call sites already use (`bg-primary`, `text-primary`,
+     `border-primary/25`, `ring-primary/40`, `shadow-primary/20`,
+     `bg-primary-hover`). It was never declared here, so Tailwind v4 emitted no
+     rule for any of them: the utilities were dead class names, not styles.
+
+     The visible cost: the software wizard's active category tab is
+     `bg-primary text-white`, so it kept a transparent background under white
+     text — white-on-white in the light theme.
+
+     Resolving it through `--status-accent` rather than restating the accent
+     matters: the Experience runtime writes `--status-accent` per style and per
+     user override, so `primary` now follows a style's accent and a Token
+     Inspector accent change automatically, with no second source of truth. */
+  --color-primary: var(--status-accent);
+  --color-primary-hover: color-mix(in srgb, var(--status-accent) 84%, white 16%);
+
   /* Status. Muted so they inform without shouting; each theme gets its own
      variants because #5fd39a on white fails contrast. */
   --color-ok: #5fd39a;
