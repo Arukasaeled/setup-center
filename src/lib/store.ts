@@ -42,7 +42,13 @@ import type {
   StepProgress,
   VerificationReport,
 } from "./types";
-import { loadSavedStyle, saveStylePreference, type StyleId } from "./styles";
+import {
+  hydrateCustomExperiences,
+  loadOverrides,
+  saveOverrides,
+  clearOverrides,
+} from "../styles/runtime";
+import { loadSavedStyle, saveStylePreference, type StyleId, type TokenOverrides } from "./styles";
 import { TransferHistory } from "../core/transfer";
 
 export type Screen =
@@ -167,6 +173,28 @@ interface AppStore {
   // --- Visual Style Playground ----------------------------------------------
   activeStyle: StyleId;
   setActiveStyle: (style: StyleId) => void;
+  /**
+   * The user's token overrides for the *active* experience.
+   *
+   * Lives here rather than in the tweaker component because it is not view
+   * state: it is part of the active experience, and it has to be re-derived
+   * from the newly-selected experience's own slot the moment the experience
+   * changes. When the tweaker owned this in local state and was merely *passed*
+   * a new `activeStyleId` prop, its lazy initialiser never re-ran — so the
+   * previous style's values stayed in memory and were then written into the new
+   * style's storage slot. Hoisting it makes that aliasing impossible to
+   * reintroduce, because the switch and the reload are the same action.
+   */
+  styleOverrides: TokenOverrides;
+  setStyleOverrides: (overrides: TokenOverrides) => void;
+  /** Forget the overrides; resolution falls back to the manifest's own values. */
+  resetStyleOverrides: () => void;
+  /**
+   * Bumped whenever a derived ("Save as Custom") experience is added or
+   * removed, so the gallery re-reads the registry without polling.
+   */
+  customExperiencesVersion: number;
+  refreshCustomExperiences: () => void;
 
   // --- Capability layer (stage 5) -------------------------------------------
   capabilities: CapabilityStatus[];
@@ -553,7 +581,11 @@ export const useApp = create<AppStore>((set, get) => ({
   activeStyle: loadSavedStyle(),
   setActiveStyle: (activeStyle) => {
     saveStylePreference(activeStyle);
-    set({ activeStyle });
+    // The overrides are re-read from the *incoming* experience's own slot in the
+    // same update. Doing both in one `set` is what makes a style switch
+    // atomically "switch + hydrate" — there is no window in which the previous
+    // experience's tokens are paired with the new experience's id.
+    set({ activeStyle, styleOverrides: loadOverrides(activeStyle) });
     try {
       TransferHistory.record({
         type: "style-switch",
@@ -566,6 +598,27 @@ export const useApp = create<AppStore>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  // Overrides are scoped to the active experience; see `setActiveStyle`.
+  styleOverrides: loadOverrides(loadSavedStyle()),
+  setStyleOverrides: (styleOverrides) => {
+    set({ styleOverrides });
+    saveOverrides(useApp.getState().activeStyle, styleOverrides);
+  },
+  resetStyleOverrides: () => {
+    set({ styleOverrides: {} });
+    // Deletes the entry instead of writing the manifest's current values back
+    // down as an override. "Restore default" has to mean the manifest is
+    // reachable again, not that today's default has been frozen into a
+    // user-chosen value — otherwise a later Vault update to the preset would
+    // silently not reach this user.
+    clearOverrides(useApp.getState().activeStyle);
+  },
+  customExperiencesVersion: 0,
+  refreshCustomExperiences: () => {
+    hydrateCustomExperiences();
+    set((s) => ({ customExperiencesVersion: s.customExperiencesVersion + 1 }));
   },
 
   // -------------------------------------------------------------------------
@@ -685,7 +738,17 @@ export const useApp = create<AppStore>((set, get) => ({
         ipc.explainedCatalogue(),
         ipc.knowledgeStatus(),
       ]);
-      set({ explained, knowledgeStatus, explainedPhase: "done" });
+      // `SoftwareSection` builds a Map from this array on every render, so a
+      // payload that is not an array throws inside React and unmounts the whole
+      // dashboard -- the most expensive possible response to one malformed
+      // reply. Rust declares `Vec<ExplainedSoftwareView>`, so this should never
+      // fire; it is here because the cost of being wrong is a blank app rather
+      // than a missing section, which is not a proportionate trade.
+      set({
+        explained: Array.isArray(explained) ? explained : [],
+        knowledgeStatus,
+        explainedPhase: "done",
+      });
     } catch (err) {
       set({ explainedPhase: "error", explainedError: describeError(err) });
     }

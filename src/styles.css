@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* The layout half of the Experience System. Imported from here, and from a
+   plain `.css` entry rather than from a module, because it must be emitted in a
+   known position relative to the token layers below: the grammars in it override
+   base geometry, and the per-style stylesheets are discovered by glob and land
+   after it. */
+@import "./styles/shell.css";
+
 /* ==========================================================================
    Setup Center — design tokens
    --------------------------------------------------------------------------
@@ -493,120 +500,19 @@ body {
   }
 }
 
+
 /* ==========================================================================
-   STYLE SYSTEM — Stylesheets auto-discovered via src/styles/registry.ts
+   STYLE SYSTEM
+   --------------------------------------------------------------------------
+   This file used to end with a table of twelve `[data-style="<id>"] [data-resource-card]
+   { … !important }` rule groups carrying literal hexes and pixel values — the
+   CSS spelling of `if (style === "…")`, which AGENTS.md forbids and which no
+   Vault-published style could ever participate in.
+
+   It is gone. Card appearance now comes from two declarative sources:
+
+     1. the `data-card` grammar in `src/styles/shell.css`, and
+     2. each style own stylesheet in `src/styles/<id>/<id>.css`.
+
+   Both read the runtime variables, so a Token Inspector override reaches them.
    ========================================================================== */
-
-/* Cross-style card adaptations for Resource Center */
-:is([data-style="phantom-comic"], [data-style="p5-comic"]):not([data-theme="light"]) [data-resource-card] {
-  border: 2px solid #ffffff !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  border-radius: 8px !important;
-  background: var(--surface-raised) !important;
-}
-:is([data-style="phantom-comic"], [data-style="p5-comic"])[data-theme="light"] [data-resource-card] {
-  border: 2px solid #000000 !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-}
-:is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-resource-card]:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0px #ffe600 !important;
-}
-
-[data-style="swiss-editorial"] [data-resource-card] {
-  border: 1.5px solid var(--line-default) !important;
-  border-radius: 0px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="swiss-editorial"] [data-resource-card]:hover {
-  border-color: #ff3333 !important;
-}
-
-[data-style="bauhaus"] [data-resource-card] {
-  border: 2px solid var(--line-default) !important;
-  border-radius: 14px 0px 14px 0px !important;
-  box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.4) !important;
-}
-[data-style="bauhaus"] [data-resource-card]:hover {
-  border-color: #ffbe0b !important;
-  box-shadow: 5px 5px 0px #1d4ed8 !important;
-  transform: translate(-2px, -2px);
-}
-
-[data-style="neo-brutalism"] [data-resource-card] {
-  border: 2.5px solid #000000 !important;
-  box-shadow: 5px 5px 0px #000000 !important;
-  border-radius: 10px !important;
-}
-[data-style="neo-brutalism"] [data-resource-card]:hover {
-  box-shadow: 7px 7px 0px #000000 !important;
-  transform: translate(-2px, -2px);
-}
-
-[data-style="spatial-glass"] [data-resource-card] {
-  backdrop-filter: blur(28px) saturate(160%) !important;
-  border: 1px solid var(--line-default) !important;
-  border-radius: 18px !important;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 12px 30px -10px rgba(0, 0, 0, 0.5) !important;
-}
-[data-style="spatial-glass"] [data-resource-card]:hover {
-  border-color: rgba(56, 189, 248, 0.5) !important;
-  transform: translateY(-2px);
-}
-
-[data-style="industrial-console"] [data-resource-card] {
-  border: 1px solid var(--line-default) !important;
-  border-radius: 4px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="industrial-console"] [data-resource-card]:hover {
-  border-color: #f97316 !important;
-}
-
-[data-style="terminal-crt"] [data-resource-card] {
-  border: 1px solid #1b5e26 !important;
-  border-radius: 2px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="terminal-crt"] [data-resource-card]:hover {
-  border-color: #4ade80 !important;
-  box-shadow: 0 0 12px rgba(74, 222, 128, 0.25) !important;
-}
-
-[data-style="blueprint"] [data-resource-card] {
-  border: 1px dashed #2a63a5 !important;
-  border-radius: 2px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="blueprint"] [data-resource-card]:hover {
-  border: 1px solid #64ffda !important;
-}
-
-[data-style="newspaper-editorial"] [data-resource-card] {
-  border: 1px solid var(--line-default) !important;
-  border-top: 2px solid var(--line-strong) !important;
-  border-radius: 2px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="newspaper-editorial"] [data-resource-card]:hover {
-  border-color: var(--status-accent) !important;
-}
-
-[data-style="y2k-digital"] [data-resource-card] {
-  border: 1.5px solid #2d3e64 !important;
-  border-radius: 12px !important;
-  background: linear-gradient(180deg, #162035 0%, #101828 100%) !important;
-}
-[data-style="y2k-digital"] [data-resource-card]:hover {
-  border-color: #06b6d4 !important;
-  box-shadow: 0 0 14px rgba(6, 182, 212, 0.35) !important;
-}
-
-[data-style="soft-product-minimal"] [data-resource-card] {
-  border: 1px solid var(--line-default) !important;
-  border-radius: 10px !important;
-  background: var(--surface-raised) !important;
-}
-[data-style="soft-product-minimal"] [data-resource-card]:hover {
-  border-color: rgba(99, 102, 241, 0.4) !important;
-}

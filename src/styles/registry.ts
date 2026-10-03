@@ -64,14 +64,40 @@ export function getStyle(id: StyleId): SetupStyle | undefined {
   return STYLE_REGISTRY.find((s) => s.id === id);
 }
 
-/** Register or override a style dynamically in the registry */
+/**
+ * Register or override a style dynamically in the registry.
+ *
+ * Two rules, both learned from a shipped bug:
+ *
+ * 1. **A remote update must not be able to erase declared local capability.**
+ *    Vault-published styles use the same ids as built-ins (`blueprint`,
+ *    `newspaper-editorial`, `cyber-neon`, `y2k-digital`). Vault payloads still
+ *    arrive on the legacy token shape and carry no `experience` profile, so a
+ *    wholesale replace silently downgraded a Tier-4 local experience back to
+ *    the neutral default grammar the moment a sync succeeded — the style would
+ *    still switch, but its shell/navigation/card/composition were gone. A
+ *    remote manifest may update content (name, description, palette, metadata)
+ *    but the locally declared experience wins over an absent one.
+ * 2. **A remote update must not claim to be an implementation it is not.**
+ *    `implemented` is what `loadSavedStyle` gates on, so it is only trusted
+ *    upward: once a style is known to be implemented, a remote payload cannot
+ *    un-implement it.
+ */
 export function registerStyle(style: SetupStyle): void {
   const existingIdx = STYLE_REGISTRY.findIndex((s) => s.id === style.id);
-  if (existingIdx >= 0) {
-    STYLE_REGISTRY[existingIdx] = style;
-  } else {
+  if (existingIdx < 0) {
     STYLE_REGISTRY.push(style);
+    return;
   }
+  const existing = STYLE_REGISTRY[existingIdx];
+  STYLE_REGISTRY[existingIdx] = {
+    ...style,
+    implemented: style.implemented || existing.implemented,
+    // The locally declared experience is authoritative when the remote payload
+    // does not carry one; a remote payload that *does* carry one is a genuine
+    // upgrade and is allowed through.
+    experience: style.experience ?? existing.experience,
+  };
 }
 
 /** Get active style definition with fallback */

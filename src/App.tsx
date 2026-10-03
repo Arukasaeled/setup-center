@@ -43,6 +43,12 @@ import { InstallScreen } from "./screens/Install";
 import { SoftwareScreen } from "./screens/Software";
 import { WelcomeScreen } from "./screens/Welcome";
 import { useApp, type Screen } from "./lib/store";
+import {
+  applyExperience,
+  hydrateCustomExperiences,
+  purgeLegacyTweakerStorage,
+} from "./styles/runtime";
+import { getStyle, STYLE_REGISTRY } from "./styles/registry";
 import { readEntryChoice } from "./lib/entry";
 import { VaultSync } from "./core/vault";
 import { CommandPalette } from "./components/CommandPalette";
@@ -82,6 +88,7 @@ export default function App() {
   const dashboardOpen = useApp((s) => s.dashboardOpen);
   const theme = useApp((s) => s.theme);
   const activeStyle = useApp((s) => s.activeStyle);
+  const styleOverrides = useApp((s) => s.styleOverrides);
   const entitlements = useApp((s) => s.entitlements);
   /**
    * Subscribed, not read via `getState()` inside the effect.
@@ -152,6 +159,17 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("setup:open-palette", handleCustomOpen);
     };
+  }, []);
+
+  useEffect(() => {
+    // Register any derived experiences the user saved, and delete the v1 tweaker
+    // keys on the way. The old per-style storage held a bare `shadowDepth`
+    // ("6px") that cannot be mapped onto the new shadow model (offset + blur +
+    // spread + colour), so it is removed rather than guessed at — guessing is
+    // what produced the original "the slider does nothing" bug.
+    purgeLegacyTweakerStorage();
+    hydrateCustomExperiences();
+    useApp.getState().refreshCustomExperiences();
   }, []);
 
   useEffect(() => {
@@ -250,10 +268,22 @@ export default function App() {
     return undefined;
   }, [theme]);
 
-  // Visual style language attribute (e.g. p5-comic, default, etc.)
+  // The active experience, applied as CSS custom properties plus the grammar
+  // data attributes that the shell reads (see `styles/runtime.ts`).
+  //
+  // This replaced a bare `setAttribute("data-style", activeStyle)`. The attribute
+  // alone could only select which stylesheet won; it could not carry a user's
+  // token overrides, which is exactly why tuning a token appeared to do nothing.
+  // The runtime writes every variable inline with `!important`, so an override
+  // outranks the per-style `!important` rules rather than competing with them.
+  //
+  // `styleOverrides` is a dependency because overrides are part of the active
+  // experience, not a separate concern: switching experience and reloading that
+  // experience's own overrides must land in the same paint.
   useEffect(() => {
-    document.documentElement.setAttribute("data-style", activeStyle);
-  }, [activeStyle]);
+    const style = getStyle(activeStyle) ?? getStyle("phantom-comic") ?? STYLE_REGISTRY[0];
+    applyExperience(style, styleOverrides);
+  }, [activeStyle, styleOverrides]);
 
   return (
     <div className="app-field relative flex h-full flex-col overflow-hidden">
