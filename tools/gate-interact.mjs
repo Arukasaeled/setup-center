@@ -101,11 +101,25 @@ async function boot() {
 
   await page.goto("http://localhost:1420", { waitUntil: "networkidle" });
   await page.waitForTimeout(400);
+
+  // The gate has to be opened, not waited for.
+  //
+  // Since c270b70 (2026-09-24) every launch lands on Welcome and the customer
+  // reaches the gate from its third entry; a readable FREE licence no longer
+  // auto-opens it. This suite was written before that change, so it booted
+  // straight into the assertions — and `button:has-text("激活")` then matched
+  // Welcome's 「输入激活码」 entry, which is enabled, so the first check failed
+  // and the follow-up `#activation-key` locator timed out. Nothing here is a
+  // product bug; the boot simply has to travel to the gate the way a customer
+  // does. `gate-verify.mjs` has the same helper.
+  await page.locator('[data-testid="welcome-activate"]').first().click();
+  await page.waitForTimeout(400);
+
   return { browser, page, consoleErrors };
 }
 
 const input = (page) => page.locator("#activation-key");
-const activateBtn = (page) => page.locator('button:has-text("激活")').first();
+const activateBtn = (page) => page.locator('button:has-text("激活 PRO")').first();
 
 // ---------------------------------------------------------------------------
 // 1. Disabled → enabled as the customer types
