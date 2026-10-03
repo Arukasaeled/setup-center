@@ -292,10 +292,10 @@ export function ExperiencePreviewWorkspace({
             className="flex items-center rounded-lg bg-zinc-900/90 p-1 border border-zinc-800"
           >
             {[
-              { id: "preview", label: "体验样张", icon: "👁" },
-              { id: "grammar", label: "体验语法", icon: "📐" },
-              { id: "tokens", label: "色彩与令牌", icon: "🎨" },
-              { id: "principles", label: "规范与原则", icon: "📖" },
+              { id: "preview", label: "体验样张" },
+              { id: "grammar", label: "体验语法" },
+              { id: "tokens", label: "色彩与令牌" },
+              { id: "principles", label: "规范与原则" },
             ].map((t) => {
               const selected = tab === t.id;
               return (
@@ -304,13 +304,12 @@ export function ExperiencePreviewWorkspace({
                   type="button"
                   onClick={() => setTab(t.id as WorkspaceTab)}
                   className={clsx(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all cursor-pointer",
+                    "flex items-center rounded-md px-3.5 py-1.5 text-[12px] font-medium transition-all cursor-pointer",
                     selected
                       ? "bg-zinc-700 text-white shadow-sm"
                       : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60",
                   )}
                 >
-                  <span className="text-[12px] opacity-80">{t.icon}</span>
                   <span>{t.label}</span>
                 </button>
               );
@@ -713,10 +712,9 @@ export function ExperiencePreviewWorkspace({
             <button
               type="button"
               onClick={handleTune}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3.5 py-1.5 text-[12.5px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
+              className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3.5 py-1.5 text-[12.5px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
             >
-              <span>🛠</span>
-              <span>调校此体验</span>
+              调校此体验
             </button>
           </div>
 
@@ -802,7 +800,20 @@ function SoftwarePageMock({
             borderColor: accent,
           }}
         >
-          <span className="text-[12px] opacity-70">🔍</span>
+          <svg
+            className="w-3.5 h-3.5 opacity-60"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
           <span className="text-[12px]" style={{ color: "var(--text-quiet)" }}>搜索软件名或命令行…</span>
         </div>
       </div>
