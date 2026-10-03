@@ -5,12 +5,13 @@ Setup Center 不再只是一个 Windows 开发软件安装器，而是面向开�
 不仅负责机器环境初始化（Setup Computer），更沉淀并交付构建一切所需的开发工具、视觉风格、开发资源、工程模板与技能指南（Setup Everything Needed to Build）。
 
 ## Architecture Map
+- `src/core/setup/`    → Universal Setup Action 契约、环境感知解析器、执行引擎与 Starter Packs。
 - `src/core/vault/`    → Setup Vault 远程内容更新、离线缓存与版本仲裁引擎。
 - `src/core/transfer/` → Transfer 流转管线（Inbox、Downloader、Scaffolder、Bookmarks、History）。
 - `src/core/`          → 核心业务领域能力（环境检测、安装器状态、内容分发边界），与 UI 解耦。
 - `src/app/`           → 应用级组织、生命周期、全局状态机与屏流转。
 - `src/ui/`            → 通用、跨风格复用的 UI 原语与基础控件（Button、TitleBar、SoftwareRow 等）。
-- `src/styles/`        → Style System 视觉语言契约、设计令牌、风格注册表及具体风格实现。
+- `src/styles/`        → Style System 视觉语言契约、设计令牌、风格注册表及具体风格实现（20套风格）。
 - `src/content/`       → Content Registry 统一内容元数据目录（Software、Style、Resource、Template 等）。
 
 ## Dependency Direction
@@ -18,7 +19,7 @@ Setup Center 不再只是一个 Windows 开发软件安装器，而是面向开�
 setup-center-vault (远程独立仓库)
         │ (增量 Manifest / JSON / CSS)
         ▼
-core/vault/ ──> core/transfer/ ──> content/ + styles/
+core/vault/ ──> core/transfer/ ──> core/setup/ ──> content/ + styles/
 styles/     ──> ui/ (提供外观覆盖与 tokens)
 app/        ──> core/ + ui/ + styles/ + content/ (顶层组装与调度)
 ui/         ──x styles/ (基础 UI 原语绝不硬编码依赖特定 style)
@@ -28,6 +29,8 @@ styles/     ──x core/installer/ (视觉层绝不直接侵入安装器底层�
 ## Task Routing
 | 任务类型 | 首先阅读 |
 | :--- | :--- |
+| **通用可执行动作与环境感知（Setup Action）** | [`src/core/setup/types.ts`](src/core/setup/types.ts) |
+| **全局指令调色板（Command Palette）** | [`src/components/CommandPalette.tsx`](src/components/CommandPalette.tsx) |
 | **流转外部资源 / 网址入库（Transfer）** | [`TRANSFER.md`](TRANSFER.md) |
 | **远程 Vault 架构与内容同步** | [`src/core/vault/types.ts`](src/core/vault/types.ts) |
 | **版本控制与双通道更新门禁** | [`src/core/vault/release.ts`](src/core/vault/release.ts) |

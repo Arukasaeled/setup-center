@@ -209,6 +209,27 @@ if (existsSync(patternsDir)) {
   }
 }
 
+// 7. Validate Skills
+console.log("\n⚡ 7. Verifying Skills...");
+const skillsDir = join(vaultDir, "skills");
+if (existsSync(skillsDir)) {
+  const skillFiles = readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
+  for (const sf of skillFiles) {
+    const sPath = join(skillsDir, sf);
+    try {
+      const sk = JSON.parse(readFileSync(sPath, "utf8"));
+      checkedItems++;
+      if (!sk.id) reportError(`Skill in ${sf} missing id`);
+      if (!sk.name) reportError(`Skill ${sk.id} missing name`);
+      if (!sk.prompt) reportError(`Skill ${sk.id} missing prompt`);
+      checkIdUnique(sk.id, `skills/${sf}`);
+      console.log(`  ✓ Skill ${sk.id}: ${sk.name} validated`);
+    } catch (err) {
+      reportError(`Failed to parse skill ${sf}: ${err.message}`);
+    }
+  }
+}
+
 console.log("\n==================================================");
 console.log(`📊 Verification Summary:`);
 console.log(`   Checked Items: ${checkedItems}`);
