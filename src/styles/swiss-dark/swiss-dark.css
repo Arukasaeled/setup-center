@@ -1,6 +1,20 @@
 /* ==========================================================================
    STYLE SPECIMEN: swiss-dark (瑞士国际暗黑先锋)
+   ==========================================================================
+
+   Shape note: a Swiss poster grid — flush-left Helvetica, hairline rules, zero
+   radius, no shadow. The palette blocks below own colour only; geometry,
+   accent and shadow are runtime tokens.
+
+   This stylesheet previously declared `border-radius: 0px; border-width: 1.5px;
+   border-color: #ff5500` against the three business surfaces and read **zero**
+   runtime variables — so no Token Inspector control could reach it. It now
+   reads the runtime token set, which is what makes an accent or border-width
+   override visible in this experience.
    ========================================================================== */
+
+/* Runtime owns --status-accent, --status-accent-soft, --radius-panel,
+   --radius-control, --border-width and --shadow-hard. */
 
 :root[data-style="swiss-dark"]:not([data-theme="light"]) {
   --surface-base: #050608;
@@ -26,12 +40,12 @@
   --status-ok: #00e676;
   --status-warn: #ffab00;
   --status-bad: #ff5500;
-  --status-accent: #ff5500;
-  --status-accent-soft: rgba(255, 85, 0, 0.18);
 
   --font-sans: "Helvetica Neue", -apple-system, Arial, sans-serif;
-  --radius-panel: 0px;
-  --radius-control: 0px;
+
+  /* Swiss poster rule: one hairline under a heading, drawn from the runtime
+     rule style so it tracks the ornament grammar rather than a frozen hex. */
+  --swiss-rule: var(--ornament-rule-width, 1px);
 }
 
 :root[data-style="swiss-dark"][data-theme="light"] {
@@ -58,25 +72,51 @@
   --status-ok: #00e676;
   --status-warn: #ffab00;
   --status-bad: #ff5500;
-  --status-accent: #ff5500;
-  --status-accent-soft: rgba(255, 85, 0, 0.2);
 
   --font-sans: "Helvetica Neue", -apple-system, Arial, sans-serif;
-  --radius-panel: 0px;
-  --radius-control: 0px;
+
+  --swiss-rule: var(--ornament-rule-width, 1px);
 }
+
+/* --------------------------------------------------------------------------
+   Surfaces: square corners, hairline frame, no shadow — the Swiss identity is
+   the absence of ornament, so every value here has to stay tunable or the
+   experience stops responding to its own contract.
+   -------------------------------------------------------------------------- */
 
 :root[data-style="swiss-dark"] [data-software-row],
 :root[data-style="swiss-dark"] [data-resource-card],
 :root[data-style="swiss-dark"] [data-style-card] {
-  border-radius: 0px;
-  border-width: 1.5px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  border-color: var(--line-default);
+  box-shadow: none;
+  transition: border-color var(--motion-base) var(--motion-ease);
 }
 
 :root[data-style="swiss-dark"] [data-software-row]:hover,
 :root[data-style="swiss-dark"] [data-resource-card]:hover,
 :root[data-style="swiss-dark"] [data-style-card]:hover {
-  border-color: #ff5500;
+  border-color: var(--status-accent);
+}
+
+:root[data-style="swiss-dark"] [aria-selected="true"],
+:root[data-style="swiss-dark"] [data-selected="true"],
+:root[data-style="swiss-dark"] [aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+}
+
+/* The primary control is a solid accent block, flush square. */
+:root[data-style="swiss-dark"] [data-setup-action] > button:first-child {
+  border-radius: var(--radius-control);
+  border-width: var(--border-width);
+  border-style: solid;
+  border-color: var(--status-accent);
+}
+
+:root[data-style="swiss-dark"] :focus-visible {
+  outline: var(--swiss-rule) solid var(--status-accent);
+  outline-offset: 2px;
 }

@@ -69,8 +69,8 @@
 :root[data-style="monochrome-research"] [data-software-row],
 :root[data-style="monochrome-research"] [data-resource-card],
 :root[data-style="monochrome-research"] [data-style-card] {
-  border-radius: 0px;
-  border-width: 1.5px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
   transition: all 0.15s ease-out;
 }

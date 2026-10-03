@@ -85,16 +85,16 @@
 }
 
 [data-style="bauhaus"] nav[aria-label="导航"] button[aria-current="page"] {
-  background: #ffbe0b !important;
+  background: var(--status-accent) !important;
   color: #000000 !important;
   font-weight: 800;
-  border: 2px solid #000000;
+  border: var(--border-width) solid #000000;
   box-shadow: 3px 3px 0px #1d4ed8;
 }
 
 /* Software card */
 [data-style="bauhaus"] [data-software-row] {
-  border: 2px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   border-radius: 14px 0px 14px 0px !important;
   background: var(--surface-raised) !important;
   box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.4) !important;
@@ -103,18 +103,18 @@
 
 [data-style="bauhaus"] [data-software-row]:hover {
   transform: translate(-2px, -2px);
-  border-color: #ffbe0b !important;
+  border-color: var(--status-accent) !important;
   box-shadow: 5px 5px 0px #1d4ed8 !important;
 }
 
 [data-style="bauhaus"] [data-software-row][aria-pressed="true"],
 [data-style="bauhaus"] [data-software-row][aria-expanded="true"] {
-  border-color: #ffbe0b !important;
+  border-color: var(--status-accent) !important;
   box-shadow: 5px 5px 0px #d90429 !important;
 }
 
 [data-style="bauhaus"] [data-software-row] .software-row-icon-tray {
-  border: 2px solid var(--line-default);
+  border: var(--border-width) solid var(--line-default);
   border-radius: 8px 0px 8px 0px !important;
   background: var(--surface-base);
 }
@@ -126,10 +126,10 @@
 
 /* Action button */
 [data-style="bauhaus"] button.bg-\[color\:var\(--status-accent\)\] {
-  background: #ffbe0b !important;
+  background: var(--status-accent) !important;
   color: #000000 !important;
   font-weight: 800;
-  border: 2px solid #000000;
+  border: var(--border-width) solid #000000;
   box-shadow: 2px 2px 0px #000000;
 }
 

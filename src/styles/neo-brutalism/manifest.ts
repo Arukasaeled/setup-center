@@ -36,6 +36,24 @@ export const neoBrutalismStyle: SetupStyle = {
     "High Chroma Joy — 以高饱和点缀消解工业软件的枯燥沉闷",
     "Zero Soft Blur — 完全杜绝模糊与渐变，回归纯粹硬朗",
   ],
+  // Tier 3. The composition does the work — a hard solid grid whose blocks are
+  // the structure. Every token is open, because this is the experience the
+  // token-override acceptance test is performed on.
+  experience: {
+    tier: "composition",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "panel",
+    composition: "solid-grid",
+    density: "normal",
+    motion: "reduced",
+    ornament: { rule: "heavy", corner: "square", decoration: "grid", chrome: "none" },
+    tweakable: [
+      "panelRadius", "controlRadius", "borderWidth", "shadow", "accent", "accentSecondary",
+      "surface", "text", "density", "headingScale", "bodyScale", "motion",
+    ],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

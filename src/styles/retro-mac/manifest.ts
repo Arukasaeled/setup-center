@@ -35,6 +35,26 @@ export const retroMacStyle: SetupStyle = {
     "Tactile 1-Bit Dither — 1 位位图阴影呈现经典硬件手感",
     "Friendly Desktop Metaphor — 亲和温暖的桌面隐喻与坚实轮廓",
   ],
+  // Tier 4. The claim in this manifest has always been "System 7"; a menu bar
+  // and a window chrome are what make that true, so the shell is `windowed` and
+  // the navigation is a `menu-bar` rather than a sidebar.
+  experience: {
+    tier: "experience",
+    shell: "windowed",
+    navigation: "menu-bar",
+    detail: "window",
+    card: "window",
+    composition: "finder-list",
+    density: "compact",
+    motion: "normal",
+    typography: {
+      headingFamily: 'Geneva, "Chicago", "Lucida Grande", "PingFang SC", sans-serif',
+      headingScale: 0.95,
+      headingWeight: 700,
+    },
+    ornament: { rule: "double", corner: "rounded", decoration: "pinstripe", chrome: "title-menu" },
+    tweakable: ["panelRadius", "controlRadius", "accent", "shadow", "density", "motion"],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

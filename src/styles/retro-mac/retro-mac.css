@@ -1,6 +1,23 @@
 /* ==========================================================================
    STYLE SPECIMEN: retro-mac (复古苹果麦金塔 System 7)
+   ==========================================================================
+
+   Shape note: Menu Bar + Classic Window Chrome + Finder-like panels + beveled
+   controls are declared in `manifest.ts` as an Experience profile (shell
+   `windowed`, navigation `menu-bar`, card `window`, composition `finder-list`)
+   and rendered by `src/styles/shell.css`. This file owns the Macintosh palette
+   and the System 7 surface treatment: pinstripe title strips, the 1px black
+   window outline, and the beveled control face.
+
+   Everything reads runtime variables. This stylesheet previously hardcoded
+   `border-radius: 3px`, `border-width: 1px`, `border-color: #000000` and
+   `box-shadow: 2px 2px 0px rgba(0,0,0,0.35)` against the three business
+   surfaces, and read **zero** runtime variables — so no Token Inspector control
+   could affect this experience at all.
    ========================================================================== */
+
+/* Runtime owns --status-accent, --status-accent-soft, --radius-panel,
+   --radius-control, --border-width and --shadow-hard. */
 
 :root[data-style="retro-mac"]:not([data-theme="light"]) {
   --surface-base: #282a2e;
@@ -26,12 +43,22 @@
   --status-ok: #a3be8c;
   --status-warn: #ebcb8b;
   --status-bad: #bf616a;
-  --status-accent: #7b88aa;
-  --status-accent-soft: rgba(123, 136, 170, 0.2);
 
   --font-sans: "Geneva", "Lucida Grande", "Segoe UI", sans-serif;
-  --radius-panel: 3px;
-  --radius-control: 2px;
+
+  /* The System 7 pinstripe: a 1px-on/1px-off horizontal hairline tile. Drawn
+     from --line-strong so the strip follows the window outline colour rather
+     than a frozen black. */
+  --mac-pinstripe: repeating-linear-gradient(
+    180deg,
+    var(--line-strong) 0px,
+    var(--line-strong) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  --mac-bevel-face: var(--surface-raised);
+  --mac-bevel-light: var(--edge-highlight, rgba(255, 255, 255, 0.14));
+  --mac-bevel-shadow: var(--surface-sunken);
 }
 
 :root[data-style="retro-mac"][data-theme="light"] {
@@ -58,27 +85,77 @@
   --status-ok: #2e7d32;
   --status-warn: #e65100;
   --status-bad: #c62828;
-  --status-accent: #334466;
-  --status-accent-soft: rgba(51, 68, 102, 0.15);
 
   --font-sans: "Geneva", "Lucida Grande", "Segoe UI", sans-serif;
-  --radius-panel: 3px;
-  --radius-control: 2px;
+
+  --mac-pinstripe: repeating-linear-gradient(
+    180deg,
+    var(--line-strong) 0px,
+    var(--line-strong) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  --mac-bevel-face: var(--surface-raised);
+  --mac-bevel-light: #ffffff;
+  --mac-bevel-shadow: var(--surface-sunken);
 }
+
+/* --------------------------------------------------------------------------
+   Classic window chrome
+   -------------------------------------------------------------------------- */
 
 :root[data-style="retro-mac"] [data-software-row],
 :root[data-style="retro-mac"] [data-resource-card],
 :root[data-style="retro-mac"] [data-style-card] {
-  border-radius: 3px;
-  border-width: 1px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
-  border-color: #000000;
-  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.35);
-  transition: all 0.1s ease;
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-hard);
+  background: var(--mac-bevel-face);
 }
 
+/* Pinstripe title strip. The card grammar already puts a rule under the first
+   child; this replaces that hairline with the System 7 striped bar, which is
+   the single most recognisable element of the era and is what makes the
+   difference survive a greyscale outline test. */
+:root[data-style="retro-mac"] [data-resource-card] > *:first-child,
+:root[data-style="retro-mac"] [data-style-card] > *:first-child {
+  background-image: var(--mac-pinstripe);
+  background-size: 100% 2px;
+  border-bottom: var(--border-width) solid var(--line-strong);
+  padding-bottom: 0.375rem;
+}
+
+/* Pressed window: the System 7 title bar inverts, the frame shifts down-right. */
 :root[data-style="retro-mac"] [data-software-row]:active,
 :root[data-style="retro-mac"] [data-resource-card]:active {
-  box-shadow: 1px 1px 0px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-hard);
   transform: translate(1px, 1px);
+  transition: transform var(--motion-fast);
+}
+
+/* Beveled control face: light top-left edge, dark bottom-right edge — the
+   classic aqua-less Macintosh button, built from borders so it tracks the
+   border-width override instead of a painted image. */
+:root[data-style="retro-mac"] [data-setup-action] > button:first-child,
+:root[data-style="retro-mac"] button[aria-pressed],
+:root[data-style="retro-mac"] button[aria-expanded] {
+  border-radius: var(--radius-control);
+  border-width: var(--border-width);
+  border-style: solid;
+  border-color: var(--mac-bevel-light) var(--mac-bevel-shadow) var(--mac-bevel-shadow) var(--mac-bevel-light);
+  background: var(--mac-bevel-face);
+}
+
+:root[data-style="retro-mac"] [aria-selected="true"],
+:root[data-style="retro-mac"] [data-selected="true"],
+:root[data-style="retro-mac"] [aria-current="page"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+}
+
+:root[data-style="retro-mac"] :focus-visible {
+  outline: 2px solid var(--status-accent);
+  outline-offset: 1px;
 }

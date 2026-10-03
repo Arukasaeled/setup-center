@@ -75,15 +75,15 @@
 [data-style="soft-product-minimal"] nav[aria-label="导航"] button[aria-current="page"] {
   background: var(--surface-raised) !important;
   color: var(--text-strong) !important;
-  border: 1px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 /* Linear-style disciplined software cards */
 [data-style="soft-product-minimal"] [data-software-row] {
-  border: 1px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: var(--surface-raised) !important;
-  border-radius: 10px !important;
+  border-radius: var(--radius-panel) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
   transition: all 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -101,9 +101,9 @@
 }
 
 [data-style="soft-product-minimal"] [data-software-row] .software-row-icon-tray {
-  border: 1px solid var(--line-subtle);
+  border: var(--border-width) solid var(--line-subtle);
   background: var(--surface-inset);
-  border-radius: 8px !important;
+  border-radius: var(--radius-panel) !important;
 }
 
 [data-style="soft-product-minimal"] [data-software-row] .software-row-name {
@@ -113,10 +113,10 @@
 
 /* Linear-style Indigo Button */
 [data-style="soft-product-minimal"] button.bg-\[color\:var\(--status-accent\)\] {
-  background: #6366f1 !important;
+  background: var(--status-accent) !important;
   color: #ffffff !important;
   font-weight: 600;
-  border-radius: 8px !important;
+  border-radius: var(--radius-panel) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 

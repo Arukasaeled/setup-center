@@ -35,6 +35,28 @@ export const swissDarkStyle: SetupStyle = {
     "Safety Orange Punctuation — 借用工业警示橙达到最高清晰度",
     "No Ambient Clutter — 拒绝环境光晕，保持锋利边界",
   ],
+  // Tier 3. The dark counterpart to the Swiss composition. The similarity audit
+  // found it sharing a grammar with three unrelated experiences, so the grid is
+  // now on the OTHER axis: a strip across the top (stacked shell + tab-strip
+  // navigation) with a full-width ledger of flat rows beneath. International
+  // Typographic Style is a grid discipline, and a single ruled column with
+  // tab-strip navigation is the strictest reading of it — not a card wall.
+  experience: {
+    tier: "composition",
+    shell: "stacked",
+    navigation: "tab-strip",
+    detail: "window",
+    card: "sticker",
+    composition: "ledger",
+    density: "compact",
+    motion: "reduced",
+    ornament: { rule: "hairline", corner: "square", decoration: "none", chrome: "none" },
+    tweakable: ["accent", "surface", "density", "headingScale", "bodyScale"],
+    locked: {
+      panelRadius: "国际主义版式只有直角；圆角会削弱网格的严格性。",
+    },
+    specimenNote: "导航压成顶部标签带，内容是一条通栏账册，不是卡片墙。",
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

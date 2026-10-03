@@ -36,6 +36,20 @@ export const y2kDigitalStyle: SetupStyle = {
     "Compact Module Feel — 紧凑模块化排布带来便携播放器掌控感",
     "Optimistic Futurism — 传递新世纪初对计算机与网络的无尽向往",
   ],
+  // Tier 2. A component theme: the card language and gloss carry it, the shell
+  // does not move yet.
+  experience: {
+    tier: "component",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "floating-surface",
+    composition: "solid-grid",
+    density: "normal",
+    motion: "expressive",
+    ornament: { rule: "hairline", corner: "rounded", decoration: "noise", chrome: "none" },
+    tweakable: ["panelRadius", "controlRadius", "accent", "accentSecondary", "density", "motion"],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

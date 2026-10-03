@@ -1,6 +1,28 @@
 /* ==========================================================================
    STYLE SPECIMEN: dos-utility (IBM PC DOS 经典控制台)
+   ==========================================================================
+
+   Density/chrome note: the shape of this experience — two panes, a
+   character-cell list, a function-key footer, selection by reverse video — is
+   declared in `manifest.ts` as an Experience profile and rendered by
+   `src/styles/shell.css`. This file owns only the CGA palette and the
+   character-cell surface treatment.
+
+   Everything below reads runtime variables rather than literals. That is not
+   cosmetic: DOS used to hardcode `border-width: 2px`, `box-shadow: 3px 3px 0px
+   #000000` and `border-color: #00aaaa` here, which meant none of the Token
+   Inspector's controls could reach this style at all — the panel promised to
+   change a grid that was painted from constants.
+
+   Note the radius reads `var(--radius-panel)`, which resolves to 0px for this
+   experience because the manifest declares `panelRadius` locked. Nothing in
+   this file re-asserts 0px: if the lock were ever lifted, the CSS would follow.
    ========================================================================== */
+
+/* Runtime owns --status-accent, --status-accent-soft, --radius-panel,
+   --radius-control, --border-width and --shadow-hard. They are deliberately not
+   redeclared here; a local `!important` copy is exactly what used to make the
+   override layer look broken. */
 
 :root[data-style="dos-utility"]:not([data-theme="light"]) {
   --surface-base: #000080;
@@ -26,12 +48,13 @@
   --status-ok: #55ff55;
   --status-warn: #ffff55;
   --status-bad: #ff5555;
-  --status-accent: #ffff55;
-  --status-accent-soft: rgba(255, 255, 85, 0.2);
 
   --font-sans: "Consolas", "IBM Plex Mono", "Courier New", monospace;
-  --radius-panel: 0px;
-  --radius-control: 0px;
+
+  /* Local aliases that fall back to the runtime, so a stylesheet rule that
+     wants "the DOS box" reads one name and still tracks an override. */
+  --dos-frame: var(--line-default, #00aaaa);
+  --dos-lift: var(--shadow-hard, 3px 3px 0px #000000);
 }
 
 :root[data-style="dos-utility"][data-theme="light"] {
@@ -58,28 +81,57 @@
   --status-ok: #55ff55;
   --status-warn: #ffff55;
   --status-bad: #ff5555;
-  --status-accent: #ffff55;
-  --status-accent-soft: rgba(255, 255, 85, 0.2);
 
   --font-sans: "Consolas", "IBM Plex Mono", "Courier New", monospace;
-  --radius-panel: 0px;
-  --radius-control: 0px;
+
+  --dos-frame: var(--line-default, #00aaaa);
+  --dos-lift: var(--shadow-hard, 3px 3px 0px #000000);
 }
+
+/* --------------------------------------------------------------------------
+   Character-cell surfaces
+   -------------------------------------------------------------------------- */
 
 :root[data-style="dos-utility"] [data-software-row],
 :root[data-style="dos-utility"] [data-resource-card],
 :root[data-style="dos-utility"] [data-style-card] {
-  border-radius: 0px;
-  border-width: 2px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
-  border-color: #00aaaa;
-  box-shadow: 3px 3px 0px #000000;
+  border-color: var(--dos-frame);
+  box-shadow: var(--dos-lift);
+  font-family: var(--font-sans);
   transition: none;
 }
 
 :root[data-style="dos-utility"] [data-software-row]:hover,
 :root[data-style="dos-utility"] [data-resource-card]:hover,
 :root[data-style="dos-utility"] [data-style-card]:hover {
-  background-color: #0055aa;
-  border-color: #ffff55;
+  background-color: var(--surface-hover);
+  border-color: var(--status-accent);
+}
+
+/* Reverse video — the DOS convention for "this is the current item". Reads the
+   accent token so an accent override recolours the cursor as well as the
+   borders, and stays legible in greyscale because it inverts rather than
+   tints. */
+:root[data-style="dos-utility"] [aria-selected="true"],
+:root[data-style="dos-utility"] [data-selected="true"],
+:root[data-style="dos-utility"] [aria-current="page"] {
+  background-color: var(--status-accent);
+  color: var(--accent-on);
+}
+
+:root[data-style="dos-utility"] :focus-visible {
+  outline: 2px solid var(--status-accent);
+  outline-offset: 1px;
+}
+
+/* Character-cell buttons: square, framed, monospace. */
+:root[data-style="dos-utility"] [data-setup-action] > button:first-child {
+  border-radius: var(--radius-control);
+  border-width: var(--border-width);
+  border-style: solid;
+  border-color: var(--dos-frame);
+  font-family: var(--font-sans);
 }

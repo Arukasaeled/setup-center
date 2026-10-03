@@ -36,6 +36,27 @@ export const spatialGlassStyle: SetupStyle = {
     "Smooth Continuous Curvature — 超大平滑曲率带来柔和未来感",
     "Restrained Luminance — 仅在悬停与焦点时注入天青色冷光",
   ],
+  // Tier 4. Depth, not fog: content sits on a canvas, navigation floats above it
+  // as a dock, and the inspector is a separate plane. Border width is locked
+  // because a stroked edge flattens the layers this experience is built from.
+  experience: {
+    tier: "experience",
+    shell: "canvas",
+    navigation: "dock",
+    detail: "floating-inspector",
+    card: "floating-surface",
+    composition: "floating-panels",
+    density: "spacious",
+    motion: "expressive",
+    ornament: { rule: "none", corner: "rounded", decoration: "noise", chrome: "none" },
+    tweakable: [
+      "panelRadius", "controlRadius", "shadow", "accent", "accentSecondary",
+      "surface", "density", "motion",
+    ],
+    locked: {
+      borderWidth: "玻璃面板靠阴影与色阶分层，描边会把它压回同一个平面。",
+    },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

@@ -47,6 +47,32 @@ export const phantomComicStyle: SetupStyle = {
     "High Contrast Drama — 极黑基底与纯亮撞色营造强烈戏剧感",
     "Comic Panel Cadence — 将每个独立模块视为一格引人瞩目的分镜",
   ],
+  // Tier 4. A comic page is a *composed* page: a loud banner, panels that are
+  // not all the same size, and a reading direction. The shell is stacked rather
+  // than sidebared because a comic does not have a permanent left rail; the
+  // navigation becomes the title bar of the page.
+  experience: {
+    tier: "experience",
+    shell: "topbar",
+    navigation: "topbar",
+    detail: "sheet",
+    card: "poster",
+    composition: "poster-wall",
+    density: "spacious",
+    motion: "expressive",
+    typography: {
+      headingScale: 1.3,
+      bodyScale: 1.05,
+      headingWeight: 900,
+      headingTracking: "-0.03em",
+      headingTransform: "uppercase",
+    },
+    ornament: { rule: "heavy", corner: "notch", decoration: "halftone", chrome: "title" },
+    tweakable: [
+      "panelRadius", "controlRadius", "borderWidth", "shadow", "accent", "accentSecondary",
+      "surface", "text", "density", "headingScale", "bodyScale", "motion",
+    ],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

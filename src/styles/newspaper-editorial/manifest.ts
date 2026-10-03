@@ -36,6 +36,31 @@ export const newspaperEditorialStyle: SetupStyle = {
     "Warm Paper Harmony — 温润纸张灰度最大程度降低视觉疲劳",
     "Editorial Dignity — 每一个条目都如同一篇值得驻足的精校专稿",
   ],
+  // Tier 4. A masthead, rules between sections and real multi-column text. Radius
+  // is locked: newsprint has no rounded corners.
+  experience: {
+    tier: "experience",
+    shell: "editorial",
+    navigation: "topbar",
+    detail: "sheet",
+    card: "editorial-block",
+    composition: "news-columns",
+    density: "compact",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"Songti SC", "Source Han Serif SC", Georgia, "Times New Roman", serif',
+      headingScale: 1.1,
+      headingWeight: 700,
+      headingTracking: "-0.01em",
+      bodyLeading: 1.7,
+    },
+    ornament: { rule: "double", corner: "square", decoration: "none", chrome: "full" },
+    tweakable: ["accent", "text", "density", "headingScale", "bodyScale"],
+    locked: {
+      panelRadius: "报纸版面以直角与细线分栏，圆角会消解版面结构。",
+      controlRadius: "同上：印刷版面没有圆角控件。",
+    },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

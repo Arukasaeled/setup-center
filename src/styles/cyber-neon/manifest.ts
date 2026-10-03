@@ -35,6 +35,25 @@ export const cyberNeonStyle: SetupStyle = {
     "Neon Halo Bloom — 关键交互元素伴有柔和彩色荧光辉光",
     "Tactical HUD Grid — 锐利几何倒角与战术 HUD 仪表感",
   ],
+  // Tier 3. The similarity audit paired this with y2k-digital — both were
+  // `sidebar|sidebar|rail|floating-surface|solid-grid`. Emissive colour alone
+  // was carrying the difference, which is precisely the reskin failure the
+  // brief names. A HUD is not a card wall: it is a status strip across the top
+  // with self-lit panels below, and a diagnostic readout that takes over the
+  // screen when you open something. Hence topbar + command-bar + modal.
+  experience: {
+    tier: "composition",
+    shell: "topbar",
+    navigation: "command-bar",
+    detail: "modal",
+    card: "floating-surface",
+    composition: "solid-grid",
+    density: "normal",
+    motion: "expressive",
+    ornament: { rule: "hairline", corner: "rounded", decoration: "grid", chrome: "none" },
+    tweakable: ["panelRadius", "controlRadius", "accent", "accentSecondary", "surface", "motion"],
+    specimenNote: "顶部状态条 + 自发光面板浮在网格上；详情是一块占屏诊断层。",
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

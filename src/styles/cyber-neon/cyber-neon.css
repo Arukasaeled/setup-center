@@ -35,7 +35,7 @@
 }
 
 [data-style="cyber-neon"] * {
-  border-radius: 4px !important;
+  border-radius: var(--radius-panel) !important;
 }
 
 /* Subtle cyber-grid background */
@@ -68,7 +68,7 @@
   color: #080910 !important;
   font-weight: 700 !important;
   box-shadow: 0 0 12px rgba(0, 240, 255, 0.5) !important;
-  border: 1px solid #00f0ff !important;
+  border: var(--border-width) solid #00f0ff !important;
   transition: all 0.2s ease !important;
 }
 
@@ -80,7 +80,7 @@
 
 /* Software row */
 [data-style="cyber-neon"] [data-software-row] {
-  border: 1px solid #22263d !important;
+  border: var(--border-width) solid #22263d !important;
   background: #0e101c !important;
   transition: all 0.15s ease !important;
 }
@@ -92,20 +92,20 @@
 
 /* Resource cards */
 [data-style="cyber-neon"] [data-resource-card] {
-  border: 1px solid #252a45 !important;
+  border: var(--border-width) solid #252a45 !important;
   background: #111424 !important;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 [data-style="cyber-neon"] [data-resource-card]:hover {
-  border-color: #ff007f !important;
+  border-color: var(--status-accent) !important;
   box-shadow: 0 0 16px rgba(255, 0, 127, 0.3) !important;
   transform: translateY(-2px) !important;
 }
 
 /* Badges */
 [data-style="cyber-neon"] [data-tag-pill] {
-  border: 1px solid #2d3356 !important;
+  border: var(--border-width) solid #2d3356 !important;
   background: rgba(0, 240, 255, 0.08) !important;
   color: #00f0ff !important;
 }

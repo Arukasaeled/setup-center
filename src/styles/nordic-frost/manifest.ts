@@ -35,6 +35,28 @@ export const nordicFrostStyle: SetupStyle = {
     "Gentle Tactile Radius — 8px 柔润曲率赋予人本温度",
     "Calm Deep Slate — 深邃石板灰消弭屏幕高频刺眼亮斑",
   ],
+  // Tier 4. Promoted from a Tier-2 component theme after the similarity audit:
+  // sharing `sidebar|sidebar|rail|panel|solid-grid|normal|reduced` with three
+  // other experiences made this a reskin regardless of how calm its palette
+  // was. Scandinavian design is not "grey cards" — it is a centred reading
+  // column, an absence of boxes, and hairline rules doing the dividing. That
+  // is a composition claim, so it needs composition grammar: no card frames
+  // (borderless-group), a ruled column (roadmap), a slim command bar instead
+  // of a rail, and the detail as a modal so opening one item does not push the
+  // calm column sideways.
+  experience: {
+    tier: "experience",
+    shell: "command-centered",
+    navigation: "command-bar",
+    detail: "modal",
+    card: "borderless-group",
+    composition: "roadmap",
+    density: "spacious",
+    motion: "reduced",
+    ornament: { rule: "hairline", corner: "rounded", decoration: "none", chrome: "none" },
+    tweakable: ["panelRadius", "controlRadius", "accent", "surface", "density", "motion"],
+    specimenNote: "没有盒子：条目之间靠留白与细线分开，不在灰色边框里。",
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

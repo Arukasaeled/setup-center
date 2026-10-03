@@ -36,6 +36,25 @@ export const softProductMinimalStyle: SetupStyle = {
     "Long-Session Comfort — 低对比柔和层次专为长期连续沉浸打造",
     "Product Discipline — 界面退居幕后，让创作与代码居于舞台中央",
   ],
+  // Tier 3. Quiet restraint is the identity, but the similarity audit found it
+  // sharing a grammar with three unrelated experiences — restraint is not a
+  // layout. Linear's actual shape is a rail plus a dense single ruled column of
+  // flat rows, not a wall of panels, so the composition axis carries the claim:
+  // flat-row + ledger. The card frames go away; the rows and the rail spacing
+  // become the structure.
+  experience: {
+    tier: "composition",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "flat-row",
+    composition: "ledger",
+    density: "normal",
+    motion: "reduced",
+    ornament: { rule: "hairline", corner: "rounded", decoration: "none", chrome: "none" },
+    tweakable: ["panelRadius", "controlRadius", "shadow", "accent", "surface", "density", "motion"],
+    specimenNote: "通栏扁平行 + 常驻右侧详情，没有一张卡片有边框。",
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

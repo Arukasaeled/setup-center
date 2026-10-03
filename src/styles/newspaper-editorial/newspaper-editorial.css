@@ -90,7 +90,7 @@
 
 /* Editorial column box */
 [data-style="newspaper-editorial"] [data-software-row] {
-  border: 1px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   border-top: 2px solid var(--line-strong) !important;
   background: var(--surface-raised) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
@@ -109,7 +109,7 @@
 }
 
 [data-style="newspaper-editorial"] [data-software-row] .software-row-icon-tray {
-  border: 1px solid var(--line-default);
+  border: var(--border-width) solid var(--line-default);
   background: var(--surface-sunken);
 }
 
@@ -119,5 +119,5 @@
   color: #ffffff !important;
   font-family: var(--font-serif);
   font-weight: 700;
-  border: 1px solid #7c2d12;
+  border: var(--border-width) solid #7c2d12;
 }

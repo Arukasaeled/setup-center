@@ -18,7 +18,7 @@
   --surface-overlay-soft: rgba(23, 27, 38, 0.94);
   --surface-sunken: #060709;
   --surface-hover: rgba(255, 230, 0, 0.08);
-  --surface-active: #ffe600;
+  --surface-active: var(--status-accent);
   --surface-inset: #1a1e29;
 
   --text-strong: #ffffff;
@@ -35,8 +35,6 @@
   --status-ok: #00f0ff;
   --status-warn: #ffe600;
   --status-bad: #ff4757;
-  --status-accent: #ffe600;
-  --status-accent-soft: rgba(255, 230, 0, 0.16);
 
   --field-a: rgba(255, 230, 0, 0.025);
   --field-b: rgba(0, 240, 255, 0.02);
@@ -50,7 +48,7 @@
   --surface-overlay-soft: rgba(245, 246, 248, 0.94);
   --surface-sunken: #e9ecf2;
   --surface-hover: rgba(0, 0, 0, 0.05);
-  --surface-active: #ffe600;
+  --surface-active: var(--status-accent);
   --surface-inset: #eeeeee;
 
   --text-strong: #090a0d;
@@ -67,8 +65,6 @@
   --status-ok: #009aa6;
   --status-warn: #b8860b;
   --status-bad: #dc2626;
-  --status-accent: #ffe600;
-  --status-accent-soft: rgba(255, 230, 0, 0.25);
 }
 
 /* --- Global Comic Typography & Accents --- */
@@ -90,16 +86,16 @@
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) nav[aria-label="导航"] button[aria-current="page"] {
-  background: #ffe600 !important;
-  color: #000000 !important;
-  border: 2px solid #000000;
-  box-shadow: 3px 3px 0px #000000;
-  border-radius: 6px;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
+  border: var(--border-width) solid var(--line-strong);
+  box-shadow: var(--shadow-hard);
+  border-radius: var(--radius-panel);
   transform: skewX(-4deg);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) nav[aria-label="导航"] button[aria-current="page"] * {
-  color: #000000 !important;
+  color: var(--accent-on) !important;
   font-weight: 800 !important;
   transform: skewX(4deg);
 }
@@ -112,10 +108,10 @@
 
 /* --- Top Header Area in Software Section --- */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-main-header .software-badge-strip {
-  background: #ffe600 !important;
-  color: #000000 !important;
-  border: 1.5px solid #000000 !important;
-  box-shadow: 2px 2px 0px #000000 !important;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
   transform: rotate(-1deg);
   display: inline-block;
 }
@@ -124,7 +120,7 @@
   font-weight: 900 !important;
   font-size: 26px !important;
   letter-spacing: -0.03em !important;
-  text-shadow: 2px 2px 0px #000000;
+  text-shadow: var(--shadow-hard-x) var(--shadow-hard-y) 0px var(--line-strong);
   position: relative;
   display: inline-block;
 }
@@ -133,36 +129,36 @@
   content: "";
   display: block;
   height: 4px;
-  background: #ffe600;
+  background: var(--status-accent);
   width: 54px;
   margin-top: 2px;
-  box-shadow: 2px 2px 0px #000000;
+  box-shadow: var(--shadow-hard);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-main-header .stat-count {
   background: #1b1f2a;
   color: #ffffff;
-  border: 1px solid #3b4356;
+  border: var(--border-width) solid var(--line-default);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-panel);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-main-header .stat-installed {
-  background: #00f0ff;
-  color: #000000;
+  background: var(--experience-accent-secondary);
+  color: var(--accent-on);
   padding: 1px 7px;
-  border-radius: 4px;
-  border: 1.5px solid #000000;
-  box-shadow: 1.5px 1.5px 0px #000000;
+  border-radius: var(--radius-panel);
+  border: var(--border-width) solid var(--line-strong);
+  box-shadow: var(--shadow-hard);
   display: inline-block;
 }
 
 /* --- Quick Link Banner (自由自选软件卡片库) --- */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner {
-  border: 2px solid #ffe600 !important;
+  border: var(--border-width) solid var(--status-accent) !important;
   background: #141722 !important;
-  box-shadow: 5px 5px 0px #000000 !important;
-  border-radius: 10px !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
   position: relative;
   overflow: hidden;
 }
@@ -174,7 +170,7 @@
   left: 0;
   width: 6px;
   height: 100%;
-  background: #ffe600;
+  background: var(--status-accent);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner .banner-title {
@@ -185,26 +181,26 @@
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner .banner-cta,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner button {
-  background: #ffe600 !important;
-  color: #000000 !important;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
-  border: 2px solid #000000 !important;
-  box-shadow: 3px 3px 0px #000000 !important;
-  border-radius: 6px !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
   transition: all 120ms ease;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner .banner-cta:hover,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner button:hover {
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0px #000000 !important;
-  background: #fff24d !important;
+  box-shadow: var(--shadow-hard) !important;
+  background: var(--status-accent) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner .banner-cta:active,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-hero-banner button:active {
   transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0px #000000 !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 /* --- Category Tabs (分镜筛选切条) --- */
@@ -214,9 +210,9 @@
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [role="tab"] {
-  border: 2px solid #282e3c !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: #11141c !important;
-  border-radius: 6px !important;
+  border-radius: var(--radius-panel) !important;
   font-weight: 700 !important;
   padding: 5px 12px !important;
   transition: all 120ms ease !important;
@@ -227,54 +223,54 @@
   border-color: #ffffff !important;
   color: #ffffff !important;
   transform: translateY(-2px);
-  box-shadow: 2px 2px 0px #000000;
+  box-shadow: var(--shadow-hard);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [role="tab"][aria-selected="true"] {
-  background: #ffe600 !important;
-  color: #000000 !important;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
-  border: 2px solid #000000 !important;
-  box-shadow: 3px 3px 0px #000000 !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
   transform: skewX(-6deg);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [role="tab"][aria-selected="true"] * {
-  color: #000000 !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
   transform: skewX(6deg);
 }
 
 /* --- Search Input in Comic Style --- */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-search] {
-  border: 2px solid #282e3c !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: #0f1218 !important;
-  border-radius: 6px !important;
+  border-radius: var(--radius-panel) !important;
   font-weight: 600;
-  box-shadow: 2px 2px 0px #000000;
+  box-shadow: var(--shadow-hard);
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-search]:focus {
-  border-color: #ffe600 !important;
-  box-shadow: 3px 3px 0px #000000 !important;
+  border-color: var(--status-accent) !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 /* --- Software Row / Card Component (突出独立、高对比、实体质感) --- */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]):not([data-theme="light"]) [data-software-row] {
-  border: 2px solid #262c3a !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: #131620 !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  border-radius: 8px !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
   margin-bottom: 6px !important;
   padding: 10px 14px !important;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"])[data-theme="light"] [data-software-row] {
-  border: 2px solid #000000 !important;
+  border: var(--border-width) solid var(--line-strong) !important;
   background: #ffffff !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  border-radius: 8px !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
   margin-bottom: 6px !important;
   padding: 10px 14px !important;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease !important;
@@ -284,23 +280,23 @@
   border-color: #ffffff !important;
   background: #181d2a !important;
   transform: translate(-2px, -2px) !important;
-  box-shadow: 6px 6px 0px #000000 !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"])[data-theme="light"] [data-software-row]:hover {
-  border-color: #000000 !important;
+  border-color: var(--accent-on) !important;
   background: #f7f8fa !important;
   transform: translate(-2px, -2px) !important;
-  box-shadow: 6px 6px 0px #000000 !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row][aria-pressed="true"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row][aria-expanded="true"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row].ring-1,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row].ring-2 {
-  border-color: #ffe600 !important;
+  border-color: var(--status-accent) !important;
   background: #191e2b !important;
-  box-shadow: 5px 5px 0px #ffe600 !important;
+  box-shadow: var(--shadow-hard-x) var(--shadow-hard-y) 0px var(--status-accent) !important;
   transform: translate(-1px, -1px);
 }
 
@@ -311,9 +307,9 @@
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]):not([data-theme="light"]) [data-software-row] .software-card-icon-box {
   background: #0a0c10 !important;
-  border: 2px solid #252a38 !important;
-  box-shadow: 2px 2px 0px #000000 !important;
-  border-radius: 8px !important;
+  border: var(--border-width) solid var(--line-default) !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-control) !important;
 }
 
 /* Software Name typography */
@@ -326,39 +322,39 @@
 /* Software Tier Tags (必备 / 推荐 / 可选 / 仅检测) */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-tier-tag[data-tier="essential"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] span:is([class*="bg-amber-500"]) {
-  background: #ffe600 !important;
-  color: #000000 !important;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
-  border: 1.5px solid #000000 !important;
-  box-shadow: 1.5px 1.5px 0px #000000 !important;
-  border-radius: 4px !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-control) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-tier-tag[data-tier="recommended"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] span:is([class*="bg-blue-500"]) {
-  background: #00f0ff !important;
-  color: #000000 !important;
+  background: var(--experience-accent-secondary) !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
-  border: 1.5px solid #000000 !important;
-  box-shadow: 1.5px 1.5px 0px #000000 !important;
-  border-radius: 4px !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-control) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-tier-tag[data-tier="optional"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] span:is([class*="bg-purple-500"]) {
   background: #ffffff !important;
-  color: #000000 !important;
+  color: var(--accent-on) !important;
   font-weight: 800 !important;
-  border: 1.5px solid #000000 !important;
-  border-radius: 4px !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  border-radius: var(--radius-control) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) .software-tier-tag[data-tier="detectOnly"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] span:is([class*="bg-zinc-500"]) {
   background: #252b38 !important;
   color: #9ba4b5 !important;
-  border: 1px solid #3b4356 !important;
-  border-radius: 4px !important;
+  border: var(--border-width) solid var(--line-default) !important;
+  border-radius: var(--radius-control) !important;
 }
 
 /* Status Badge: Ready / Installed in Comic */
@@ -370,39 +366,39 @@
 
 /* Checkbox container for self-selection */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] label {
-  border: 2px solid #343c4e !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: #0c0e14 !important;
-  border-radius: 6px !important;
-  box-shadow: 2px 2px 0px #000000 !important;
+  border-radius: var(--radius-panel) !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-software-row] label:hover {
-  border-color: #ffe600 !important;
+  border-color: var(--status-accent) !important;
 }
 
 /* Action Buttons (安装 / 查看方案 / 一键安装) */
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-testid="row-action-install"],
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) button:is([class*="bg-primary"]):not([class*="banner-cta"]) {
-  background: #ffe600 !important;
-  color: #000000 !important;
+  background: var(--status-accent) !important;
+  color: var(--accent-on) !important;
   font-weight: 900 !important;
-  border: 2px solid #000000 !important;
-  box-shadow: 3px 3px 0px #000000 !important;
-  border-radius: 6px !important;
+  border: var(--border-width) solid var(--line-strong) !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
   transition: all 100ms ease !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-testid="row-action-install"]:hover,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) button:is([class*="bg-primary"]):hover {
   transform: translate(-1px, -1px) !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  background: #fff24d !important;
+  box-shadow: var(--shadow-hard) !important;
+  background: var(--status-accent) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) [data-testid="row-action-install"]:active,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]) button:is([class*="bg-primary"]):active {
   transform: translate(2px, 2px) !important;
-  box-shadow: 1px 1px 0px #000000 !important;
+  box-shadow: var(--shadow-hard) !important;
 }
 
 /* --- Right Detail Pane in P5 Style --- */
@@ -424,16 +420,16 @@
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"]):not([data-theme="light"]) aside .glass,
 :is([data-style="phantom-comic"], [data-style="p5-comic"]):not([data-theme="light"]) aside .glass-soft {
-  border: 2px solid #272d3c !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: #141722 !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  border-radius: 8px !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
 }
 
 :is([data-style="phantom-comic"], [data-style="p5-comic"])[data-theme="light"] aside .glass,
 :is([data-style="phantom-comic"], [data-style="p5-comic"])[data-theme="light"] aside .glass-soft {
-  border: 2px solid #000000 !important;
+  border: var(--border-width) solid var(--line-strong) !important;
   background: #ffffff !important;
-  box-shadow: 4px 4px 0px #000000 !important;
-  border-radius: 8px !important;
+  box-shadow: var(--shadow-hard) !important;
+  border-radius: var(--radius-panel) !important;
 }

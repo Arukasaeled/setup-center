@@ -69,8 +69,8 @@
 :root[data-style="academic-lab"] [data-software-row],
 :root[data-style="academic-lab"] [data-resource-card],
 :root[data-style="academic-lab"] [data-style-card] {
-  border-radius: 4px;
-  border-width: 1px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -36,6 +36,32 @@ export const blueprintStyle: SetupStyle = {
     "Blueprint Cyan Contrast — 深海蓝底与青白细线构筑高可读对比",
     "Drafting Annotations — 用轻量角标强化模块身份定位",
   ],
+  // Tier 4. A drafting sheet: a title-block strip on top, a command bar for
+  // tools, and cards laid out as an indexed drawing register rather than a grid
+  // of product cards.
+  experience: {
+    tier: "experience",
+    shell: "topbar",
+    navigation: "command-bar",
+    detail: "floating-inspector",
+    card: "tile",
+    composition: "drafting-index",
+    density: "compact",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
+      headingScale: 1,
+      bodyScale: 0.95,
+      headingWeight: 600,
+      headingTracking: "0.04em",
+    },
+    ornament: { rule: "dashed", corner: "square", decoration: "blueprint", chrome: "status" },
+    tweakable: ["borderWidth", "accent", "accentSecondary", "text", "density", "motion"],
+    locked: {
+      panelRadius: "工程图纸没有圆角——直角是制图规范的一部分。",
+      controlRadius: "同上：标注线与图框均为直角。",
+    },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

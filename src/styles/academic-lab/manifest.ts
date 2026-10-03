@@ -35,6 +35,20 @@ export const academicLabStyle: SetupStyle = {
     "Instrument Calibration — 如同物理仪表经过精准校准的对齐系统",
     "Cool Analytical Temperament — 冷静、克制、忠于事实呈现",
   ],
+  // Tier 2. A readable component theme; density is open so a researcher can
+  // trade rows for whitespace.
+  experience: {
+    tier: "component",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "panel",
+    composition: "solid-grid",
+    density: "compact",
+    motion: "reduced",
+    ornament: { rule: "hairline", corner: "square", decoration: "none", chrome: "none" },
+    tweakable: ["accent", "surface", "density", "headingScale", "bodyScale"],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

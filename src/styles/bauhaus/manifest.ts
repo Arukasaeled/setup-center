@@ -36,6 +36,20 @@ export const bauhausStyle: SetupStyle = {
     "Primary Color Accents — 仅使用红黄蓝三原色进行语义分级",
     "Structural Clarity — 边框和分区呈现建筑般的承重秩序感",
   ],
+  // Tier 3. Geometric tile composition, deliberately notched corners so the
+  // shapes read as constructed rather than rendered.
+  experience: {
+    tier: "composition",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "tile",
+    composition: "solid-grid",
+    density: "normal",
+    motion: "normal",
+    ornament: { rule: "heavy", corner: "notch", decoration: "grid", chrome: "none" },
+    tweakable: ["borderWidth", "shadow", "accent", "accentSecondary", "surface", "density", "motion"],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

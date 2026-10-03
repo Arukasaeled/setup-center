@@ -69,8 +69,8 @@
 :root[data-style="nordic-frost"] [data-software-row],
 :root[data-style="nordic-frost"] [data-resource-card],
 :root[data-style="nordic-frost"] [data-style-card] {
-  border-radius: 8px;
-  border-width: 1px;
+  border-radius: var(--radius-panel);
+  border-width: var(--border-width);
   border-style: solid;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }

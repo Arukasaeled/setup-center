@@ -36,6 +36,27 @@ export const industrialConsoleStyle: SetupStyle = {
     "Industrial Utility — 杜绝虚浮动效，突出安全与机械反馈",
     "Telemetry Cadence — 结构条理如同标准化机架模块",
   ],
+  // Tier 4. An instrument rack: a status strip, a command bar of modes, and rows
+  // that read as telemetry lines rather than as product cards.
+  experience: {
+    tier: "experience",
+    shell: "sidebar",
+    navigation: "command-bar",
+    detail: "rail",
+    card: "flat-row",
+    composition: "ledger",
+    density: "compact",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
+      headingScale: 0.95,
+      bodyScale: 0.95,
+      headingWeight: 700,
+      headingTransform: "uppercase",
+    },
+    ornament: { rule: "heavy", corner: "bevel", decoration: "scanline", chrome: "full" },
+    tweakable: ["shadow", "accent", "accentSecondary", "surface", "density", "motion"],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

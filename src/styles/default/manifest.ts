@@ -28,6 +28,20 @@ export const defaultStyle: SetupStyle = {
     "Restrained Lighting — 摒弃耀眼光效，采用微弱灰阶透光",
     "Linear Typographic Discipline — 严苛的字重与间距梯度",
   ],
+  // Tier 2 — this is the neutral fallback, so it is declared explicitly rather
+  // than inherited. It exists so `resolveExperienceProfile` never has to guess
+  // what "no profile" means.
+  experience: {
+    tier: "component",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "panel",
+    composition: "solid-grid",
+    density: "normal",
+    motion: "normal",
+    ornament: { rule: "hairline", corner: "rounded", decoration: "none", chrome: "none" },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

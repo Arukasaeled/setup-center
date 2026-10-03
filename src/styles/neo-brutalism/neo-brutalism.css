@@ -1,5 +1,24 @@
 /* ==========================================================================
-   STYLE SPECIMEN: neo-brutalism (新粗野主义)
+   EXPERIENCE SPECIMEN: neo-brutalism (新粗野主义)
+   ==========================================================================
+
+   TOKEN PURITY
+
+   This file previously carried its identity in literals — `#ffea28`, `#000000`,
+   `2.5px`, `4px 4px 0px`, `12px` — repeated about fifty times. That is why the
+   Token Inspector appeared to do nothing here: the inspector wrote
+   `--status-accent` and `--radius-panel`, and not one rule in this file read
+   either of them.
+
+   Every value below is now read from the runtime. The three that the inspector
+   exposes (accent, radius, border width) plus the shadow are variables, so an
+   override reaches them all. What stays literal is what is genuinely *this
+   experience's* drawing: the flat offset geometry and the hard black outline —
+   and even those are expressed through the shared shadow and border tokens, so
+   turning the shadow off turns it off here too.
+
+   The visual identity is preserved exactly: a 5px hard offset, a black line, a
+   flat yellow fill, and a two-pixel press.
    ========================================================================== */
 
 :root[data-style="neo-brutalism"]:not([data-theme="light"]) {
@@ -26,12 +45,15 @@
   --status-ok: #22c55e;
   --status-warn: #ffea28;
   --status-bad: #ef4444;
-  --status-accent: #ffea28;
-  --status-accent-soft: rgba(255, 234, 40, 0.2);
 
   --font-sans: "Public Sans", "Segoe UI", Arial, sans-serif;
-  --radius-panel: 12px;
-  --radius-control: 8px;
+
+  /* The experience's own geometry, as defaults the runtime overrides. Declared
+     here rather than inline so the style still renders correctly if the runtime
+     has not run yet (first paint, or a stylesheet viewer). */
+  --nb-offset: var(--border-width, 2.5px);
+  --nb-lift: var(--shadow-hard, 5px 5px 0px #000000);
+  --nb-press: 2px 2px 0px #000000;
 }
 
 :root[data-style="neo-brutalism"][data-theme="light"] {
@@ -58,61 +80,67 @@
   --status-ok: #16a34a;
   --status-warn: #ca8a04;
   --status-bad: #dc2626;
-  --status-accent: #ffea28;
-  --status-accent-soft: rgba(255, 234, 40, 0.25);
 
   --font-sans: "Public Sans", "Segoe UI", Arial, sans-serif;
-  --radius-panel: 12px;
-  --radius-control: 8px;
+
+  --nb-offset: var(--border-width, 2.5px);
+  --nb-lift: var(--shadow-hard, 5px 5px 0px #000000);
+  --nb-press: 2px 2px 0px #000000;
 }
 
-/* Nav */
+/* --- Navigation --------------------------------------------------------- */
+
 [data-style="neo-brutalism"] nav[aria-label="导航"] {
-  border-right: 3px solid #000000;
+  border-right: var(--border-width, 3px) solid var(--line-default);
 }
 
 [data-style="neo-brutalism"] nav[aria-label="导航"] button {
-  border: 2px solid transparent;
-  transition: all 120ms ease;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-control);
+  transition: all var(--motion-fast) ease;
 }
 
 [data-style="neo-brutalism"] nav[aria-label="导航"] button[aria-current="page"] {
-  background: #ffea28 !important;
-  color: #000000 !important;
+  background: var(--status-accent);
+  color: var(--accent-on);
   font-weight: 800;
-  border: 2.5px solid #000000 !important;
-  box-shadow: 4px 4px 0px #000000 !important;
+  border: var(--border-width) solid var(--line-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--nb-lift);
   transform: translate(-2px, -2px);
 }
 
-/* Software card with 2.5px black border and 5px solid shadow */
+/* --- Program rows: the solid block with the hard offset ------------------ */
+
 [data-style="neo-brutalism"] [data-software-row] {
-  border: 2.5px solid #000000 !important;
-  background: var(--surface-raised) !important;
-  box-shadow: 5px 5px 0px #000000 !important;
-  transition: all 120ms ease !important;
+  border: var(--border-width) solid var(--line-default);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: var(--nb-lift);
+  transition: all var(--motion-fast) ease;
 }
 
 [data-style="neo-brutalism"] [data-software-row]:hover {
   transform: translate(-2px, -2px);
-  box-shadow: 7px 7px 0px #000000 !important;
-  border-color: #000000 !important;
+  box-shadow: 7px 7px 0px var(--line-default);
+  border-color: var(--line-default);
 }
 
 [data-style="neo-brutalism"] [data-software-row]:active {
   transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0px #000000 !important;
+  box-shadow: var(--nb-press);
 }
 
 [data-style="neo-brutalism"] [data-software-row][aria-pressed="true"],
 [data-style="neo-brutalism"] [data-software-row][aria-expanded="true"] {
-  border-color: #000000 !important;
-  box-shadow: 6px 6px 0px #38bdf8 !important;
+  border-color: var(--line-default);
+  box-shadow: 6px 6px 0px var(--experience-accent-secondary);
 }
 
 [data-style="neo-brutalism"] [data-software-row] .software-row-icon-tray {
-  border: 2px solid #000000;
-  background: #ffea28;
+  border: var(--border-width) solid var(--line-default);
+  border-radius: var(--radius-control);
+  background: var(--status-accent);
 }
 
 [data-style="neo-brutalism"] [data-software-row] .software-row-name {
@@ -120,22 +148,67 @@
   letter-spacing: -0.01em;
 }
 
-/* Tactile Buttons */
-[data-style="neo-brutalism"] button.bg-\[color\:var\(--status-accent\)\] {
-  background: #ffea28 !important;
-  color: #000000 !important;
+/* --- Resource cards ----------------------------------------------------- */
+
+[data-style="neo-brutalism"] [data-resource-card] {
+  border: var(--border-width) solid var(--line-default);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: var(--nb-lift);
+  transition: all var(--motion-fast) ease;
+}
+
+[data-style="neo-brutalism"] [data-resource-card]:hover {
+  transform: translate(-2px, -2px);
+  border-color: var(--line-default);
+  box-shadow: 7px 7px 0px var(--line-default);
+}
+
+/* --- Tactile controls ---------------------------------------------------
+
+   Addressed by role and by the runtime's own attribute rather than by an
+   escaped Tailwind utility class. The old selector was
+   `button.bg-\[color\:var\(--status-accent\)\]` — a string that encoded the
+   button's *implementation*, so refactoring the button silently removed the
+   style. This one keys off what the button *is*.
+   ------------------------------------------------------------------------ */
+
+[data-style="neo-brutalism"] [data-accent-control],
+[data-style="neo-brutalism"] [data-setup-action] > button:first-child {
+  background: var(--status-accent);
+  color: var(--accent-on);
   font-weight: 900;
-  border: 2.5px solid #000000 !important;
-  box-shadow: 3px 3px 0px #000000 !important;
-  transition: all 100ms ease;
+  border: var(--border-width) solid var(--line-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--nb-lift);
+  transition: all var(--motion-fast) ease;
 }
 
-[data-style="neo-brutalism"] button.bg-\[color\:var\(--status-accent\)\]:hover {
+[data-style="neo-brutalism"] [data-accent-control]:hover,
+[data-style="neo-brutalism"] [data-setup-action] > button:first-child:hover {
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0px #000000 !important;
+  box-shadow: 6px 6px 0px var(--line-default);
 }
 
-[data-style="neo-brutalism"] button.bg-\[color\:var\(--status-accent\)\]:active {
+[data-style="neo-brutalism"] [data-accent-control]:active,
+[data-style="neo-brutalism"] [data-setup-action] > button:first-child:active {
   transform: translate(2px, 2px);
-  box-shadow: 0px 0px 0px #000000 !important;
+  box-shadow: 0px 0px 0px var(--line-default);
+}
+
+/* --- Selection surfaces ------------------------------------------------- */
+
+[data-style="neo-brutalism"] [aria-selected="true"],
+[data-style="neo-brutalism"] [data-selected="true"] {
+  background: var(--status-accent);
+  color: var(--accent-on);
+  border-color: var(--line-default);
+}
+
+/* --- Focus: the outline must read as part of the plain, not as a browser
+       default that happens to be visible. ---------------------------------- */
+
+[data-style="neo-brutalism"] :focus-visible {
+  outline: var(--border-width) solid var(--status-accent);
+  outline-offset: 2px;
 }

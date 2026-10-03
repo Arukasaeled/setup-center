@@ -35,6 +35,28 @@ export const dosUtilityStyle: SetupStyle = {
     "Color as Hardware Attribute — 还原 CGA/EGA 16 色硬件调色板神韵",
     "Keyboard-First Velocity — 高饱和黄色标识与疾速操作流",
   ],
+  // Tier 4. Character-cell UI: two panes, a function-key footer, selection by
+  // reverse video rather than by shape. Radius is locked because rounding a
+  // character cell stops it being a character cell.
+  experience: {
+    tier: "experience",
+    shell: "dual-pane",
+    navigation: "keyboard-menu",
+    detail: "inline",
+    card: "terminal-line",
+    composition: "character-list",
+    density: "compact",
+    motion: "reduced",
+    ornament: { rule: "ascii", corner: "square", decoration: "scanline", chrome: "status" },
+    tweakable: [
+      "shadow", "accent", "accentSecondary", "surface", "text",
+      "density", "headingScale", "bodyScale",
+    ],
+    locked: {
+      panelRadius: "DOS 字符栅格没有圆角——一旦倒角就不再是字符单元界面。",
+      controlRadius: "控件与字符单元对齐，圆角会破坏 80×25 的栅格秩序。",
+    },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

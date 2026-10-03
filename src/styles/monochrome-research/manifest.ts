@@ -35,6 +35,21 @@ export const monochromeResearchStyle: SetupStyle = {
     "Bipolar Contrast — 黑白两极反差，如油墨压印白纸般清澈",
     "Mathematical Orthogonality — 纯正水平与垂直线构成的空间格律",
   ],
+  // Tier 2. Ink on paper, single accent. The accent is the only colour knob that
+  // makes sense here, so the rest is closed rather than offered and ignored.
+  experience: {
+    tier: "component",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "index-entry",
+    composition: "solid-grid",
+    density: "spacious",
+    motion: "reduced",
+    ornament: { rule: "hairline", corner: "square", decoration: "none", chrome: "none" },
+    tweakable: ["accent", "text", "density", "headingScale"],
+    locked: { panelRadius: "单一墨色版式靠细线分栏，圆角会引入不属于这里的形状语言。" },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

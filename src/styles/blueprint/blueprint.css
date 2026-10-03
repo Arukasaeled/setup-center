@@ -35,7 +35,7 @@
 }
 
 [data-style="blueprint"] * {
-  border-radius: 2px !important;
+  border-radius: var(--radius-panel) !important;
 }
 
 /* Blueprint subtle grid on the app field */
@@ -62,7 +62,7 @@
 
 /* CAD Blueprint software frame card */
 [data-style="blueprint"] [data-software-row] {
-  border: 1px dashed #2a63a5 !important;
+  border: var(--border-width) dashed #2a63a5 !important;
   background: var(--surface-raised) !important;
   box-shadow: none !important;
   position: relative;
@@ -80,26 +80,26 @@
 }
 
 [data-style="blueprint"] [data-software-row]:hover {
-  border: 1px solid #64ffda !important;
+  border: var(--border-width) solid #64ffda !important;
   background: #0e2b4f !important;
 }
 
 [data-style="blueprint"] [data-software-row][aria-pressed="true"],
 [data-style="blueprint"] [data-software-row][aria-expanded="true"] {
-  border: 1px solid #64ffda !important;
-  box-shadow: 0 0 0 1px #64ffda, inset 0 0 10px rgba(100, 255, 218, 0.1) !important;
+  border: var(--border-width) solid #64ffda !important;
+  box-shadow: 0 0 0 1px var(--status-accent), inset 0 0 10px rgba(100, 255, 218, 0.1) !important;
 }
 
 [data-style="blueprint"] [data-software-row] .software-row-icon-tray {
-  border: 1px solid #23548f;
+  border: var(--border-width) solid #23548f;
   background: var(--surface-sunken);
 }
 
 /* Blueprint Action button */
 [data-style="blueprint"] button.bg-\[color\:var\(--status-accent\)\] {
-  background: #64ffda !important;
+  background: var(--status-accent) !important;
   color: #061527 !important;
   font-weight: 800;
   letter-spacing: 0.04em;
-  border: 1px solid #a7f3d0;
+  border: var(--border-width) solid #a7f3d0;
 }

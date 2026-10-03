@@ -36,6 +36,25 @@ export const terminalCrtStyle: SetupStyle = {
     "CLI Prompt Grammar — 使用终端提示符引导交互视觉流",
     "Low Distraction Monotone — 单色系排除杂色干扰，直达技术核心",
   ],
+  // Tier 3. A terminal listing: one column, monospace, no cards — a line per
+  // entry with a reverse-video current row.
+  experience: {
+    tier: "composition",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "rail",
+    card: "terminal-line",
+    composition: "character-list",
+    density: "compact",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
+      headingScale: 0.95,
+    },
+    ornament: { rule: "ascii", corner: "square", decoration: "scanline", chrome: "status" },
+    tweakable: ["accent", "accentSecondary", "text", "density", "headingScale"],
+    locked: { panelRadius: "终端只有字符行，没有圆角容器。" },
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-02",

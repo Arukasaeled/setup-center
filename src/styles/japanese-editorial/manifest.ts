@@ -35,6 +35,32 @@ export const japaneseEditorialStyle: SetupStyle = {
     "Restrained Vermilion — 丹砂红如印章般只落于定夺之选",
     "Delicate Line Weight — 墨线如游丝，构建而不压迫",
   ],
+  // Tier 4. A magazine index is mostly whitespace with a very small amount of
+  // ink in the right places. Density is `spacious` and motion `reduced` because
+  // an editorial page does not animate; the composition does the work.
+  experience: {
+    tier: "experience",
+    shell: "editorial",
+    navigation: "sidebar",
+    detail: "full-page",
+    card: "index-entry",
+    composition: "magazine-index",
+    density: "spacious",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"Source Han Serif SC", "Noto Serif SC", "Songti SC", Georgia, serif',
+      headingScale: 1.15,
+      bodyScale: 0.95,
+      headingWeight: 500,
+      headingTracking: "0.02em",
+      bodyLeading: 2,
+    },
+    ornament: { rule: "hairline", corner: "square", decoration: "none", chrome: "none" },
+    tweakable: [
+      "borderWidth", "accent", "accentSecondary", "surface", "text",
+      "density", "headingScale", "bodyScale", "motion",
+    ],
+  },
   implemented: true,
   license: "MIT",
   updatedAt: "2026-10-03",

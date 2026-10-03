@@ -68,7 +68,7 @@
 
 /* Hard straight geometry across the whole UI */
 [data-style="swiss-editorial"] * {
-  border-radius: 0px !important;
+  border-radius: var(--radius-panel) !important;
 }
 
 [data-style="swiss-editorial"] h1,
@@ -100,7 +100,7 @@
 
 /* Software Card Architecture */
 [data-style="swiss-editorial"] [data-software-row] {
-  border: 1.5px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: var(--surface-raised) !important;
   box-shadow: none !important;
   position: relative;
@@ -128,7 +128,7 @@
 
 [data-style="swiss-editorial"] [data-software-row][aria-pressed="true"],
 [data-style="swiss-editorial"] [data-software-row][aria-expanded="true"] {
-  border-color: #ff3333 !important;
+  border-color: var(--status-accent) !important;
 }
 
 [data-style="swiss-editorial"] [data-software-row][aria-pressed="true"]::before,
@@ -137,7 +137,7 @@
 }
 
 [data-style="swiss-editorial"] [data-software-row] .software-row-icon-tray {
-  border: 1px solid var(--line-default);
+  border: var(--border-width) solid var(--line-default);
   background: var(--surface-base);
 }
 
@@ -154,28 +154,28 @@
 
 /* Primary Action Buttons */
 [data-style="swiss-editorial"] button.bg-\[color\:var\(--status-accent\)\] {
-  background: #ff3333 !important;
+  background: var(--status-accent) !important;
   color: #ffffff !important;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border: 1.5px solid #ff3333;
+  border: var(--border-width) solid #ff3333;
 }
 
 [data-style="swiss-editorial"] button.bg-\[color\:var\(--status-accent\)\]:hover {
   background: #000000 !important;
-  border-color: #ff3333 !important;
+  border-color: var(--status-accent) !important;
   color: #ffffff !important;
 }
 
 /* Inputs & Search */
 [data-style="swiss-editorial"] input[type="search"],
 [data-style="swiss-editorial"] input[type="text"] {
-  border: 1.5px solid var(--line-default) !important;
+  border: var(--border-width) solid var(--line-default) !important;
   background: var(--surface-base) !important;
 }
 
 [data-style="swiss-editorial"] input[type="search"]:focus,
 [data-style="swiss-editorial"] input[type="text"]:focus {
-  border-color: #ff3333 !important;
+  border-color: var(--status-accent) !important;
 }
