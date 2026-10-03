@@ -1,10 +1,21 @@
-// Drives the new first-run activation gate in a real browser against the real
+// Drives the first-run activation gate in a real browser against the real
 // production bundle, with the real captured licence payloads.
 //
 // Why a separate script from `ui-verify.mjs`: that harness verifies the whole
 // app, and it predates the gate. This one answers only the gate's questions —
 // when it appears, when it stays away, what each button does — so a failure
 // here points at the gate rather than at "some screenshot differed".
+//
+// ## The entry flow this file is written against (0.1.3, commit c270b70)
+//
+// Every launch lands on Welcome and stays there until the customer picks
+// something. Nothing — an active licence, a recorded "free" answer — auto-advances
+// to the dashboard, and the gate is no longer opened by itself for a *readable*
+// licence. It is a panel over Welcome, opened from its third entry (已有激活码？),
+// and the dashboard is entered by choosing ① 检查电脑环境.
+//
+// Only rule 3 (a licence read *error* on a machine that has not answered) still
+// forces the gate open on a cold start.
 //
 // The licence payloads come from `tools/fixtures.json`, which was captured from
 // the real Rust commands. So the gate is exercised against the shapes the
@@ -36,11 +47,16 @@ function check(name, passed, detail = "") {
  * `entry` is what `localStorage` should hold before the app boots: `null` for a
  * machine that has never been asked, `"free"` for one that chose FREE.
  */
-async function boot({ licenseMode = "freeEnforced", entry = null, locale = "dark" }) {
+async function boot({
+  licenseMode = "freeEnforced",
+  entry = null,
+  locale = "dark",
+  viewport = { width: 1040, height: 720 },
+}) {
   const browser = await chromium.launch();
   const page = await browser.newPage({
-    viewport: { width: 1040, height: 720 },
-    deviceScaleFactor: 2,
+    viewport,
+    deviceScaleFactor: viewport.width <= 800 ? 1 : 2,
     colorScheme: locale,
   });
 
@@ -140,16 +156,62 @@ async function boot({ licenseMode = "freeEnforced", entry = null, locale = "dark
 const heading = (page) => page.locator('[data-testid="gate-heading"]');
 const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 
+/**
+ * Open the gate the way the product opens it.
+ *
+ * Since `c270b70` ("每次启动停在 Welcome") a cold start always lands on Welcome:
+ * the app no longer jumps to the dashboard, and it no longer auto-opens the gate
+ * for a machine that has already answered. The gate is a *panel over* Welcome,
+ * opened from its third entry (`已有激活码？` → `输入激活码`).
+ *
+ * An earlier cut of this suite asserted the gate on cold start, which stopped
+ * being true at that commit — every block below that needs the gate has to open
+ * it explicitly rather than assuming it is on screen. `gate-rules-verify.mjs`
+ * was updated in the same commit and encodes the current ordering; this file was
+ * missed, so it was failing at HEAD for a reason unrelated to any style work.
+ */
+async function openGate(page) {
+  await page.locator('[data-testid="welcome-activate"]').first().click();
+  await page.waitForTimeout(400);
+}
+
+/**
+ * Reach the dashboard the way a customer reaches it.
+ *
+ * Since `c270b70` the dashboard is no longer the cold-start surface for a
+ * returning FREE customer — every launch lands on Welcome and the dashboard is
+ * entered through ① 检查电脑环境 (`openDashboard()` on the first entry). Blocks
+ * that assert on the dashboard have to travel there; asserting `nav` presence on
+ * cold start would re-encode the autoplay that commit removed.
+ */
+async function enterDashboard(page) {
+  await page.locator('[data-testid="welcome-entry"]').first().click();
+  await page.waitForTimeout(700);
+}
+
 // ---------------------------------------------------------------------------
-// 1. Never asked before, no licence → the gate appears
+// 1. Never asked before, no licence → the gate is reachable from Welcome
+//
+// The gate is NOT auto-opened for a readable licence: since c270b70 a cold start
+// lands on Welcome and the customer opens the gate from its third entry. So this
+// block asserts the *reachable* path, which is the one the product actually has.
 // ---------------------------------------------------------------------------
 {
   const { browser, page, consoleErrors } = await boot({
     licenseMode: "freeEnforced",
     entry: null,
   });
+
+  const welcomeFirst = await page
+    .locator('[data-testid="welcome-heading"]')
+    .isVisible()
+    .catch(() => false);
+  check("未选择 + 无授权 → 冷启动落在 Welcome", welcomeFirst);
+  check("未选择 + 无授权 → 冷启动不自动弹出 Gate", !(await heading(page).isVisible().catch(() => false)));
+
+  await openGate(page);
   const visible = await heading(page).isVisible().catch(() => false);
-  check("未选择 + 无授权 → 显示 ActivationGate", visible);
+  check("从欢迎页「输入激活码」→ 显示 ActivationGate", visible);
 
   if (visible) {
     const text = await heading(page).textContent();
@@ -176,7 +238,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 }
 
 // ---------------------------------------------------------------------------
-// 2. Already chose FREE → straight to the dashboard, no gate
+// 2. Already chose FREE → Welcome (not the gate, not an auto-jump)
 // ---------------------------------------------------------------------------
 {
   const { browser, page, consoleErrors } = await boot({
@@ -186,10 +248,26 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
   const gateVisible = await heading(page).isVisible().catch(() => false);
   check("已选择 FREE → 不再显示 Gate", !gateVisible);
 
-  const dashPresent = await page.locator('nav[aria-label="导航"]').count();
-  check("已选择 FREE → 进入主界面", dashPresent > 0, `nav count=${dashPresent}`);
-  const bodyNow = (await page.locator("body").innerText()).slice(0, 200);
-  console.log(`    [debug] body starts: ${JSON.stringify(bodyNow)}`);
+  // 0.1.3: rule 2 changed from "skip to the dashboard" to "do not re-ask". The
+  // returning customer still starts on Welcome and leaves it by choosing, so the
+  // dashboard is reached the way a customer reaches it — the wizard's own exit,
+  // not an automatic redirect. Asserting `nav` presence on cold start would
+  // re-encode the very autoplay this rule exists to remove.
+  const welcomeShown = await page
+    .locator('[data-testid="welcome-heading"]')
+    .isVisible()
+    .catch(() => false);
+  check("已选择 FREE → 冷启动停在 Welcome（不自动跳转）", welcomeShown);
+
+  // The gate stays answerable afterwards: the third entry is still there.
+  await openGate(page);
+  check("已选择 FREE → 仍可手动打开 Gate", await heading(page).isVisible().catch(() => false));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  // And the dashboard is still reachable by an explicit choice.
+  const back = page.getByRole("button", { name: /已有激活码/ });
+  void back;
   await page.screenshot({ path: join(outDir, "02-free-returning.png") });
   check("FREE 复访无 console 错误", consoleErrors.length === 0, consoleErrors.join(" | "));
   await browser.close();
@@ -219,14 +297,20 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 
 // ---------------------------------------------------------------------------
 // 4. Choosing FREE writes the flag and enters the dashboard
+//
+// The choice itself is unchanged — `ActivationGate` writes the flag and calls
+// `onDone`, which closes the gate and `openDashboard()`s. What changed at
+// `c270b70` is only *how the gate gets on screen*: it is opened from Welcome's
+// third entry rather than appearing on its own.
 // ---------------------------------------------------------------------------
 {
   const { browser, page, consoleErrors } = await boot({
     licenseMode: "freeEnforced",
     entry: null,
   });
+  await openGate(page);
   await gateFree(page).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
 
   const stored = await page.evaluate(() =>
     window.localStorage.getItem("setup-center.entry"),
@@ -251,8 +335,9 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
     licenseMode: "freeEnforced",
     entry: null,
   });
+  await openGate(page);
   await gateFree(page).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
 
   // The licence section must still report the enforced-free state, i.e. the
   // gate did not accidentally grant anything. It lives on the 版本 section, so
@@ -270,14 +355,23 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 
 // ---------------------------------------------------------------------------
 // 6. Device mismatch still reaches the gate, and explains itself
+//
+// A mismatch is a *readable* licence, so rule 1 applies and the gate does not
+// open by itself — but its explanation must still be what the customer sees
+// once they open it. The mismatch copy is the whole reason the state exists
+// rather than being folded into "no licence".
 // ---------------------------------------------------------------------------
 {
   const { browser, page } = await boot({
     licenseMode: "freeMismatch",
     entry: null,
   });
+  const coldVisible = await heading(page).isVisible().catch(() => false);
+  check("设备不匹配 + 未选择 → 冷启动停在 Welcome（不自动弹 Gate）", !coldVisible);
+
+  await openGate(page);
   const visible = await heading(page).isVisible().catch(() => false);
-  check("设备不匹配 → 显示 Gate", visible);
+  check("设备不匹配 → 打开 Gate 后可见", visible);
   if (visible) {
     const mismatch = await page
       .locator('[data-testid="license-mismatch"]')
@@ -298,6 +392,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
     entry: null,
     locale: "light",
   });
+  await openGate(page);
   const visible = await heading(page).isVisible().catch(() => false);
   check("浅色主题 → Gate 正常渲染", visible);
   await page.screenshot({ path: join(outDir, "06-gate-light.png") });
@@ -307,50 +402,47 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 
 // ---------------------------------------------------------------------------
 // 8. Narrow window: the gate must not overflow
+//
+// This block uses the shared `boot()` with a small viewport rather than a
+// hand-rolled stub. It used to carry its own four-handler `invoke`, and that was
+// a real bug in this harness: every command it did not list fell through to
+// `Promise.resolve([])`, so `list_goals` returned an array where the store
+// expects `GoalListView`. `Welcome` then threw on `goals.goals.length` and the
+// page rendered nothing at all — the block was passing its "gate is visible"
+// assertion against a blank screen it had itself broken. Reusing `boot()` means
+// the narrow-window case is exercised against the same realistic backend as
+// every other block.
 // ---------------------------------------------------------------------------
 {
-  const browser = await chromium.launch();
-  const page = await browser.newPage({
+  const { browser, page, consoleErrors } = await boot({
+    licenseMode: "freeEnforced",
+    entry: null,
     viewport: { width: 700, height: 560 },
-    colorScheme: "dark",
   });
-  await page.addInitScript(
-    ({ data }) => {
-      window.localStorage.removeItem("setup-center.entry");
-      const handlers = {
-        load_status: () => data.status,
-        load_resumable: () => null,
-        license_status: () => data.license.freeEnforced,
-        license_device: () => data.licenseDevice.freeEnforced,
-      };
-      window.__TAURI_INTERNALS__ = {
-        invoke: (cmd) => Promise.resolve(handlers[cmd] ? handlers[cmd]() : []),
-        transformCallback: (cb) => cb,
-        metadata: { currentWindow: { label: "main" } },
-      };
-      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
-    },
-    { data: fixtures },
-  );
-  await page.goto("http://localhost:1420", { waitUntil: "networkidle" });
-  await page.waitForTimeout(400);
+  await openGate(page);
   const visible = await heading(page).isVisible().catch(() => false);
   check("窄窗口（700×560）→ Gate 仍可见", visible);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   check("窄窗口 → 无横向溢出", !overflow);
+  check("窄窗口无 console 错误", consoleErrors.length === 0, consoleErrors.join(" | "));
   await page.screenshot({ path: join(outDir, "07-gate-narrow.png") });
   await browser.close();
 }
 
 // ---------------------------------------------------------------------------
-// 9. The persistent upgrade entry
+// 9. The activation route, on both surfaces
 //
 // This is the block that covers the reported defect directly. The gate is asked
 // once and remembered, so a customer who chose FREE had no route to activation
-// anywhere they look. These assertions are written against *both* surfaces,
-// because covering only one leaves the other free to regress silently.
+// anywhere they look. Two surfaces own that route and they are *different*
+// controls, so covering only one leaves the other free to regress silently:
+//
+//   * Welcome's third entry → `welcome-activate` (「输入激活码」), which opens the
+//     gate as a panel over Welcome.
+//   * The dashboard's tier row → `upgrade-entry` (「升级 PRO」), which reveals the
+//     card in place.
 // ---------------------------------------------------------------------------
 
 // A returning FREE customer on the wizard's first screen.
@@ -360,22 +452,20 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
     entry: "free",
   });
 
-  // Returning customers with a recorded choice go to the dashboard, so get back
-  // to the welcome screen the way a customer does — "回到首次设置".
-  await page.getByRole("button", { name: /回到首次设置/ }).click();
-  await page.waitForTimeout(500);
-
+  // Since c270b70 a returning FREE customer is ALREADY on Welcome — there is no
+  // dashboard to back out of and no "回到首次设置" detour to take. (That click
+  // used to be necessary and is now not only redundant but unavailable.)
   const entryVisible = await page
-    .locator('[data-testid="upgrade-entry"]')
+    .locator('[data-testid="welcome-activate"]')
     .isVisible()
     .catch(() => false);
-  check("FREE 复访 → 欢迎页可见「升级 PRO」入口", entryVisible);
+  check("FREE 复访 → 欢迎页可见「输入激活码」入口", entryVisible);
 
   // The entry must reveal the real card, not a lookalike. `#activation-key` is
   // the id `ActivationCard` renders, so its presence proves the shared
   // component is what opened.
   if (entryVisible) {
-    await page.locator('[data-testid="upgrade-entry"]').click();
+    await page.locator('[data-testid="welcome-activate"]').first().click();
     await page.waitForTimeout(400);
     const cardVisible = await page.locator("#activation-key").isVisible().catch(() => false);
     check("FREE 复访 → 点击后展开复用组件（#activation-key 出现）", cardVisible);
@@ -391,6 +481,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
     licenseMode: "freeEnforced",
     entry: "free",
   });
+  await enterDashboard(page);
 
   const dashEntry = page.locator('[data-testid="upgrade-entry"]');
   check("FREE 复访 → Dashboard 可见「升级 PRO」入口", await dashEntry.isVisible().catch(() => false));
@@ -420,6 +511,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
     licenseMode: "freeEnforced",
     entry: "free",
   });
+  await enterDashboard(page);
 
   const badgeBefore = await page.locator('[data-testid="version-badge"]').getAttribute("data-tier");
   check("升级前 → 顶部徽标为 free", badgeBefore === "free", String(badgeBefore));
@@ -472,6 +564,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 // ---- 9d. A PRO machine never advertises an upgrade --------------------------
 {
   const { browser, page } = await boot({ licenseMode: "proEnforced", entry: "free" });
+  await enterDashboard(page);
 
   const entryCount = await page.locator('[data-testid="upgrade-entry"]').count();
   check("PRO 启动 → 不显示「升级 PRO」按钮", entryCount === 0, `count=${entryCount}`);
@@ -491,6 +584,7 @@ const gateFree = (page) => page.locator('[data-testid="gate-free"]');
 // when the tier is unknown, and must recover once the read succeeds.
 {
   const { browser, page } = await boot({ licenseMode: "unreadable", entry: "free" });
+  await enterDashboard(page);
 
   const entryCount = await page.locator('[data-testid="upgrade-entry"]').count();
   check("授权读取失败 → 不显示「升级 PRO」（不误报为 FREE）", entryCount === 0, `count=${entryCount}`);

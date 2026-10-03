@@ -1962,8 +1962,13 @@ const checks = [
     licenseFree.includes(CONTACT_QQ) && licenseFree.includes(CONTACT_WECHAT),
   ],
   [
+    // The heading is styled `text-transform: uppercase`, and Chromium folds that
+    // into `innerText` — the DOM text is "Setup Center Professional" but the
+    // captured reading is "SETUP CENTER PROFESSIONAL". A case-sensitive match on
+    // the brand word false-failed on a correct screen. Compare case-insensitively:
+    // the assertion is about which state the screen reached, not about casing.
     "license: activating switches the screen to the pro state",
-    licenseActivated.includes("Professional") &&
+    /setup center professional/i.test(licenseActivated) &&
       licenseActivated.includes("已激活") &&
       licenseActivated.includes("已解锁"),
   ],
