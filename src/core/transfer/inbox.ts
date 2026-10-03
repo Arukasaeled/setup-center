@@ -25,29 +25,8 @@ class TransferInboxManager {
       if (raw) {
         this.items = JSON.parse(raw);
       } else {
-        // Seed initial items
-        this.items = [
-          {
-            id: `inbox-${Date.now()}-1`,
-            url: "https://github.com/astral-sh/rye",
-            title: "Rye Python Manager",
-            note: "Astral 团队早期的 Python 管理试验场，可与 uv 对比归档",
-            suggestedType: "resource",
-            suggestedCategory: "tools",
-            capturedAt: new Date().toISOString(),
-            status: "pending",
-          },
-          {
-            id: `inbox-${Date.now()}-2`,
-            url: "https://motion.dev",
-            title: "Motion (Framer Motion)",
-            note: "React 顶级物理动画库，需收录至动效分类",
-            suggestedType: "resource",
-            suggestedCategory: "animation",
-            capturedAt: new Date().toISOString(),
-            status: "pending",
-          },
-        ];
+        // Production Inbox defaults to empty
+        this.items = [];
         this.save();
       }
     } catch {

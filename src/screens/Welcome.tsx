@@ -47,36 +47,19 @@
  * structure's promise that checking is free.
  */
 
-import { useEffect, useState } from "react";
-import { Button } from "../components/ui";
-import { ActivationCard } from "../components/ActivationPanel";
+import { useEffect } from "react";
 import { useApp } from "../lib/store";
 import { isTauri } from "../lib/ipc";
 import type { GoalView } from "../lib/types";
 
-export function WelcomeScreen({
-  /**
-   * Opens the activation gate.
-   *
-   * **Optional on purpose.** The gate lives in `App.tsx` and is a *panel over*
-   * this surface rather than a `Screen`, so it is not in `navStack` and cannot be
-   * navigated to. The host therefore hands down a callback instead of a route.
-   *
-   * Declared optional so this screen keeps rendering standalone — without a host
-   * the third entry opens an in-page `ActivationCard` instead, which is the same
-   * activation form in a different frame. Neither path ever leaves the student on
-   * a dead button.
-   */
-  onOpenLicense,
-}: {
+export function WelcomeScreen(_props?: {
   onOpenLicense?: () => void;
-} = {}) {
+}) {
   const goTo = useApp((s) => s.goTo);
   const runDetection = useApp((s) => s.runDetection);
   const loadProfiles = useApp((s) => s.loadProfiles);
   const scanInstalled = useApp((s) => s.scanInstalled);
   const openDashboard = useApp((s) => s.openDashboard);
-  const entitlements = useApp((s) => s.entitlements);
   const goals = useApp((s) => s.goals);
   const loadGoals = useApp((s) => s.loadGoals);
   const selectGoal = useApp((s) => s.selectGoal);
@@ -143,12 +126,7 @@ export function WelcomeScreen({
     void loadProfiles();
   };
 
-  // PRO customers get a different third entry: the thing that would otherwise
-  // sit there asking them to buy something they already own. The PRO/FREE choice
-  // is derived here rather than delegated, because `UpgradePrompt` legitimately
-  // renders nothing while the licence is unread — and an entry the brief requires
-  // to be visible must never be empty. See `ThirdEntryAction`.
-  const isPro = entitlements?.state === "active";
+
 
   return (
     <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-10 py-10">
@@ -220,60 +198,23 @@ export function WelcomeScreen({
         <div className="rise rise-1 mt-6 flex flex-col gap-2.5">
           <Entry
             index="①"
-            title="检查电脑环境"
-            detail="检测你的电脑是否已经安装必要工具"
+            title="进入开发者控制台 / 探索全库"
+            detail="直接浏览软件、GitHub 热门项目、开发模板与资源库"
             onClick={check}
           />
           <Entry
             index="②"
-            title="一键配置 AI 编程环境"
-            detail="自动安装和配置推荐工具"
+            title="按目标规划环境"
+            detail="智能分析 Web / AI / Rust / 课程作业所需工具与自动化装配"
             onClick={configure}
           />
           <Entry
             index="③"
-            title="已有激活码？"
-            detail="输入激活码升级 PRO"
-            // Deliberately NO `onClick` here. This entry carries its own control
-            // (`ThirdEntryAction`), so it must be a container rather than a
-            // button — a button nested inside a button is invalid HTML and makes
-            // one press run both handlers. `ThirdEntryAction` owns the click.
-            action={<ThirdEntryAction onOpenLicense={onOpenLicense} isPro={isPro} />}
+            title="检查本机环境诊断"
+            detail="深度探测操作系统、已装工具、PATH 与硬件指标"
+            onClick={check}
           />
         </div>
-
-        {/* The tier, stated plainly. This is the block the brief specifies word
-            for word; see the file header for why it is not paraphrased. */}
-        <section
-          data-testid="welcome-tiers"
-          className="rise rise-2 glass-soft mt-6 rounded-[12px] p-4"
-        >
-          <div className="flex flex-col gap-3">
-            <div>
-              <div className="text-[color:var(--text-primary)] text-[13px] font-medium">
-                免费版
-              </div>
-              <div className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px]">
-                你可以：
-              </div>
-              <ul className="mt-1 flex flex-col gap-0.5">
-                <TierLine>查看推荐工具</TierLine>
-                <TierLine>检测电脑环境</TierLine>
-              </ul>
-            </div>
-
-            <div className="border-[color:var(--line-subtle)] border-t pt-3">
-              <div className="text-[color:var(--text-primary)] text-[13px] font-medium">
-                PRO 解锁：
-              </div>
-              <ul className="mt-1 flex flex-col gap-0.5">
-                <TierLine>一键安装</TierLine>
-                <TierLine>自动配置</TierLine>
-                <TierLine>批量部署</TierLine>
-              </ul>
-            </div>
-          </div>
-        </section>
 
         {/* The safety copy. Kept because it answers the real first-run fear about
             running an unknown .exe — losing it would be a regression, not a
@@ -422,102 +363,7 @@ function Entry({
   );
 }
 
-/**
- * The third entry's own control.
- *
- * Two cases, and the difference is the whole point of keeping this entry visible:
- *
- * * With a host (`onOpenLicense` present) → a button that opens the gate. This is
- *   the path that makes the upgrade reachable *from the very first screen*.
- * * Without one (this screen rendered standalone) → an in-page disclosure holding
- *   the same `ActivationCard`. The entry still does something; it never renders a
- *   dead button.
- *
- * On a PRO machine neither is shown — the row states the fact instead. Asking a
- * paying customer to upgrade is worse than saying nothing.
- *
- * ## Why the un-hosted branch is not just `<UpgradePrompt />`
- *
- * It was, and that was a real bug this probe caught: `UpgradePrompt` returns
- * `null` while the licence is still unread *and* when it is unreadable (see its
- * own contract — "flashing an upgrade button at a paying customer is worse").
- * Correct for that component, but it meant the entry rendered **nothing at all**
- * in a standalone render, because nothing on this screen loads entitlements — so
- * the ③ row was a dead entry with no affordance in it.
- *
- * An entry the brief says must not be hidden cannot depend on a component that
- * legitimately chooses to be invisible. So the un-hosted branch owns a local
- * disclosure and renders the card on demand; `UpgradePrompt` is kept for the
- * *readable* case, where its PRO/FREE handling is genuinely better than a bare
- * button. The outer control is rendered unconditionally, which is what makes the
- * entry impossible to be empty.
- */
-function ThirdEntryAction({
-  onOpenLicense,
-  isPro,
-}: {
-  onOpenLicense?: () => void;
-  isPro: boolean;
-}) {
-  const [open, setOpen] = useState(false);
 
-  if (isPro) {
-    return (
-      <span
-        data-testid="welcome-pro-active"
-        className="text-[color:var(--status-ok)] mt-0.5 shrink-0 text-[12px]"
-      >
-        ✓ 已激活
-      </span>
-    );
-  }
-
-  if (onOpenLicense) {
-    return (
-      <Button
-        size="sm"
-        variant="ghost"
-        data-testid="welcome-activate"
-        onClick={onOpenLicense}
-        className="mt-0.5 shrink-0"
-      >
-        输入激活码
-      </Button>
-    );
-  }
-
-  return (
-    <span className="mt-0.5 flex shrink-0 flex-col items-end">
-      <Button
-        size="sm"
-        variant="ghost"
-        data-testid="welcome-activate"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="shrink-0"
-      >
-        {open ? "收起" : "输入激活码"}
-      </Button>
-      {open && (
-        <div data-testid="welcome-activation-inline" className="mt-3 w-full text-left">
-          <ActivationCard autoFocus />
-        </div>
-      )}
-    </span>
-  );
-}
-
-/** One ✓ line of the tier block. */
-function TierLine({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-center gap-2">
-      <span className="text-[color:var(--status-ok)] shrink-0 text-[11.5px]" aria-hidden>
-        ✓
-      </span>
-      <span className="text-[color:var(--text-secondary)] text-[12.5px]">{children}</span>
-    </li>
-  );
-}
 
 /**
  * When the vite dev server is opened in a plain browser there is no Rust

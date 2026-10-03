@@ -72,8 +72,11 @@ export type Screen =
  */
 export type Section =
   | "overview"
+  | "goals"
   | "software"
+  | "repos"
   | "resources"
+  | "library"
   | "style"
   | "config"
   | "history"

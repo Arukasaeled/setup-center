@@ -108,6 +108,13 @@ pub fn run() {
             commands::plugin_views,
             commands::plugin_targets,
             commands::run_plugin,
+            // Native system ops & discovery
+            commands::execute_native_command,
+            commands::winget_search,
+            commands::reveal_in_explorer,
+            commands::detect_editors,
+            commands::open_in_editor,
+            commands::app_canonical_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");

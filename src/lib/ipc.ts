@@ -492,3 +492,56 @@ export const runPlugin = (
   mode: PluginRunMode,
   allowUnverified = false,
 ) => call<PluginRun>("run_plugin", { id, mode, allowUnverified });
+
+// ---------------------------------------------------------------------------
+// Native System Ops & Discovery
+// ---------------------------------------------------------------------------
+
+export interface CommandOutput {
+  success: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface WingetSearchResultItem {
+  name: string;
+  id: string;
+  version: string;
+  matchType?: string;
+  source?: string;
+}
+
+export interface DetectedEditor {
+  id: "vscode" | "cursor" | "zed" | string;
+  name: string;
+  command: string;
+  installed: boolean;
+}
+
+/** Executes a native program with args and optional cwd, capturing stdout/stderr */
+export const executeNativeCommand = (
+  program: string,
+  args: string[],
+  cwd?: string,
+) => call<CommandOutput>("execute_native_command", { program, args, cwd });
+
+/** Searches winget for packages matching query */
+export const wingetSearch = (query: string) =>
+  call<WingetSearchResultItem[]>("winget_search", { query });
+
+/** Reveals a file or directory in Windows Explorer */
+export const revealInExplorer = (path: string) =>
+  call<void>("reveal_in_explorer", { path });
+
+/** Probes which editors (VS Code, Cursor, Zed) are installed on this machine */
+export const detectEditors = () => call<DetectedEditor[]>("detect_editors");
+
+/** Launches a file or directory in an installed editor */
+export const openInEditor = (editor: string, path: string) =>
+  call<void>("open_in_editor", { editor, path });
+
+/** Returns the canonical application version from Cargo manifest */
+export const appCanonicalVersion = () =>
+  call<string>("app_canonical_version");
+

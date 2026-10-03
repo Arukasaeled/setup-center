@@ -43,6 +43,7 @@ pub mod license;
 pub mod machine;
 pub mod plugins;
 pub mod profiles;
+pub mod system_ops;
 pub mod verify;
 // The Software Intelligence Layer's tests live in their own file because they
 // are the largest single body of tests in the crate, they depend on checked-in

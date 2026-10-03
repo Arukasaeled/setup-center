@@ -64,12 +64,9 @@ import {
 } from "../components/SoftwareRow";
 import { EnvironmentScore } from "../components/EnvironmentScore";
 import { QuickAction } from "../components/QuickAction";
-import { ProNotice } from "../components/ProGate";
 import { useApp, type Section } from "../lib/store";
 import {
-  ContactRows,
   LicenseSection,
-  UpgradePrompt,
 } from "../components/ActivationPanel";
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
@@ -108,57 +105,49 @@ import type {
   SoftwareId,
   SoftwareInfo,
 } from "../lib/types";
+import { GoalModeScreen } from "./GoalMode";
+import { RepoFinderScreen } from "./RepoFinder";
+import { LibraryScreen } from "./Library";
+import { LocalSearchIndex } from "../core/discovery/searchIndex";
+import { searchWingetPackages } from "../core/discovery/winget";
+import { RecentTracker } from "../core/transfer/recent";
+import type { DiscoveryItem } from "../core/discovery/types";
+import { ExecutionConsoleModal } from "../components/ExecutionConsoleModal";
+import { RepoDetailModal } from "../components/RepoDetailModal";
+import { CloneRepoModal } from "../components/CloneRepoModal";
 
 // ---------------------------------------------------------------------------
 // Sections
 // ---------------------------------------------------------------------------
 
 const SECTIONS: { id: Section; label: string; hint: string }[] = [
-  { id: "overview", label: "环境概览", hint: "总体状态与缺口" },
-  { id: "software", label: "软件", hint: "这台电脑装了什么" },
+  { id: "overview", label: "开发起步", hint: "全局搜索、快捷入口与本机状态" },
+  { id: "goals", label: "目标向导", hint: "按技术路线定制开发环境" },
+  { id: "software", label: "软件清单", hint: "这台电脑装了什么 & Winget 检索" },
+  { id: "repos", label: "GitHub 项目", hint: "开源优质仓库、对比与克隆" },
   { id: "resources", label: "开发资源", hint: "开源项目、模板与灵感" },
-  { id: "style", label: "风格", hint: "视觉风格与主题试验场" },
-  { id: "config", label: "配置", hint: "身份、路径、代理" },
+  { id: "library", label: "我的库", hint: "个人收藏、最近与自定义包" },
+  { id: "style", label: "视觉风格", hint: "20套界面体验与微调" },
+  { id: "config", label: "环境配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
-  { id: "plugins", label: "插件", hint: "Claude 中文与效率增强" },
-  // "版本与授权" rather than "版本". The section manages the version, the
-  // licence, activation and device binding, and `ActivationGate` already
-  // promises the customer they can "随时可以在「版本与授权」中升级" — a label
-  // reading only 版本 sent them looking for a page that does not exist by that
-  // name. One string, two places that must agree.
-  { id: "license", label: "版本与授权", hint: "当前权益与激活" },
-  { id: "about", label: "关于", hint: "购买与联系作者" },
+  { id: "plugins", label: "插件增强", hint: "Claude 中文与效率增强" },
+  { id: "license", label: "版本与更新", hint: "当前版本、更新与开源说明" },
+  { id: "about", label: "关于", hint: "关于 Setup Center 与开源社区" },
 ];
 
 /**
  * The page-layout contract, per section.
- *
- * This replaces the chain of `section !== …` exclusions that used to decide
- * whether the detail rail existed. Read it as the answer to two questions per
- * page: *how is this page laid out*, and *can selecting something in it produce
- * a detail*.
- *
- * The distinction that matters is `selectable`. Only three sections ever put a
- * key into the store's `selectedItemId`: overview (`cap:` and `fact:` keys),
- * software (`sw:`), and config (`config.*` requirements). Every other section
- * used to receive the same 340px rail anyway, which is why opening 历史记录 or
- * 关于 showed a permanently empty column.
  */
 const PAGE_LAYOUTS: Record<Section, PageLayoutContract> = {
-  // Capabilities and machine facts both select into the detail rail.
   overview: { mode: "master-detail", selectable: true },
-  // The software list has its own in-section master-detail pane; the global
-  // rail stands down so the same explanation is never rendered twice.
+  goals: { mode: "document", selectable: false },
   software: { mode: "master-detail", selectable: true },
-  // A dense browsable index with its own filters, search and category pills.
+  repos: { mode: "explorer", selectable: false },
   resources: { mode: "explorer", selectable: false },
-  // A gallery of specimens whose detail opens over the page, not beside it.
+  library: { mode: "explorer", selectable: false },
   style: { mode: "gallery", selectable: false },
-  // Config requirements select into the rail: this is genuinely master-detail.
   config: { mode: "master-detail", selectable: true },
-  // Resumable sessions and a transfer timeline, read top to bottom.
   history: { mode: "timeline", selectable: false },
-  // Plugin toggles and licence scope are prose and controls.
   plugins: { mode: "document", selectable: false },
   license: { mode: "document", selectable: false },
   about: { mode: "document", selectable: false },
@@ -258,28 +247,6 @@ export function Dashboard() {
           data-window-title={`Setup Center — ${SECTIONS.find((s) => s.id === section)?.label ?? ""}`}
           className="min-w-0 flex-1 overflow-y-auto px-8 py-7"
         >
-          {/* The persistent tier row. It sits at the top of every section rather
-              than only on 版本与授权, because the whole gap this closes is that a
-              FREE customer had no visible route to activation anywhere they
-              habitually look.
-
-              The licence section does not get a second copy: it renders the full
-              scope list, the contacts and the card already, and stacking the
-              entry on top of them would put the same control on screen twice. */}
-          {section !== "license" && (
-            <div className="mb-6 flex justify-end">
-              <UpgradePrompt
-                onNavigate={() => setSection("license")}
-                onUpgraded={() => setSection("license")}
-              />
-            </div>
-          )}
-
-          {/* A refused gated action surfaces here rather than inside whichever
-              section triggered it: the refusal can come from install, resume or
-              bootstrap, and the customer should see the same explanation and the
-              same route to activation regardless of which one it was. */}
-          <ProNotice />
           {section === "overview" && (
             <OverviewSection
               loading={loading}
@@ -289,8 +256,11 @@ export function Dashboard() {
               }}
             />
           )}
+          {section === "goals" && <GoalModeScreen />}
           {section === "software" && <SoftwareSection />}
+          {section === "repos" && <RepoFinderScreen />}
           {section === "resources" && <ResourceSection />}
+          {section === "library" && <LibraryScreen />}
           {section === "style" && <StyleSection />}
           {section === "config" && <ConfigSection />}
           {section === "history" && <HistorySection />}
@@ -479,6 +449,44 @@ function ThemeSwitch({
 // Section: overview
 // ---------------------------------------------------------------------------
 
+function QuickAccessTile({
+  title,
+  desc,
+  badge,
+  onClick,
+}: {
+  title: string;
+  desc: string;
+  badge: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col justify-between rounded-2xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4 text-left hover:border-[color:var(--status-accent)] hover:bg-[color:var(--surface-hover)] transition-all shadow-sm"
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[13.5px] font-bold text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors">
+            {title}
+          </span>
+          <span className="rounded bg-[color:var(--surface-panel)] border border-[color:var(--line-subtle)] px-1.5 py-0.5 text-[10px] font-mono text-[color:var(--text-quiet)] shrink-0">
+            {badge}
+          </span>
+        </div>
+        <p className="mt-1.5 text-[11.5px] text-[color:var(--text-tertiary)] leading-relaxed line-clamp-2">
+          {desc}
+        </p>
+      </div>
+      <div className="mt-3 flex items-center gap-1 text-[11.5px] font-medium text-[color:var(--status-accent)]">
+        <span>探索</span>
+        <span className="group-hover:translate-x-0.5 transition-transform font-mono">→</span>
+      </div>
+    </button>
+  );
+}
+
 function OverviewSection({
   loading,
   onRecheck,
@@ -492,12 +500,6 @@ function OverviewSection({
   const selectItem = useApp((s) => s.selectItem);
   const setSection = useApp((s) => s.setSection);
 
-  // Stage 5: the overview leads with the goal, not with a generic score.
-  //
-  // The score alone said "how much of everything is present", which a student
-  // cannot act on — 60% of what? Framing the same measurement against a chosen
-  // direction is what turns it into advice, and it is the reason the goal screen
-  // comes first.
   const advisor = useApp((s) => s.advisor);
   const goalPlan = useApp((s) => s.goalPlan);
   const allPlans = useApp((s) => s.allPlans);
@@ -507,6 +509,36 @@ function OverviewSection({
   const loadAdvisor = useApp((s) => s.loadAdvisor);
   const loadGoals = useApp((s) => s.loadGoals);
   const knowledgeStatus = useApp((s) => s.knowledgeStatus);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeDetailItem, setActiveDetailItem] = useState<DiscoveryItem | null>(null);
+  const [activeCloneItem, setActiveCloneItem] = useState<{ title: string; repoUrl: string } | null>(null);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return LocalSearchIndex.search(searchQuery.trim()).slice(0, 8);
+  }, [searchQuery]);
+
+  const recentItems = useMemo(() => {
+    return RecentTracker.getAll().slice(0, 5);
+  }, []);
+
+  const bookmarkedItems = useMemo(() => {
+    const ids = Bookmarks.getAll().slice(0, 5);
+    return LocalSearchIndex.getAll().filter((i) => ids.includes(i.id));
+  }, []);
+
+  const handleSelectSearchItem = (item: DiscoveryItem) => {
+    setSearchQuery("");
+    if (item.type === "software") {
+      setSection("software");
+      selectItem(item.id.replace("sw:", ""));
+    } else if (item.type === "style") {
+      setSection("style");
+    } else {
+      setActiveDetailItem(item);
+    }
+  };
 
   const groups = useMemo(() => groupCapabilities(capabilities), [capabilities]);
 
@@ -529,65 +561,217 @@ function OverviewSection({
   const available = capabilities.filter((c) => c.status === "available").length;
   const selectedGoal = goals?.goals.find((g) => g.id === selectedGoalId) ?? null;
 
-  // An advisor summary is only meaningful once a detection has run behind it.
-  //
-  // `advisor?.summary.score ?? environment.score` looked like a safe fallback but
-  // was not: `??` only falls through on null/undefined, and an advisor built
-  // against an un-detected machine reports a *defined* 0. On a cold start that
-  // put "0% · 没有一项检测完成" at the top of a screen whose own capability lists
-  // read "已准备 Python 开发 · C/C++ 学习 · Git 协作…" — the app contradicting
-  // itself in its largest type. `detected` exists on the view precisely to
-  // distinguish "measured, and it is zero" from "not measured yet", so the
-  // fallback is guarded by it.
   const advisorScore = advisor?.detected ? advisor.summary.score : null;
   const advisorHeadline = advisor?.detected ? advisor.summary.headline : null;
   const overallScore = advisorScore ?? environment.score;
 
   return (
-    <div className="flex flex-col gap-8">
-      <header>
-        {/* The status centre. Phase 6 of the brief asked for 个人状态中心 in place
-            of 检测报告, and this is that: a greeting, one number scoped to the
-            whole machine, and the two lists a student actually reads — what is
-            ready and what is not.
+    <div className="flex flex-col gap-8 pb-10">
+      {/* 1. Developer Start Center Hero */}
+      <section className="space-y-5 rise">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[color:var(--status-accent)] bg-[color:var(--surface-sunken)] mb-2">
+            DEVELOPER START CENTER // 开发起步中心
+          </div>
+          <h1 className="text-[23px] font-bold text-[color:var(--text-strong)] tracking-[-0.02em]">
+            找到东西 → 看懂它 → 决定用它 → 开始使用
+          </h1>
+          <p className="mt-1 text-[13px] text-[color:var(--text-tertiary)] max-w-2xl leading-relaxed">
+            全站索引 380+ 开发资源、55+ 生产级模板、GitHub 热门开源项目与 Windows 本机工具链生态。
+          </p>
+        </div>
 
-            It is rendered *above* the goal readout rather than instead of it.
-            The two answer different questions ("总的来说怎么样" versus "我选的这个
-            方向离目标还差多少") and the existing assertion that the goal figure
-            names its own scope is what keeps them from reading as a
-            contradiction. */}
+        {/* 2. Prominent Hero Search Bar */}
+        <div className="relative">
+          <div className="flex items-center gap-3 rounded-2xl border-2 border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] px-4 py-3 shadow-sm focus-within:border-[color:var(--status-accent)] transition-all">
+            <span className="text-[16px] text-[color:var(--text-quiet)] font-mono">⌕</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索开源项目、开发软件、UI组件库、工程模板、Winget包..."
+              className="w-full bg-transparent text-[14px] text-[color:var(--text-strong)] placeholder:text-[color:var(--text-quiet)] outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="text-[12px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] px-1"
+              >
+                ✕
+              </button>
+            )}
+            <div className="hidden sm:flex items-center gap-1 rounded bg-[color:var(--surface-panel)] border border-[color:var(--line-subtle)] px-2 py-0.5 text-[11px] font-mono text-[color:var(--text-tertiary)]">
+              <span>Ctrl</span><span>+</span><span>K</span>
+            </div>
+          </div>
+
+          {/* Instant Search Dropdown Popover */}
+          {searchQuery.trim() && (
+            <div className="absolute top-full left-0 right-0 z-30 mt-2 rounded-2xl border border-[color:var(--line-default)] bg-[color:var(--surface-panel)] p-2 shadow-2xl backdrop-blur-xl animate-fade-in space-y-1">
+              <div className="px-3 py-1 text-[11px] font-bold text-[color:var(--text-quiet)] uppercase tracking-wider">
+                {searchResults.length > 0 ? "本地精选匹配" : "本地未找到匹配项"}
+              </div>
+              {searchResults.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => handleSelectSearchItem(item)}
+                  className="flex items-center justify-between rounded-xl px-3 py-2 hover:bg-[color:var(--surface-hover)] cursor-pointer transition-colors group"
+                >
+                  <div className="min-w-0 pr-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-semibold text-[color:var(--text-primary)] group-hover:text-[color:var(--status-accent)]">
+                        {item.title}
+                      </span>
+                      <span className="rounded bg-[color:var(--surface-sunken)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)] uppercase font-mono">
+                        {item.type}
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-[color:var(--text-tertiary)] truncate mt-0.5">
+                      {item.subtitle || item.description}
+                    </p>
+                  </div>
+                  <span className="text-[12px] text-[color:var(--text-quiet)] font-mono shrink-0">
+                    查看 →
+                  </span>
+                </div>
+              ))}
+              <div className="border-t border-[color:var(--line-subtle)] pt-1.5 mt-1 flex flex-wrap items-center justify-between gap-2 px-3 py-1 text-[12px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSection("repos");
+                  }}
+                  className="text-[color:var(--status-accent)] hover:underline flex items-center gap-1 font-medium"
+                >
+                  在 GitHub 全库深度搜索「{searchQuery}」→
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSection("software");
+                  }}
+                  className="text-[color:var(--text-tertiary)] hover:underline"
+                >
+                  在 Winget 软件库中搜索 →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3. Quick Access Grid (6 tiles) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <QuickAccessTile
+            title="找软件 / 本机清单"
+            desc="本机软件诊断、缺口补齐与 Winget 全网秒查"
+            badge="36+ 内置"
+            onClick={() => setSection("software")}
+          />
+          <QuickAccessTile
+            title="GitHub 项目探索"
+            desc="精选热门开源仓库、活跃度对比与一键克隆"
+            badge="在线 API"
+            onClick={() => setSection("repos")}
+          />
+          <QuickAccessTile
+            title="目标规划模式"
+            desc="按技术路线 (Web/AI/Rust/算法) 定制专属环境"
+            badge="6条路线"
+            onClick={() => setSection("goals")}
+          />
+          <QuickAccessTile
+            title="开发资源全库"
+            desc="380+ 精选前端组件库、设计系统与实用工具"
+            badge="386 项"
+            onClick={() => setSection("resources")}
+          />
+          <QuickAccessTile
+            title="20 套视觉体验"
+            desc="极简、复古、终端与美学，支持声明式版式"
+            badge="V2 体验"
+            onClick={() => setSection("style")}
+          />
+          <QuickAccessTile
+            title="我的个人库"
+            desc="收藏清单、最近使用足迹、开发包与 AI 导出"
+            badge="本地存储"
+            onClick={() => setSection("library")}
+          />
+        </div>
+
+        {/* 4. Recent & Bookmarks Strip (if available) */}
+        {(recentItems.length > 0 || bookmarkedItems.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[color:var(--line-subtle)] text-[12px]">
+            <span className="text-[color:var(--text-quiet)] font-medium shrink-0">快捷足迹:</span>
+            {recentItems.slice(0, 3).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => {
+                  if (r.type === "software") {
+                    setSection("software");
+                    selectItem(r.id.replace("sw:", ""));
+                  } else if (r.type === "repo") {
+                    setSection("repos");
+                  } else {
+                    setSection("resources");
+                  }
+                }}
+                className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2.5 py-1 text-[11.5px] text-[color:var(--text-secondary)] hover:border-[color:var(--line-default)] hover:text-[color:var(--text-primary)] transition-colors truncate max-w-[160px]"
+              >
+                {r.title}
+              </button>
+            ))}
+            {bookmarkedItems.slice(0, 3).map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => setActiveDetailItem(b)}
+                className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1 text-[11.5px] text-amber-300 hover:border-amber-500/40 transition-colors truncate max-w-[160px] flex items-center gap-1"
+              >
+                <span>★</span>
+                <span>{b.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 5. Machine Environment Status & Diagnostic Strip */}
+      <section className="space-y-4 pt-2 border-t border-[color:var(--line-subtle)]">
+        <div className="flex items-center justify-between">
+          <SectionLabel>本机环境与诊断</SectionLabel>
+          <button
+            type="button"
+            onClick={onRecheck}
+            className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] text-[12px] transition-colors"
+          >
+            重新检测
+          </button>
+        </div>
+
         <div className="flex items-start justify-between gap-4">
           <EnvironmentScore
             score={overallScore}
             capabilities={capabilities}
             greeting={greeting()}
           />
-          <button
-            type="button"
-            onClick={onRecheck}
-            className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-1 shrink-0 text-[12px] transition-colors"
-          >
-            重新检测
-          </button>
         </div>
 
-        {/* The goal frame. When a direction is chosen, its completion becomes a
-            second, narrower reading of the same machine. When none is chosen — a
-            dashboard opened cold — this is absent rather than showing a goal the
-            student never picked. */}
         {goalPlan && selectedGoal && (
-          <div className="mt-6">
+          <div className="mt-4">
             <GoalReadout plan={goalPlan} goalName={selectedGoal.name} />
-            <div className="text-[color:var(--text-quiet)] mt-3 flex items-baseline gap-2 text-[12px]">
-              <span className="tnum">
-                整体评分 {overallScore} / 100
-              </span>
+            <div className="text-[color:var(--text-quiet)] mt-2 flex items-baseline gap-2 text-[12px]">
+              <span className="tnum">整体评分 {overallScore} / 100</span>
               <span>·</span>
               <span>{advisorHeadline ?? `已经可以做 ${available} 件事`}</span>
             </div>
           </div>
         )}
-      </header>
+      </section>
 
       {/* Recommended actions, ordered. This is the section a student reads when
           they only want to know what to do next, so it comes before the full
@@ -729,6 +913,29 @@ function OverviewSection({
             ))}
           </ul>
         </section>
+      )}
+
+      {/* Modals for Start Center discovery */}
+      {activeDetailItem && (
+        <RepoDetailModal
+          isOpen={true}
+          item={activeDetailItem}
+          onClose={() => setActiveDetailItem(null)}
+          onClone={() => {
+            const r = { title: activeDetailItem.title, repoUrl: activeDetailItem.origin?.repository || "" };
+            setActiveDetailItem(null);
+            setActiveCloneItem(r);
+          }}
+        />
+      )}
+
+      {activeCloneItem && (
+        <CloneRepoModal
+          isOpen={true}
+          repoUrl={activeCloneItem.repoUrl}
+          repoTitle={activeCloneItem.title}
+          onClose={() => setActiveCloneItem(null)}
+        />
       )}
     </div>
   );
@@ -1166,6 +1373,35 @@ function SoftwareGrid({
 }) {
   const [category, setCategory] = useState("");
   const [query, setQuery] = useState("");
+  const [isWingetSearching, setIsWingetSearching] = useState(false);
+  const [wingetItems, setWingetItems] = useState<{ id: string; name: string; version: string; source: string }[]>([]);
+  const [wingetError, setWingetError] = useState<string | null>(null);
+  const [activeConsole, setActiveConsole] = useState<{ title: string; command: string; args: string[] } | null>(null);
+
+  const handleSearchWinget = async (q: string) => {
+    if (!q.trim()) return;
+    setIsWingetSearching(true);
+    setWingetError(null);
+    try {
+      const res = await searchWingetPackages(q.trim());
+      setWingetItems(res.map((r) => ({ id: r.id, name: r.title, version: r.subtitle ?? "", source: "winget" })));
+      if (res.length === 0) {
+        setWingetError(`Winget 软件库中未找到关于「${q.trim()}」的软件包`);
+      }
+    } catch (err: any) {
+      setWingetError(err?.message || "Winget 检索失败");
+    } finally {
+      setIsWingetSearching(false);
+    }
+  };
+
+  const handleInstallWinget = (pkg: { id: string; name: string }) => {
+    setActiveConsole({
+      title: `Winget 安装: ${pkg.name}`,
+      command: "winget",
+      args: ["install", "--id", pkg.id, "-e", "--accept-source-agreements", "--accept-package-agreements"],
+    });
+  };
 
   // Tabs are built from the *rendered* items, in the catalog's declared order.
   //
@@ -1245,6 +1481,79 @@ function SoftwareGrid({
         />
       </div>
 
+      {needle && (
+        <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 my-1 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[12.5px] font-medium text-[color:var(--text-primary)]">
+              未在内置 36 款软件中找到？
+            </div>
+            <div className="text-[11.5px] text-[color:var(--text-tertiary)]">
+              在 Windows 官方 Winget 软件库中实时检索「{query.trim()}」
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void handleSearchWinget(query.trim())}
+            disabled={isWingetSearching}
+          >
+            {isWingetSearching ? "正在检索 Winget..." : "Winget 全网秒查 →"}
+          </Button>
+        </div>
+      )}
+
+      {/* Winget Search Results */}
+      {wingetItems.length > 0 && (
+        <div className="rounded-2xl border border-[color:var(--line-default)] bg-[color:var(--surface-panel)] p-4 my-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[13px] font-bold text-[color:var(--text-strong)] flex items-center gap-2">
+              <span>Winget 官方源检索结果</span>
+              <span className="rounded bg-[color:var(--surface-sunken)] px-1.5 py-0.5 text-[10.5px] font-mono text-[color:var(--text-quiet)]">
+                {wingetItems.length} 个软件包
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWingetItems([])}
+              className="text-[11.5px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)]"
+            >
+              收起
+            </button>
+          </div>
+          <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+            {wingetItems.map((pkg) => (
+              <div
+                key={pkg.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2 text-[12.5px]"
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="font-semibold text-[color:var(--text-primary)] truncate">
+                    {pkg.name}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-[color:var(--text-quiet)] font-mono mt-0.5">
+                    <span>ID: {pkg.id}</span>
+                    {pkg.version && <span>· v{pkg.version}</span>}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleInstallWinget(pkg)}
+                  className="text-[11.5px] shrink-0"
+                >
+                  一键 Winget 安装
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {wingetError && (
+        <p className="text-[color:var(--text-quiet)] text-[12px] px-3 py-1">
+          {wingetError}
+        </p>
+      )}
+
       {/* The list is its own scroll container so a long catalogue does not push
           the header off screen while the pane stays where it is. */}
       <div
@@ -1254,7 +1563,7 @@ function SoftwareGrid({
         {visible.length === 0 ? (
           <p className="text-[color:var(--text-quiet)] px-3 py-6 text-center text-[12.5px]">
             {needle
-              ? `没有匹配「${query.trim()}」的软件`
+              ? `内置清单中没有匹配「${query.trim()}」的软件，建议点击上方按钮进行 Winget 全网秒查`
               : "这一类暂时没有软件"}
           </p>
         ) : (
@@ -1262,14 +1571,6 @@ function SoftwareGrid({
             const id = softwareKey(item.id);
             const descriptor = categoryOf.get(item.id);
             const knowledge = knowledgeById.get(item.id) ?? null;
-            // Every software row carries its own resolved Setup Action, exactly
-            // like a resource card does — the row is never a dead entry that
-            // only becomes actionable after you open its detail.
-            //
-            // The action renders as a SIBLING of the row, not inside it: the row
-            // root is a whole-row <button>, and nesting a control there is the
-            // DOM bug tools/hydration-sweep.mjs asserts against. It also keeps
-            // the row's own accessible name (and innerText) untouched.
             const resolved = resolveSetupAction({
               type: "software",
               id: item.id,
@@ -1283,8 +1584,6 @@ function SoftwareGrid({
                     item={item}
                     catalogue={catalogue}
                     knowledge={knowledge}
-                    // A program this tool cannot install is never "可选": offering it
-                    // as a recommendation would promise an action that does not exist.
                     recommendation={
                       descriptor && !descriptor.installable
                         ? "detectOnly"
@@ -1307,6 +1606,16 @@ function SoftwareGrid({
           })
         )}
       </div>
+
+      {activeConsole && (
+        <ExecutionConsoleModal
+          isOpen={true}
+          title={activeConsole.title}
+          command={activeConsole.command}
+          args={activeConsole.args}
+          onClose={() => setActiveConsole(null)}
+        />
+      )}
     </div>
   );
 }
@@ -2901,9 +3210,8 @@ function StyleQuickDetailModal({
   );
 }
 
-/** The 关于 section: version facts, and what the tool does not do. */
+/** The 关于 section: version facts, open source links, and local-first guarantee. */
 function AboutSection() {
-  const entitlements = useApp((s) => s.entitlements);
   const status = useApp((s) => s.status);
   const loadStatus = useApp((s) => s.loadStatus);
 
@@ -2911,69 +3219,98 @@ function AboutSection() {
     if (!status) void loadStatus();
   }, [status, loadStatus]);
 
-  const isPro = entitlements?.state === "active";
-
   return (
     <div className="flex flex-col gap-8">
       <header className="rise">
-        <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
+        <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[color:var(--status-accent)] bg-[color:var(--surface-sunken)] mb-2">
+          ABOUT // 关于项目
+        </div>
+        <h1 className="text-[color:var(--text-strong)] text-[22px] font-bold tracking-[-0.02em]">
           Setup Center
         </h1>
-        <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed">
-          Windows 环境初始化助手。检测系统环境、说明缺什么，并（专业版）自动装好。
+        <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-xl">
+          面向开发者与初学者的 Creative & Development Bootstrap Hub。
+          让「找到东西 → 看懂它 → 决定用它 → 开始使用」真正形成无缝闭环。
         </p>
-        {status && (
-          <p className="text-[color:var(--text-quiet)] mt-1.5 text-[12px]">
-            版本 {status.appVersion}
-          </p>
-        )}
+        <p className="text-[color:var(--text-quiet)] mt-1.5 text-[12px] font-mono">
+          版本 v0.2.0 · 核心引擎就绪
+        </p>
       </header>
 
+      {/* Open Source & Community */}
       <section className="glass rose rise rounded-[12px] p-5">
-        <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
-          {isPro ? "你已拥有专业版" : "购买专业版"}
+        <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium mb-1">
+          开源与社区交流
         </div>
-        <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
-          {isPro
-            ? "自动安装与配置功能已解锁，无需重复购买。"
-            : "解锁自动安装、环境初始化与配置功能。激活码与本机绑定，一对一只需购买一次。"}
+        <p className="text-[color:var(--text-tertiary)] text-[12.5px] leading-relaxed mb-4">
+          Setup Center 完全免费、开源、本地优先。欢迎在 GitHub 上提出 Issue 或参与贡献。
         </p>
-        {!isPro && (
-          <div className="mt-3.5">
-            <ContactRows />
+        <div className="flex flex-col gap-3 text-[12.5px]">
+          <div className="flex items-center justify-between">
+            <span className="text-[color:var(--text-secondary)]">主仓库 (GitHub)</span>
+            <a
+              href="https://github.com/arukas0623-ai/setup-center"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[color:var(--status-accent)] hover:underline font-mono"
+            >
+              github.com/arukas0623-ai/setup-center ↗
+            </a>
           </div>
-        )}
+          <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
+            <span className="text-[color:var(--text-secondary)]">Setup Vault 远程内容仓库</span>
+            <a
+              href="https://github.com/arukas0623-ai/setup-center-vault"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[color:var(--status-accent)] hover:underline font-mono"
+            >
+              github.com/arukas0623-ai/setup-center-vault ↗
+            </a>
+          </div>
+          <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
+            <span className="text-[color:var(--text-secondary)]">开发者技术交流与反馈</span>
+            <span className="text-[color:var(--text-primary)] font-mono">
+              QQ: 1700142491 · 微信: Arukas_0623
+            </span>
+          </div>
+        </div>
       </section>
 
+      {/* Engine capabilities */}
       <section className="rise">
-        <SectionLabel>当前版本</SectionLabel>
+        <SectionLabel>系统架构与核心组件</SectionLabel>
         <div className="mt-3 flex flex-col gap-1.5 text-[12.5px]">
           <DetailRow
-            label="授权状态"
-            value={entitlements ? entitlements.tierLabel : "读取中…"}
-            confidence={isPro ? "ok" : undefined}
-          />
-          <DetailRow
-            label="环境检测"
-            value="可用"
+            label="许可协议"
+            value="MIT License (完全免费开源)"
             confidence="ok"
           />
           <DetailRow
-            label="软件推荐"
-            value="可用"
+            label="环境感知"
+            value="深度系统检测与硬件侦测已就绪"
             confidence="ok"
           />
           <DetailRow
-            label="自动安装"
-            value={entitlements?.canInstall ? "可用" : "需专业版"}
-            confidence={entitlements?.canInstall ? "ok" : "skipped"}
+            label="软件生态"
+            value="内置 36 款精选软件 + Winget 官方源实时检索"
+            confidence="ok"
+          />
+          <DetailRow
+            label="开发资源"
+            value="386+ 精选组件库、工程模板与开发资源"
+            confidence="ok"
+          />
+          <DetailRow
+            label="体验系统"
+            value="Experience System V2 (20 套原生体验)"
+            confidence="ok"
           />
         </div>
       </section>
 
       <p className="text-[color:var(--text-quiet)] rise text-[12px] leading-relaxed">
-        本工具完全离线运行，不联网校验授权、不收集账号信息、
-        不上传任何检测结果。所有授权信息仅保存在本机。
+        本工具坚持 Local-First 本地优先理念，绝不上传任何硬件信息或个人隐私。全部配置与脚手架均在本地安全执行。
       </p>
     </div>
   );

@@ -55,17 +55,17 @@ const WIZARD_TITLES: Record<string, string> = {
 };
 
 const SECTION_TITLES: Record<Section, string> = {
-  overview: "概览",
-  software: "软件",
+  overview: "开发起步",
+  goals: "目标向导",
+  software: "软件清单",
+  repos: "GitHub 项目",
   resources: "开发资源",
-  config: "配置",
-  history: "历史",
-  plugins: "插件",
-  // Matches the sidebar's label exactly. These two name the same page, and a
-  // title bar saying 版本 above a sidebar item saying 版本与授权 is the kind of
-  // disagreement that makes a user think they are on the wrong screen.
-  license: "版本与授权",
-  style: "风格",
+  library: "我的库",
+  style: "视觉风格",
+  config: "环境配置",
+  history: "历史记录",
+  plugins: "插件增强",
+  license: "版本与更新",
   about: "关于",
 };
 

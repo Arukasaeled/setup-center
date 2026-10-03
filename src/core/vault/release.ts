@@ -34,7 +34,7 @@ export interface ReleaseStatusSnapshot {
 }
 
 const STORAGE_KEY = "setup-center.release-status.v1";
-const CURRENT_APP_VERSION = "0.1.4";
+const CURRENT_APP_VERSION = "0.2.0";
 
 class ReleaseManager {
   private status: ReleaseStatusSnapshot = {

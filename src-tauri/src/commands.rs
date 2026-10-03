@@ -13,7 +13,7 @@ use crate::model::*;
 use crate::modules::{
     bootstrap::{self, run as bootstrap_run},
     catalog, capability, config, detect, executor, install, install_log, inventory, knowledge,
-    license, machine, plugins, verify,
+    license, machine, plugins, system_ops, verify,
 };
 use crate::state::AppState;
 
@@ -1844,6 +1844,54 @@ pub async fn run_plugin(
             ..Default::default()
         },
     ))
+}
+
+/// Runs a native command with arguments and working directory, returning captured stdout/stderr.
+#[tauri::command]
+pub async fn execute_native_command(
+    program: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+) -> Result<system_ops::CommandOutput, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        system_ops::run_command(&program, &args, cwd.as_deref())
+    })
+    .await
+    .map_err(|e| format!("命令执行异常: {e}"))?
+}
+
+/// Searches winget for packages matching query.
+#[tauri::command]
+pub async fn winget_search(query: String) -> Result<Vec<system_ops::WingetSearchResultItem>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        system_ops::search_winget(&query)
+    })
+    .await
+    .map_err(|e| format!("winget 检索异常: {e}"))?
+}
+
+/// Reveals a file or directory in Windows Explorer.
+#[tauri::command]
+pub fn reveal_in_explorer(path: String) -> Result<(), String> {
+    system_ops::reveal_path(&path)
+}
+
+/// Detects available code editors on the system.
+#[tauri::command]
+pub fn detect_editors() -> Vec<system_ops::DetectedEditor> {
+    system_ops::probe_editors()
+}
+
+/// Opens a path in the specified editor.
+#[tauri::command]
+pub fn open_in_editor(editor: String, path: String) -> Result<(), String> {
+    system_ops::launch_in_editor(&editor, &path)
+}
+
+/// Returns the canonical app version from Cargo manifest.
+#[tauri::command]
+pub fn app_canonical_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 impl From<&knowledge::ConceptKnowledge> for ConceptView {
