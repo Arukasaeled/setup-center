@@ -49,7 +49,7 @@ export function RepoDetailModal({
   const repoUrl = origin?.repository || origin?.url || `https://github.com/${item.title}`;
 
   const handleToggleStar = () => {
-    const next = Bookmarks.toggle(item.id, item.title);
+    const next = Bookmarks.toggle(item.id, item.title, item);
     setIsBookmarked(next);
     onNotice?.(next ? "已加入收藏清单" : "已从收藏中移除");
   };

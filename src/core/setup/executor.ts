@@ -107,6 +107,7 @@ export async function executeSetupAction(
       return { ok: false, message: "剪贴板写入失败，请检查浏览器权限" };
     }
 
+    case "copy-command":
     case "command": {
       const cmd = action.payload;
       const ok = await copyToClipboard(cmd);
@@ -126,6 +127,29 @@ export async function executeSetupAction(
         };
       }
       return { ok: false, message: "复制命令失败" };
+    }
+
+    case "native-command": {
+      const cmd = action.payload;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("setup:execute-command", {
+            detail: { command: cmd, title: targetName },
+          }),
+        );
+      }
+      TransferHistory.record({
+        type: "command",
+        title: "调度执行原生命令",
+        targetId,
+        targetName,
+        status: "info",
+        summary: `已调度原生命令: ${cmd}`,
+      });
+      return {
+        ok: true,
+        message: action.successMessage || `正在执行原生命令: ${cmd}`,
+      };
     }
 
     case "clone": {
@@ -170,6 +194,21 @@ export async function executeSetupAction(
       } catch (err) {
         return { ok: false, message: `切换风格失败: ${String(err)}` };
       }
+    }
+
+    case "preview": {
+      // Dispatches custom DOM event to open preview workspace without applying the style
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("setup:open-preview", {
+            detail: { styleId: action.payload, styleName: targetName },
+          }),
+        );
+      }
+      return {
+        ok: true,
+        message: action.successMessage || `已调起「${targetName}」完整体验样张预览`,
+      };
     }
 
     case "open": {
@@ -318,8 +357,7 @@ export async function executeSetupAction(
         // explanation (ManualPanel), so land there rather than reporting a
         // failure the user cannot act on.
         if (!store.entitlements?.canInstall) {
-          store.closeDashboard();
-          store.goTo("software");
+          store.navigate({ surface: "wizard", screen: "software" });
           TransferHistory.record({
             type: "install",
             title: "查看软件安装方式",
@@ -333,8 +371,7 @@ export async function executeSetupAction(
 
         await store.buildPlanFor([softwareId]);
         if (useApp.getState().plan) {
-          store.closeDashboard();
-          store.goTo("install");
+          store.navigate({ surface: "wizard", screen: "install" });
           TransferHistory.record({
             type: "install",
             title: "载入软件安装方案",
@@ -346,8 +383,7 @@ export async function executeSetupAction(
           return { ok: true, message: `已载入 ${targetName} 的安装方案` };
         }
 
-        store.closeDashboard();
-        store.goTo("software");
+        store.navigate({ surface: "wizard", screen: "software" });
         return { ok: false, message: "未能载入安装方案，请手动选择" };
       }
 

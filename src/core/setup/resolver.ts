@@ -24,6 +24,7 @@ import type {
   PackageManager,
   PrerequisitesStatus,
   SetupAction,
+  SetupCollection,
   SetupPrerequisite,
   SetupResolutionResult,
 } from "./types";
@@ -155,6 +156,7 @@ export function resolveSetupAction(
     | { type: "style"; data: SetupStyle }
     | { type: "template"; data: VaultTemplateItem }
     | { type: "pattern"; data: VaultPatternItem }
+    | { type: "collection"; data: SetupCollection }
     | { type: "software"; id: SoftwareId; name?: string; installed?: boolean }
     | { type: "generic"; id: string; name: string; category?: string; url?: string; snippet?: string },
   inventory?: SoftwareInventory | null,
@@ -233,6 +235,13 @@ export function resolveSetupAction(
     // than hand-written in the gallery, so the gallery cannot drift from the
     // contract (brief §27).
     const secondaryActions: SetupAction[] = [
+      {
+        id: `style-preview-${s.id}`,
+        type: "preview",
+        label: "预览完整样张",
+        description: "打开独立画板预览该体验，不改变当前全局样式",
+        payload: s.id,
+      },
       {
         id: `style-tune-${s.id}`,
         type: "customize",
@@ -520,7 +529,40 @@ export function resolveSetupAction(
     };
   }
 
-  // 6. Generic fallback
+  // 6. Setup Collection / Starter Pack
+  if (item.type === "collection") {
+    const col = item.data;
+    const primaryAction: SetupAction = {
+      id: `collection-scaffold-${col.id}`,
+      type: "scaffold",
+      label: `初始化套件 (${col.items.length} 项)`,
+      description: col.description,
+      payload: col.id,
+      isPrimary: true,
+      successMessage: `已准备好「${col.title}」启动套件`,
+    };
+    const secondaryActions: SetupAction[] = [
+      {
+        id: `collection-copy-${col.id}`,
+        type: "copy",
+        label: "复制套件清单",
+        description: "复制该 Starter Pack 包含的软件与资源清单",
+        payload: col.items.map((i) => `- [${i.type}] ${i.name} (${i.id})`).join("\n"),
+        successMessage: `已复制「${col.title}」清单`,
+      },
+    ];
+    return {
+      itemId: col.id,
+      name: col.title,
+      category: col.category,
+      itemType: "collection",
+      primaryAction,
+      secondaryActions,
+      prerequisites: { satisfied: true, missingSoftwareIds: [], missingNames: [] },
+    };
+  }
+
+  // 7. Generic fallback
   const g = item;
   return {
     itemId: g.id,

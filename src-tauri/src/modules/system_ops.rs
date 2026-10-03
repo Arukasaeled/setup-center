@@ -647,6 +647,57 @@ pub fn launch_in_editor(editor: &str, target_path: &str, executable_path: Option
     Ok(())
 }
 
+/// Resolves the user's authentic Downloads directory.
+pub fn get_downloads_dir() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let p = Path::new(&profile).join("Downloads");
+            if p.exists() {
+                return Ok(p.to_string_lossy().to_string());
+            }
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let p = Path::new(&home).join("Downloads");
+        if p.exists() {
+            return Ok(p.to_string_lossy().to_string());
+        }
+    }
+    Ok(std::env::temp_dir().to_string_lossy().to_string())
+}
+
+/// Verifies a file's SHA256 checksum against an expected hash string.
+pub fn verify_file_sha256(path: &str, expected_hash: &str) -> Result<bool, String> {
+    let clean_expected = expected_hash.trim().to_lowercase().replace(" ", "").replace("-", "");
+    if clean_expected.is_empty() {
+        return Ok(true);
+    }
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("certutil");
+        cmd.args(["-hashfile", path, "SHA256"]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let out = cmd.output().map_err(|e| format!("certutil 校验失败: {e}"))?;
+        let text = crate::modules::detect::decode_console_output(&out.stdout);
+        for line in text.lines() {
+            let clean_line = line.trim().to_lowercase().replace(" ", "").replace("-", "");
+            if !clean_line.is_empty() && clean_line == clean_expected {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("sha256sum");
+        cmd.arg(path);
+        let out = cmd.output().map_err(|e| format!("sha256sum 校验失败: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        Ok(text.to_lowercase().contains(&clean_expected))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

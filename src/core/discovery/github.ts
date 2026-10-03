@@ -314,7 +314,7 @@ export function mergeRepoWithLiveMetadata(
       license:
         live.origin?.license && live.origin.license !== "未知"
           ? live.origin.license
-          : curated.origin?.license || "开源",
+          : curated.origin?.license || "未知",
       language: live.origin?.language || curated.origin?.language,
     },
     health: live.health || curated.health,

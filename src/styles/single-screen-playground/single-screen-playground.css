@@ -1,0 +1,67 @@
+/* ==========================================================================
+   Single-Screen Playground — Stylesheet
+   ========================================================================== */
+
+html[data-style="single-screen-playground"] {
+  background-color: var(--style-bg, #e8e6df);
+  color: var(--text-primary, #1c1917);
+}
+
+/* 100vh Dense Rack Enclosure */
+html[data-style="single-screen-playground"] [data-shell-root] {
+  background-color: #e8e6df;
+  box-shadow: inset 0 0 0 2px #78716c, inset 0 0 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Machine Chassis Bevel Panels */
+html[data-style="single-screen-playground"] [data-software-card],
+html[data-style="single-screen-playground"] [data-resource-card],
+html[data-style="single-screen-playground"] [data-style-card],
+html[data-style="single-screen-playground"] [data-experience-card] {
+  border-radius: 4px !important;
+  background-color: #dedbd2 !important;
+  border: 1.5px solid #a8a29e !important;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  transition: transform 0.1s ease, box-shadow 0.1s ease !important;
+}
+
+html[data-style="single-screen-playground"] [data-software-card]:active,
+html[data-style="single-screen-playground"] [data-resource-card]:active {
+  transform: translateY(1px) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Hardware Tabs Navigation */
+html[data-style="single-screen-playground"] [data-nav] {
+  background-color: #d6d3c9 !important;
+  border-bottom: 2px solid #78716c !important;
+  padding: 0.5rem 1rem !important;
+}
+
+/* Tactile Orange Buttons with Mechanical Click */
+html[data-style="single-screen-playground"] button {
+  border-radius: 4px !important;
+  font-family: ui-monospace, Consolas, monospace !important;
+  font-weight: 700 !important;
+  border: 1.5px solid #44403c !important;
+  box-shadow: 0 2px 0 #44403c !important;
+}
+
+html[data-style="single-screen-playground"] button:active {
+  transform: translateY(2px) !important;
+  box-shadow: 0 0 0 #44403c !important;
+}
+
+html[data-style="single-screen-playground"] button[data-variant="primary"],
+html[data-style="single-screen-playground"] .btn-primary {
+  background-color: #ff5722 !important;
+  color: #ffffff !important;
+}
+
+html[data-style="single-screen-playground"] button[data-variant="primary"]:hover,
+html[data-style="single-screen-playground"] .btn-primary:hover {
+  background-color: #e64a19 !important;
+}

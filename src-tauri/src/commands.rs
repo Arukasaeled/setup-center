@@ -1932,6 +1932,18 @@ pub fn app_canonical_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Returns the user's authentic Downloads directory.
+#[tauri::command]
+pub fn get_downloads_dir() -> Result<String, String> {
+    system_ops::get_downloads_dir()
+}
+
+/// Verifies a downloaded file's SHA256 against an expected hash.
+#[tauri::command]
+pub fn verify_file_sha256(path: String, expected_sha256: String) -> Result<bool, String> {
+    system_ops::verify_file_sha256(&path, &expected_sha256)
+}
+
 impl From<&knowledge::ConceptKnowledge> for ConceptView {
     fn from(c: &knowledge::ConceptKnowledge) -> Self {
         Self {

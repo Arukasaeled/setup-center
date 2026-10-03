@@ -473,11 +473,30 @@ function overriddenThemeVariables(overrides: TokenOverrides): Set<string> {
   return written;
 }
 
+export const FAMILY_LABEL: Record<string, string> = {
+  all: "全部体验",
+  editorial: "Editorial / 版式社论",
+  spatial: "Spatial / 星图空间",
+  hardware: "Hardware / 硬件乐器",
+  cinematic: "Cinematic / 宽幅电影",
+  cyber: "Cyber & Retro / 桌面视窗",
+  terminal: "Terminal / 科学坐标",
+  minimal: "Minimal & Swiss / 静谧画廊",
+  playful: "Playful / 先锋海报",
+};
+
 /** Attributes the runtime writes so CSS and React can both read the grammar. */
 export const RUNTIME_ATTRIBUTES = [
   "data-experience",
   "data-style",
   "data-tier",
+  "data-family",
+  "data-scene",
+  "data-content-flow",
+  "data-nav-flow",
+  "data-transition",
+  "data-hero-mode",
+  "data-layering",
   "data-shell",
   "data-nav",
   "data-detail",
@@ -685,6 +704,21 @@ export function applyExperience(
   root.setAttribute("data-density", tokens.density);
   root.setAttribute("data-motion", tokens.motion);
 
+  if (profile.family) root.setAttribute("data-family", profile.family);
+  else root.removeAttribute("data-family");
+  if (profile.scene) root.setAttribute("data-scene", profile.scene);
+  else root.removeAttribute("data-scene");
+  if (profile.contentFlow) root.setAttribute("data-content-flow", profile.contentFlow);
+  else root.removeAttribute("data-content-flow");
+  if (profile.navigationFlow) root.setAttribute("data-nav-flow", profile.navigationFlow);
+  else root.removeAttribute("data-nav-flow");
+  if (profile.pageTransition) root.setAttribute("data-transition", profile.pageTransition);
+  else root.removeAttribute("data-transition");
+  if (profile.heroMode) root.setAttribute("data-hero-mode", profile.heroMode);
+  else root.removeAttribute("data-hero-mode");
+  if (profile.layering) root.setAttribute("data-layering", profile.layering);
+  else root.removeAttribute("data-layering");
+
   return { id, profile, tokens, shadowCss };
 }
 
@@ -711,6 +745,13 @@ function attr(name: string, fallback: string): string {
  */
 export function readRuntimeGrammar() {
   return {
+    family: attr("data-family", ""),
+    scene: attr("data-scene", ""),
+    contentFlow: attr("data-content-flow", ""),
+    navigationFlow: attr("data-nav-flow", ""),
+    pageTransition: attr("data-transition", ""),
+    heroMode: attr("data-hero-mode", ""),
+    layering: attr("data-layering", ""),
     shell: attr("data-shell", DEFAULT_EXPERIENCE.shell),
     navigation: attr("data-nav", DEFAULT_EXPERIENCE.navigation),
     detail: attr("data-detail", DEFAULT_EXPERIENCE.detail),

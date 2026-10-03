@@ -40,7 +40,7 @@ export interface ExperiencePreviewWorkspaceProps {
 }
 
 type WorkspaceTab = "preview" | "grammar" | "tokens" | "principles";
-type PreviewMode = "specimen" | "software" | "resources";
+type PreviewMode = "specimen" | "overview" | "collection" | "detail";
 type PreviewZoom = "fit" | "75" | "100";
 
 const GRAMMAR_DOCS: Record<string, { label: string; desc: string }> = {
@@ -111,6 +111,8 @@ export function ExperiencePreviewWorkspace({
   const [previewMode, setPreviewMode] = useState<PreviewMode>("specimen");
   const [zoom, setZoom] = useState<PreviewZoom>("100");
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [testMotionTrigger, setTestMotionTrigger] = useState(0);
 
   const initialScrollTopRef = useRef<number>(0);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -186,6 +188,18 @@ export function ExperiencePreviewWorkspace({
         setCopiedHex(hex);
         onNotice(`已复制 ${label}: ${hex}`);
         setTimeout(() => setCopiedHex((curr) => (curr === hex ? null : curr)), 2000);
+      });
+    }
+  };
+
+  // Export for AI Agent helper
+  const handleCopyAgentPrompt = () => {
+    const prompt = generateAgentPrompt(style);
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(prompt).then(() => {
+        setCopiedPrompt(true);
+        onNotice(`已复制「${style.name}」的 AI 设计师 Prompt！`);
+        setTimeout(() => setCopiedPrompt(false), 2500);
       });
     }
   };
@@ -316,8 +330,17 @@ export function ExperiencePreviewWorkspace({
             })}
           </nav>
 
-          {/* Right: Pagination & Close Button */}
+          {/* Right: Export AI Prompt, Pagination & Close Button */}
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCopyAgentPrompt}
+              title="导出 AI 设计师 Prompt，可直接发给 AI 助手还原此风格"
+              className="flex h-8 items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 text-[11.5px] font-bold text-amber-400 hover:bg-amber-500 hover:text-black transition-all cursor-pointer mr-1"
+            >
+              <span>⌗</span>
+              <span>{copiedPrompt ? "已复制 Prompt" : "导出 AI Prompt"}</span>
+            </button>
             {onPrev && (
               <button
                 type="button"
@@ -381,8 +404,9 @@ export function ExperiencePreviewWorkspace({
                   <div className="flex rounded-md bg-zinc-950 p-0.5 border border-zinc-800">
                     {[
                       { id: "specimen", label: "体验样张 (综合模拟)" },
-                      { id: "software", label: "实际页面 · 软件列表" },
-                      { id: "resources", label: "实际页面 · 开发资源" },
+                      { id: "overview", label: "场景 · 全局概览" },
+                      { id: "collection", label: "场景 · 网格资产" },
+                      { id: "detail", label: "场景 · 详情展开" },
                     ].map((m) => (
                       <button
                         key={m.id}
@@ -391,7 +415,7 @@ export function ExperiencePreviewWorkspace({
                         className={clsx(
                           "rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors cursor-pointer",
                           previewMode === m.id
-                            ? "bg-zinc-800 text-white"
+                            ? "bg-zinc-800 text-white font-bold"
                             : "text-zinc-400 hover:text-zinc-200",
                         )}
                       >
@@ -467,12 +491,16 @@ export function ExperiencePreviewWorkspace({
                     <ExperienceSpecimen style={style} scale="full" className="rounded-lg shadow-lg" />
                   )}
 
-                  {previewMode === "software" && (
-                    <SoftwarePageMock style={style} vars={vars} profile={profile} />
+                  {previewMode === "overview" && (
+                    <OverviewSceneMock style={style} vars={vars} profile={profile} />
                   )}
 
-                  {previewMode === "resources" && (
-                    <ResourcePageMock style={style} vars={vars} profile={profile} />
+                  {previewMode === "collection" && (
+                    <CollectionSceneMock style={style} vars={vars} profile={profile} />
+                  )}
+
+                  {previewMode === "detail" && (
+                    <DetailSceneMock style={style} vars={vars} profile={profile} />
                   )}
                 </div>
               </div>
@@ -520,6 +548,38 @@ export function ExperiencePreviewWorkspace({
                 <p className="text-[12px] text-zinc-400 leading-relaxed">
                   Setup Center 采用严格的版式语法契约驱动界面渲染。视觉体验不仅改变色值，还定义组件几何轮廓、版面构图与动画节奏。
                 </p>
+              </div>
+
+              {/* 4-Layer Anatomy Breakdown */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[12.5px] font-bold text-white uppercase tracking-wider font-mono">
+                    体验解构矩阵 // ANATOMY BREAKDOWN
+                  </h4>
+                  <span className="text-[11px] text-zinc-400 font-mono">四维版式骨骼与视觉场景</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                    <span className="text-[10.5px] font-mono text-zinc-500 block">01 / SHELL 外壳构架</span>
+                    <span className="text-[13px] font-bold text-white block mt-1">{profile.shell ?? "sidebar"}</span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">{SHELL_LABEL[profile.shell ?? "sidebar"]}</span>
+                  </div>
+                  <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                    <span className="text-[10.5px] font-mono text-zinc-500 block">02 / NAV 导航流向</span>
+                    <span className="text-[13px] font-bold text-white block mt-1">{profile.navigationFlow ?? profile.navigation ?? "sidebar"}</span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">{NAV_LABEL[profile.navigation ?? "sidebar"]}</span>
+                  </div>
+                  <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                    <span className="text-[10.5px] font-mono text-zinc-500 block">03 / HERO 主焦点视界</span>
+                    <span className="text-[13px] font-bold text-amber-400 block mt-1">{profile.heroMode ?? "standard"}</span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">主视觉模式</span>
+                  </div>
+                  <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                    <span className="text-[10.5px] font-mono text-zinc-500 block">04 / LAYERING 分层深度</span>
+                    <span className="text-[13px] font-bold text-cyan-400 block mt-1">{profile.layering ?? "single-plane"}</span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">三维景深与图层堆叠</span>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -690,6 +750,47 @@ export function ExperiencePreviewWorkspace({
                   </div>
                 </div>
               )}
+
+              {/* Interactive Motion Principles */}
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-[12px] font-bold uppercase tracking-wider text-zinc-400">
+                      动效律动原则与曲线演练 (Motion Principles)
+                    </h3>
+                    <p className="text-[12px] text-zinc-400 mt-0.5">
+                      当前声明动效模式：{MOTION_LABEL[profile.motion ?? "normal"]} ({profile.motion ?? "normal"}) · 过渡语法：{profile.pageTransition ?? "subtle-fade"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTestMotionTrigger((t) => t + 1)}
+                    className="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[12px] font-medium transition-colors cursor-pointer"
+                  >
+                    ▶ 触发动效演练
+                  </button>
+                </div>
+                <div className="h-24 rounded-lg border border-zinc-800 bg-zinc-950 flex items-center justify-center overflow-hidden">
+                  <div
+                    key={testMotionTrigger}
+                    className={clsx(
+                      "px-6 py-3 rounded-lg border border-white/20 text-white font-bold text-[13px] shadow-lg transition-transform",
+                      profile.motion === "expressive"
+                        ? "animate-[bounce_0.6s_ease-in-out]"
+                        : profile.motion === "reduced"
+                          ? "animate-[fadeIn_0.5s_ease-out]"
+                          : "animate-[pulse_0.4s_ease-in-out]",
+                    )}
+                    style={{
+                      background: vars["--status-accent"] ?? "#6ee7d0",
+                      color: vars["--accent-on"] ?? "#000",
+                      borderRadius: vars["--radius-control"] ?? "6px",
+                    }}
+                  >
+                    {style.name} · {profile.motion ?? "normal"} 动效节拍
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -749,8 +850,189 @@ export function ExperiencePreviewWorkspace({
   return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
 
-/** Realistic Software Section Mock rendered under target style tokens */
-function SoftwarePageMock({
+/** Generates a complete AI prompt instructing an agent to replicate this exact style */
+function generateAgentPrompt(style: SetupStyle): string {
+  const profile = resolveExperienceProfile(style);
+  const tokens = resolveTokens(style);
+  return `# Setup Center Design System Specification: ${style.name} (${style.id})
+
+## 1. System Identity & Philosophy
+- **Name**: ${style.name}
+- **Subtitle**: ${style.subtitle}
+- **Design Tier**: ${profile.tier} (${TIER_LABEL[profile.tier]})
+- **Family**: ${profile.family ?? "standard"}
+- **Inspiration**: ${style.inspiration}
+- **Description**: ${style.description}
+
+## 2. Visual Anatomy Breakdown
+- **Scene Grammar**: ${profile.scene ?? "standard"}
+- **Shell Layout**: ${profile.shell ?? "sidebar"}
+- **Navigation Flow**: ${profile.navigationFlow ?? profile.navigation ?? "sidebar"}
+- **Hero Mode**: ${profile.heroMode ?? "standard"}
+- **Layering Depth**: ${profile.layering ?? "single-plane"}
+- **Card Language**: ${profile.card ?? "panel"}
+- **Composition Rhythm**: ${profile.composition ?? "solid-grid"}
+- **Page Transition**: ${profile.pageTransition ?? "subtle-fade"}
+- **Information Density**: ${tokens.density}
+- **Motion Dynamics**: ${tokens.motion}
+
+## 3. Semantic Palette (Tokens)
+- Base Background: ${style.palette.baseBg}
+- Panel Surface: ${style.palette.surface}
+- Card Border: ${style.palette.cardBorder}
+- Accent Primary: ${style.palette.accent}
+- Accent Secondary: ${style.palette.accentSecondary ?? "none"}
+- Primary Text: ${style.palette.text}
+
+## 4. Geometric & Spatial Metrics
+- Panel Border Radius: ${tokens.panelRadius}
+- Control Border Radius: ${tokens.controlRadius}
+- Border Width: ${tokens.borderWidth}
+- Shadow: ${tokens.shadow.offsetX} ${tokens.shadow.offsetY} ${tokens.shadow.blur} ${tokens.shadow.spread} ${tokens.shadow.color}
+- Heading Scale Multiplier: ${tokens.headingScale}
+- Body Scale Multiplier: ${tokens.bodyScale}
+
+## 5. Core Design Principles
+${style.designPrinciples ? style.designPrinciples.map((p) => `- ${p}`).join("\n") : "- None"}
+
+## 6. Invariant Locks
+${Object.entries(style.experience?.locked ?? {}).map(([k, v]) => `- **${k}**: ${v}`).join("\n") || "- None"}
+
+## 7. Instructions for AI Coding Agent
+When designing or implementing pages and components under this aesthetic:
+1. Always apply the semantic variables above (--radius-panel, --border-width, --status-accent, --surface-raised).
+2. The UI must pass the Silhouette Test: even in grayscale, the unique outline geometry (${tokens.panelRadius}, ${profile.card}, ${profile.composition}) must distinctly convey the character of ${style.name}.
+3. Respect all invariant lock constraints without exception.`;
+}
+
+/** Realistic Overview Section Mock rendered under target style tokens */
+function OverviewSceneMock({
+  style,
+  vars,
+  profile,
+}: {
+  style: SetupStyle;
+  vars: Record<string, string>;
+  profile: ReturnType<typeof resolveExperienceProfile>;
+}) {
+  const surface = vars["--surface-raised"];
+  const accent = vars["--status-accent"];
+  const radiusPanel = vars["--radius-panel"];
+  const radiusControl = vars["--radius-control"];
+  const borderWidth = vars["--border-width"];
+
+  return (
+    <div
+      className="flex flex-col gap-5 p-6 rounded-xl border"
+      style={{
+        background: "var(--surface-inset, #0e1115)",
+        borderColor: "var(--line-default, rgba(255,255,255,0.12))",
+        borderRadius: radiusPanel,
+      }}
+    >
+      {/* Hero Banner based on HeroMode */}
+      <div
+        className="p-6 border rounded-lg flex flex-col justify-between relative overflow-hidden"
+        style={{
+          background: surface,
+          borderRadius: radiusPanel,
+          borderWidth,
+          borderColor: "var(--line-subtle)",
+          boxShadow: "var(--shadow-hard)",
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <span
+            className="text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 border"
+            style={{
+              borderRadius: radiusControl,
+              background: "var(--surface-sunken, #080a0d)",
+              color: accent,
+              borderColor: accent,
+            }}
+          >
+            HERO MODE // {profile.heroMode ?? "standard"}
+          </span>
+          <span className="font-mono text-[11px]" style={{ color: "var(--text-quiet)" }}>
+            SCENE: {profile.scene ?? "standard"}
+          </span>
+        </div>
+        <h3
+          className="text-[22px] font-black mt-3 tracking-tight"
+          style={{
+            color: "var(--text-strong)",
+            fontFamily: style.experience?.typography?.headingFamily,
+          }}
+        >
+          Setup Everything Needed to Build
+        </h3>
+        <p className="text-[13px] mt-1 max-w-xl leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+          {style.subtitle} · 沉淀构建一切所需的开发工具、视觉风格、开发资源与工程规范。
+        </p>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        {[
+          { label: "就绪核心工具", val: "14 / 16", sub: "本机环境就绪度 88%" },
+          { label: "活跃设计语言", val: style.name, sub: `Tier: ${TIER_SHORT[profile.tier]}` },
+          { label: "已纳管知识资产", val: "386 项", sub: "全品类免梯快速直连" },
+        ].map((m, i) => (
+          <div
+            key={i}
+            className="p-4 border flex flex-col justify-between"
+            style={{
+              background: surface,
+              borderRadius: radiusPanel,
+              borderWidth,
+              borderColor: "var(--line-subtle)",
+              boxShadow: "var(--shadow-hard)",
+            }}
+          >
+            <span className="text-[11.5px]" style={{ color: "var(--text-tertiary)" }}>{m.label}</span>
+            <span className="text-[18px] font-bold mt-1" style={{ color: accent }}>{m.val}</span>
+            <span className="text-[11px] font-mono mt-1" style={{ color: "var(--text-quiet)" }}>{m.sub}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick Starter Packs */}
+      <div
+        className="p-4 border rounded-lg"
+        style={{
+          background: surface,
+          borderRadius: radiusPanel,
+          borderWidth,
+          borderColor: "var(--line-subtle)",
+        }}
+      >
+        <span className="text-[12px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--text-strong)" }}>
+          常用工作流快速起步 (Starter Packs)
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {["全栈 React + Node.js 极速套件", "AI 本地大模型开发套件", "Rust 极速系统编程工具包", "UI 设计工程师工作台"].map((pack, i) => (
+            <button
+              key={i}
+              type="button"
+              className="px-3 py-1.5 text-[12px] font-medium border transition-colors cursor-pointer"
+              style={{
+                borderRadius: radiusControl,
+                background: "var(--surface-sunken)",
+                borderColor: "var(--line-subtle)",
+                color: "var(--text-primary)",
+              }}
+            >
+              ⚡ {pack}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Realistic Collection Section Mock rendered under target style tokens */
+function CollectionSceneMock({
   style,
   vars,
   profile,
@@ -768,7 +1050,7 @@ function SoftwarePageMock({
   const mockSoftware = [
     { id: "vscode", name: "Visual Studio Code", cat: "编辑器", desc: "主流轻量级代码编辑器", installed: true, ver: "v1.96.2" },
     { id: "ollama", name: "Ollama", cat: "AI 运行时", desc: "本地大语言模型快速运行与服务化工具", installed: false, ver: "v0.5.7" },
-    { id: "zed", name: "Zed Editor", cat: "编辑器", desc: "Rust 开发的高性能现代代码编辑器", installed: false, ver: "v0.170.1" },
+    { id: "shadcn", name: "shadcn/ui", cat: "UI 组件库", desc: "可定制、无障碍的 React 组件原语", installed: true, ver: "v2.1.0" },
     { id: "docker", name: "Docker Desktop", cat: "容器化", desc: "企业级容器虚拟化开发平台", installed: true, ver: "v4.37.0" },
   ];
 
@@ -781,49 +1063,22 @@ function SoftwarePageMock({
         borderRadius: radiusPanel,
       }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: "var(--line-subtle)" }}>
         <div>
-          <h4 className="text-[18px] font-bold" style={{ color: "var(--text-strong)" }}>
-            开发软件仓库 · {style.name}
+          <h4 className="text-[17px] font-bold" style={{ color: "var(--text-strong)" }}>
+            网格资产集合 · {style.name}
           </h4>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            外壳: {profile.shell ?? "sidebar"} · 共检测到 4 款核心构建工具 · 2 款已安装就绪
+            版面构成: {COMPOSITION_LABEL[profile.composition ?? "solid-grid"]} · 卡片语言: {CARD_LABEL[profile.card ?? "panel"]}
           </p>
-        </div>
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 border"
-          style={{
-            background: surface,
-            borderRadius: radiusControl,
-            borderWidth,
-            borderColor: accent,
-          }}
-        >
-          <svg
-            className="w-3.5 h-3.5 opacity-60"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-          <span className="text-[12px]" style={{ color: "var(--text-quiet)" }}>搜索软件名或命令行…</span>
         </div>
       </div>
 
-      {/* Software List */}
-      <div className="flex flex-col gap-2.5">
-        {mockSoftware.map((sw) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        {mockSoftware.map((item) => (
           <div
-            key={sw.id}
-            className="flex items-center justify-between p-3.5 border transition-all"
+            key={item.id}
+            className="flex flex-col justify-between p-4 border transition-all"
             style={{
               background: surface,
               borderRadius: radiusPanel,
@@ -832,72 +1087,44 @@ function SoftwarePageMock({
               boxShadow: "var(--shadow-hard)",
             }}
           >
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center font-bold text-[14px] border"
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[14.5px]" style={{ color: "var(--text-primary)" }}>
+                  {item.name}
+                </span>
+                <span
+                  className="text-[10px] px-2 py-0.5 font-mono border"
+                  style={{
+                    borderRadius: radiusControl,
+                    background: "var(--surface-sunken)",
+                    borderColor: "var(--line-subtle)",
+                    color: "var(--text-quiet)",
+                  }}
+                >
+                  {item.cat}
+                </span>
+              </div>
+              <p className="text-[12px] mt-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                {item.desc}
+              </p>
+            </div>
+            <div className="flex items-center justify-between mt-4 pt-2.5 border-t" style={{ borderColor: "var(--line-subtle)" }}>
+              <span className="text-[11px] font-mono" style={{ color: "var(--text-quiet)" }}>
+                {item.ver}
+              </span>
+              <button
+                type="button"
+                className="px-2.5 py-1 text-[11px] font-bold border transition-transform cursor-pointer"
                 style={{
-                  background: "var(--surface-sunken, #080a0d)",
                   borderRadius: radiusControl,
-                  borderColor: "var(--line-subtle)",
-                  color: accent,
+                  background: accent,
+                  color: "var(--surface-base, #101317)",
+                  borderWidth,
+                  borderColor: accent,
                 }}
               >
-                {sw.name[0]}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-[14px]" style={{ color: "var(--text-primary)" }}>
-                    {sw.name}
-                  </span>
-                  <span
-                    className="text-[10.5px] px-1.5 py-0.2 font-mono border"
-                    style={{
-                      borderRadius: radiusControl,
-                      background: "var(--surface-sunken)",
-                      borderColor: "var(--line-subtle)",
-                      color: "var(--text-quiet)",
-                    }}
-                  >
-                    {sw.cat}
-                  </span>
-                  <span className="text-[11px] font-mono" style={{ color: "var(--text-quiet)" }}>
-                    {sw.ver}
-                  </span>
-                </div>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                  {sw.desc}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {sw.installed ? (
-                <span
-                  className="px-2.5 py-1 text-[11.5px] font-bold border"
-                  style={{
-                    borderRadius: radiusControl,
-                    background: "rgba(16, 185, 129, 0.15)",
-                    borderColor: "rgba(16, 185, 129, 0.3)",
-                    color: "var(--status-ok, #10b981)",
-                  }}
-                >
-                  ✓ 已就绪
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className="px-3 py-1 text-[12px] font-bold border transition-transform"
-                  style={{
-                    borderRadius: radiusControl,
-                    background: accent,
-                    color: "var(--surface-base, #101317)",
-                    borderWidth,
-                    borderColor: accent,
-                  }}
-                >
-                  一键安装
-                </button>
-              )}
+                {item.installed ? "查看配置" : "一键部署"}
+              </button>
             </div>
           </div>
         ))}
@@ -906,8 +1133,8 @@ function SoftwarePageMock({
   );
 }
 
-/** Realistic Resource Section Mock rendered under target style tokens */
-function ResourcePageMock({
+/** Realistic Detail Section Mock rendered under target style tokens */
+function DetailSceneMock({
   style,
   vars,
   profile,
@@ -922,77 +1149,79 @@ function ResourcePageMock({
   const radiusControl = vars["--radius-control"];
   const borderWidth = vars["--border-width"];
 
-  const mockResources = [
-    { title: "shadcn/ui", cat: "UI 组件库", desc: "可定制、无障碍的 React 组件原语", tag: "Tailwind" },
-    { title: "Hugging Face", cat: "模型社区", desc: "开源机器学习模型、数据集与演示空间", tag: "AI / ML" },
-    { title: "Bun Runtime", cat: "运行环境", desc: "超快速的全功能 JavaScript 运行时与包管理器", tag: "Tooling" },
-    { title: "Raycast Store", cat: "效率插件", desc: "可扩展的开发者极速启动器与脚本库", tag: "Workflow" },
-  ];
-
   return (
     <div
-      className="flex flex-col gap-4 p-5 rounded-xl border"
+      className="flex flex-col md:flex-row gap-4 p-5 rounded-xl border"
       style={{
         background: "var(--surface-inset, #0e1115)",
         borderColor: "var(--line-default, rgba(255,255,255,0.12))",
         borderRadius: radiusPanel,
       }}
     >
-      <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: "var(--line-subtle)" }}>
+      {/* Left Item Summary */}
+      <div
+        className="w-full md:w-1/3 p-4 border rounded-lg flex flex-col justify-between"
+        style={{
+          background: surface,
+          borderRadius: radiusPanel,
+          borderWidth,
+          borderColor: "var(--line-subtle)",
+          boxShadow: "var(--shadow-hard)",
+        }}
+      >
         <div>
-          <h4 className="text-[18px] font-bold" style={{ color: "var(--text-strong)" }}>
-            开发资源索引 · {style.name}
-          </h4>
-          <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            呈现构图: {COMPOSITION_LABEL[profile.composition ?? "solid-grid"]} · 卡片: {CARD_LABEL[profile.card ?? "panel"]}
-          </p>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400">
+            INSPECTOR VIEW // {profile.detail ?? "rail"}
+          </span>
+          <h4 className="text-[18px] font-bold mt-1 text-white">Visual Studio Code</h4>
+          <p className="text-[12px] text-zinc-400 mt-1">代码编辑器 · {style.name} · v1.96.2</p>
+        </div>
+        <div className="mt-4 pt-3 border-t border-zinc-800">
+          <button
+            type="button"
+            className="w-full py-2 text-[12px] font-bold border cursor-pointer"
+            style={{
+              borderRadius: radiusControl,
+              background: accent,
+              color: "var(--surface-base, #101317)",
+              borderWidth,
+              borderColor: accent,
+            }}
+          >
+            启动应用
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-        {mockResources.map((res, i) => (
-          <div
-            key={i}
-            className="flex flex-col justify-between p-4 border"
-            style={{
-              background: surface,
-              borderRadius: radiusPanel,
-              borderWidth,
-              borderColor: "var(--line-subtle)",
-              boxShadow: "var(--shadow-hard)",
-            }}
-          >
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[14.5px]" style={{ color: "var(--text-primary)" }}>
-                  {res.title}
-                </span>
-                <span
-                  className="text-[10px] px-2 py-0.5 font-mono border"
-                  style={{
-                    borderRadius: radiusControl,
-                    background: "var(--surface-sunken)",
-                    borderColor: "var(--line-subtle)",
-                    color: "var(--text-quiet)",
-                  }}
-                >
-                  {res.tag}
-                </span>
-              </div>
-              <p className="text-[12px] mt-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                {res.desc}
-              </p>
-            </div>
-            <div className="flex items-center justify-between mt-4 pt-2.5 border-t" style={{ borderColor: "var(--line-subtle)" }}>
-              <span className="text-[11px] font-mono" style={{ color: "var(--text-quiet)" }}>
-                {res.cat}
-              </span>
-              <span className="text-[11.5px] font-bold" style={{ color: accent }}>
-                查看详情 →
-              </span>
-            </div>
+      {/* Right Parameter Tabs */}
+      <div
+        className="flex-1 p-5 border rounded-lg space-y-4"
+        style={{
+          background: surface,
+          borderRadius: radiusPanel,
+          borderWidth,
+          borderColor: "var(--line-subtle)",
+          boxShadow: "var(--shadow-hard)",
+        }}
+      >
+        <div className="border-b pb-2 flex items-center justify-between" style={{ borderColor: "var(--line-subtle)" }}>
+          <span className="font-bold text-[13.5px] text-white">详细参数与环境感知 (Telemetry)</span>
+          <span className="text-[11px] font-mono text-emerald-400">✓ 真实机器状态已验证</span>
+        </div>
+        <div className="space-y-2 text-[12px]">
+          <div className="flex justify-between py-1 border-b border-zinc-800/60">
+            <span className="text-zinc-500">安装来源</span>
+            <span className="font-mono text-zinc-300">Winget (Microsoft.VisualStudioCode)</span>
           </div>
-        ))}
+          <div className="flex justify-between py-1 border-b border-zinc-800/60">
+            <span className="text-zinc-500">可执行路径</span>
+            <span className="font-mono text-zinc-300">C:\Users\AppData\Local\Programs\Microsoft VS Code\Code.exe</span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-zinc-800/60">
+            <span className="text-zinc-500">SHA256 校验</span>
+            <span className="font-mono text-zinc-300">3a8f91c7...b109 [匹配]</span>
+          </div>
+        </div>
       </div>
     </div>
   );

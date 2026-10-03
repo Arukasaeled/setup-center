@@ -580,6 +580,14 @@ export const openInEditor = (editor: string, path: string, executablePath?: stri
 export const appCanonicalVersion = () =>
   call<string>("app_canonical_version");
 
+/** Returns the authenticated user's real Downloads directory */
+export const getDownloadsDir = () =>
+  call<string>("get_downloads_dir");
+
+/** Verifies a downloaded file's SHA256 checksum */
+export const verifyFileSha256 = (path: string, expectedSha256: string) =>
+  call<boolean>("verify_file_sha256", { path, expectedSha256 });
+
 export interface StreamingOutputPayload {
   executionId: string;
   text: string;

@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Desktop Studio — Stylesheet
+   ========================================================================== */
+
+html[data-style="desktop-studio"] {
+  background-color: var(--style-bg, #2c3e50);
+  color: var(--text-primary, #0f172a);
+}
+
+/* Classic Desktop Workbench Wallpaper */
+html[data-style="desktop-studio"] [data-shell-root] {
+  background-color: #2c3e50;
+  background-image: 
+    radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 8px 8px;
+  padding: 12px;
+}
+
+/* Floating Window Frame Chrome */
+html[data-style="desktop-studio"] [data-software-card],
+html[data-style="desktop-studio"] [data-resource-card],
+html[data-style="desktop-studio"] [data-style-card],
+html[data-style="desktop-studio"] [data-experience-card] {
+  border-radius: 0px !important;
+  background-color: #c8ccd4 !important;
+  border-top: 2px solid #ffffff !important;
+  border-left: 2px solid #ffffff !important;
+  border-right: 2px solid #1e293b !important;
+  border-bottom: 2px solid #1e293b !important;
+  box-shadow: 6px 6px 0px 0px rgba(15, 23, 42, 0.6) !important;
+}
+
+/* 3D Pressed Buttons */
+html[data-style="desktop-studio"] button {
+  border-radius: 0px !important;
+  border-top: 2px solid #ffffff !important;
+  border-left: 2px solid #ffffff !important;
+  border-right: 2px solid #1e293b !important;
+  border-bottom: 2px solid #1e293b !important;
+  background-color: #d1d5db !important;
+  color: #0f172a !important;
+}
+
+html[data-style="desktop-studio"] button:active {
+  border-top: 2px solid #1e293b !important;
+  border-left: 2px solid #1e293b !important;
+  border-right: 2px solid #ffffff !important;
+  border-bottom: 2px solid #ffffff !important;
+  background-color: #b5b9c2 !important;
+}
+
+html[data-style="desktop-studio"] button[data-variant="primary"],
+html[data-style="desktop-studio"] .btn-primary {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}

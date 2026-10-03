@@ -18,7 +18,14 @@ import { fetchWingetPackageDetails } from "../core/discovery/winget";
 import { PersonalCatalog, type DynamicSoftware } from "../core/transfer/catalog";
 import { Bookmarks } from "../core/transfer/bookmarks";
 import { CustomPacks, type CustomPack } from "../core/transfer/packs";
-import { nativeDownload, isTauri, type WingetPackageDetails } from "../lib/ipc";
+import {
+  nativeDownload,
+  getDownloadsDir,
+  verifyFileSha256,
+  executeNativeCommand,
+  isTauri,
+  type WingetPackageDetails,
+} from "../lib/ipc";
 import { ExecutionConsoleModal } from "./ExecutionConsoleModal";
 
 export interface DynamicSoftwareDetailModalProps {
@@ -103,24 +110,79 @@ export function DynamicSoftwareDetailModal({
     onNotice?.(`已将「${sw.name}」永久保存至个人资产`);
   };
 
-  const handleInstallSuccess = () => {
-    const sw: DynamicSoftware = {
-      id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
-      packageId: cleanPackageId,
-      provider: "winget",
-      name: details?.name || item.title,
-      publisher: details?.publisher,
-      version: details?.version,
-      description: details?.description || item.description,
-      homepage: details?.homepage,
-      installed: true,
-      installedVersion: details?.version,
-      discoveredAt: new Date().toISOString(),
-      lastVerifiedAt: new Date().toISOString(),
-    };
-    PersonalCatalog.saveSoftware(sw);
-    setIsSavedInCatalog(true);
-    onNotice?.(`✓ 「${sw.name}」安装完成并已纳管至个人软件库`);
+  const handleInstallSuccess = async () => {
+    onNotice?.(`进程已退出，正在执行本机状态验证 (winget list --id ${cleanPackageId} -e)…`);
+
+    let verified = false;
+    let verifiedVersion: string | undefined = details?.version;
+
+    if (isTauri()) {
+      try {
+        const verifyRes = await executeNativeCommand("winget", [
+          "list",
+          "--id",
+          cleanPackageId,
+          "-e",
+        ]);
+        if (
+          verifyRes.success &&
+          verifyRes.stdout &&
+          verifyRes.stdout.toLowerCase().includes(cleanPackageId.toLowerCase())
+        ) {
+          verified = true;
+          const lines = verifyRes.stdout.split("\n");
+          for (const line of lines) {
+            if (line.toLowerCase().includes(cleanPackageId.toLowerCase())) {
+              const parts = line.trim().split(/\s{2,}/);
+              if (parts[2]) {
+                verifiedVersion = parts[2].trim();
+              }
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[DynamicSoftware] Post-install verification command error:", err);
+      }
+    } else {
+      // In browser preview, simulate verified state
+      verified = true;
+    }
+
+    if (verified) {
+      const sw: DynamicSoftware = {
+        id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
+        packageId: cleanPackageId,
+        provider: "winget",
+        name: details?.name || item.title,
+        publisher: details?.publisher,
+        version: verifiedVersion || details?.version,
+        description: details?.description || item.description,
+        homepage: details?.homepage,
+        installed: true,
+        installedVersion: verifiedVersion || details?.version,
+        discoveredAt: new Date().toISOString(),
+        lastVerifiedAt: new Date().toISOString(),
+      };
+      PersonalCatalog.saveSoftware(sw);
+      setIsSavedInCatalog(true);
+      onNotice?.(`✓ 本机状态验证通过：「${sw.name}」已确认安装并在个人库纳管`);
+    } else {
+      const sw: DynamicSoftware = {
+        id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
+        packageId: cleanPackageId,
+        provider: "winget",
+        name: details?.name || item.title,
+        publisher: details?.publisher,
+        version: details?.version,
+        description: details?.description || item.description,
+        homepage: details?.homepage,
+        installed: false,
+        discoveredAt: new Date().toISOString(),
+      };
+      PersonalCatalog.saveSoftware(sw);
+      onNotice?.(`⚠ 命令执行退出码为 0，但未在本机检测到对应软件 (Execution Success, Verification Failed)`);
+    }
   };
 
   const handleCopyInstallCommand = async () => {
@@ -131,6 +193,37 @@ export function DynamicSoftwareDetailModal({
     } catch {
       onNotice?.("复制失败");
     }
+  };
+
+  const inferExtension = (url?: string, installerType?: string): string => {
+    if (url) {
+      try {
+        const cleanUrl = url.split("?")[0].split("#")[0];
+        const match = cleanUrl.match(/\.(exe|msi|msix|msixbundle|zip|appx|appxbundle|tar\.gz|tgz)$/i);
+        if (match && match[1]) {
+          return match[1].toLowerCase();
+        }
+      } catch {
+        // fallback
+      }
+    }
+    const typeMap: Record<string, string> = {
+      nullsoft: "exe",
+      inno: "exe",
+      wix: "msi",
+      burn: "exe",
+      msi: "msi",
+      msix: "msix",
+      msixbundle: "msixbundle",
+      zip: "zip",
+      appx: "appx",
+      portable: "zip",
+      exe: "exe",
+    };
+    if (installerType && typeMap[installerType.toLowerCase()]) {
+      return typeMap[installerType.toLowerCase()];
+    }
+    return "exe";
   };
 
   const handleDirectDownload = async () => {
@@ -147,11 +240,34 @@ export function DynamicSoftwareDetailModal({
     onNotice?.("正在启动 Windows 原生流式下载…");
 
     try {
-      const ext = details.installerType?.toLowerCase() || "exe";
+      const ext = inferExtension(details.installerUrl, details.installerType);
       const filename = `${cleanPackageId}_setup.${ext}`;
-      const dest = `C:\\Users\\Public\\Downloads\\${filename}`;
+      let downloadsFolder = "C:\\Users\\Public\\Downloads";
+      try {
+        const authenticDir = await getDownloadsDir();
+        if (authenticDir && authenticDir.trim()) {
+          downloadsFolder = authenticDir.trim();
+        }
+      } catch {
+        // fallback
+      }
+      const sep = downloadsFolder.endsWith("\\") || downloadsFolder.endsWith("/") ? "" : "\\";
+      const dest = `${downloadsFolder}${sep}${filename}`;
+
       await nativeDownload(details.installerUrl, dest);
-      onNotice?.(`✓ 安装包已下载至: ${dest}`);
+
+      // Verify SHA256 if available
+      if (details.installerSha256 && details.installerSha256.trim()) {
+        onNotice?.("下载完成，正在进行 SHA256 完整性校验…");
+        const match = await verifyFileSha256(dest, details.installerSha256);
+        if (match) {
+          onNotice?.(`✓ 下载完成且 SHA256 校验通过: ${dest}`);
+        } else {
+          onNotice?.(`⚠ 警告: 文件已下载至 ${dest}，但 SHA256 校验不匹配，可能存在损坏或篡改`);
+        }
+      } else {
+        onNotice?.(`✓ 安装包已下载至: ${dest}`);
+      }
     } catch (err: any) {
       onNotice?.(`下载失败: ${err?.message || String(err)}`);
     } finally {

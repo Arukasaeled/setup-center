@@ -24,7 +24,7 @@ export function RepoFinderScreen() {
   const [query, setQuery] = useState("");
   const [searchOnline, setSearchOnline] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<"default" | "stars" | "updated">("default");
+  const [sortBy, setSortBy] = useState<"default" | "stars" | "updated" | "name">("default");
 
   const [localResults, setLocalResults] = useState<DiscoveryItem[]>([]);
   const [onlineResults, setOnlineResults] = useState<DiscoveryItem[]>([]);
@@ -63,7 +63,7 @@ export function RepoFinderScreen() {
     setRateLimitNotice(null);
 
     const timer = setTimeout(() => {
-      searchGitHubRepos(query, { perPage: 16, sort: sortBy })
+      searchGitHubRepos(query, { perPage: 16, sort: sortBy === "name" ? "default" : sortBy })
         .then((res) => {
           setOnlineResults(res.items);
           if (res.rateLimited && res.rateLimitMessage) {
@@ -79,19 +79,22 @@ export function RepoFinderScreen() {
   }, [query, searchOnline, sortBy]);
 
   const handleOpenDetail = (item: DiscoveryItem) => {
-    RecentTracker.record({
-      id: item.id,
-      title: item.title,
-      type: "repo",
-      category: item.category,
-      subtitle: item.subtitle,
-    });
+    RecentTracker.record(
+      {
+        id: item.id,
+        title: item.title,
+        type: "repo",
+        category: item.category,
+        subtitle: item.subtitle,
+      },
+      item,
+    );
     setActiveDetailItem(item);
   };
 
   const handleToggleBookmark = (item: DiscoveryItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    const next = Bookmarks.toggle(item.id, item.title);
+    const next = Bookmarks.toggle(item.id, item.title, item);
     setNotice(next ? `已收藏「${item.title}」` : `已取消收藏「${item.title}」`);
     setTimeout(() => setNotice(null), 2000);
   };
@@ -109,9 +112,39 @@ export function RepoFinderScreen() {
     setTimeout(() => setNotice(null), 2000);
   };
 
-  // Combine results with canonical key de-duplication & live metadata merging
+  // Helper to parse star numbers like "105k", "98k", "1,200", 350
+  const parseStarsCount = (val?: string | number): number => {
+    if (typeof val === "number") return val;
+    if (!val) return 0;
+    const s = String(val).trim().toLowerCase();
+    if (s.endsWith("k")) return parseFloat(s.slice(0, -1)) * 1000;
+    if (s.endsWith("m")) return parseFloat(s.slice(0, -1)) * 1000000;
+    const n = parseFloat(s.replace(/,/g, ""));
+    return isNaN(n) ? 0 : n;
+  };
+
+  const matchesTopic = (item: DiscoveryItem, topic: string): boolean => {
+    if (!topic || topic === "all") return true;
+    const text = `${item.title} ${item.description || ""} ${item.tags?.join(" ") || ""} ${item.category || ""}`.toLowerCase();
+    switch (topic) {
+      case "ai":
+        return /ai|llm|gpt|agent|model|machine learning|deep learning|rag|deepseek|ollama|transformer/i.test(text);
+      case "frontend":
+        return /frontend|react|vue|svelte|next|web|css|html|tailwind|vite/i.test(text);
+      case "components":
+        return /ui|component|design system|radix|shadcn|headless|tailwind/i.test(text);
+      case "tools":
+        return /tool|cli|utility|terminal|git|workflow|devops|build/i.test(text);
+      case "templates":
+        return /template|starter|scaffold|boilerplate|create-|skeleton/i.test(text);
+      default:
+        return text.includes(topic.toLowerCase());
+    }
+  };
+
+  // 1. Canonical merge with de-duplication & live metadata merging
   const localMap = new Map<string, DiscoveryItem>();
-  const combined: DiscoveryItem[] = [];
+  const merged: DiscoveryItem[] = [];
   const processedKeys = new Set<string>();
 
   for (const it of localResults) {
@@ -127,17 +160,38 @@ export function RepoFinderScreen() {
     processedKeys.add(key);
     const local = localMap.get(key);
     if (local) {
-      combined.push(mergeRepoWithLiveMetadata(local, online));
+      merged.push(mergeRepoWithLiveMetadata(local, online));
     } else {
-      combined.push(online);
+      merged.push(online);
     }
   }
 
   for (const [key, local] of localMap.entries()) {
     if (!processedKeys.has(key)) {
-      combined.push(local);
+      merged.push(local);
     }
   }
+
+  // 2. Unified filter by topic on the whole merged list
+  const filtered = merged.filter((item) => matchesTopic(item, selectedTopic));
+
+  // 3. Unified sort on the filtered list
+  const combined = [...filtered].sort((a, b) => {
+    if (sortBy === "stars") {
+      const starsA = parseStarsCount(a.origin?.stars);
+      const starsB = parseStarsCount(b.origin?.stars);
+      return starsB - starsA;
+    }
+    if (sortBy === "updated") {
+      const dateA = a.origin?.lastUpdated ? new Date(a.origin.lastUpdated).getTime() : 0;
+      const dateB = b.origin?.lastUpdated ? new Date(b.origin.lastUpdated).getTime() : 0;
+      return dateB - dateA;
+    }
+    if (sortBy === "name") {
+      return a.title.localeCompare(b.title, "zh-CN");
+    }
+    return 0; // default keeps canonical search order
+  });
 
   const topics = [
     { id: "all", label: "全部领域" },
@@ -329,7 +383,7 @@ export function RepoFinderScreen() {
 
                 <div className="mt-3 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center justify-between gap-2">
                   <div className="text-[10.5px] font-mono text-[color:var(--text-quiet)]">
-                    {item.origin?.lastUpdated || item.origin?.license || "MIT"}
+                    {item.origin?.lastUpdated || item.origin?.license || "未知许可"}
                   </div>
 
                   <div className="flex items-center gap-2">

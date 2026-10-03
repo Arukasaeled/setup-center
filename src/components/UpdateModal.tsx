@@ -58,9 +58,21 @@ export function UpdateModal({
           <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-black">
             有可用更新
           </span>
-        ) : (
+        ) : snapshot.app.status === "up-to-date" && snapshot.vault.status === "up-to-date" ? (
           <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
-            当前运行版本与最新正式 Release 一致
+            已确认最新稳定版本
+          </span>
+        ) : snapshot.app.status === "error" || snapshot.vault.status === "error" ? (
+          <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[11px] font-medium text-rose-300 border border-rose-500/30">
+            发布通道连接异常，沿用本地缓存
+          </span>
+        ) : snapshot.isChecking ? (
+          <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[11px] font-medium text-blue-300 border border-blue-500/30">
+            正在比对上游发布…
+          </span>
+        ) : (
+          <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]">
+            未检查更新
           </span>
         )
       }
@@ -69,7 +81,7 @@ export function UpdateModal({
           <div className="text-[11.5px] text-[color:var(--text-quiet)]">
             {snapshot.lastCheckedAt
               ? `上次检查：${new Date(snapshot.lastCheckedAt).toLocaleTimeString()}`
-              : "尚未手动检查"}
+              : "尚未手动检查 (未检查 ≠ 已最新)"}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -97,7 +109,7 @@ export function UpdateModal({
                   应用程序本体 (App Release)
                 </span>
                 <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] font-mono text-[color:var(--text-primary)] border border-[color:var(--line-subtle)] font-bold">
-                  当前运行：v{snapshot.app.currentVersion}
+                  当前运行：{snapshot.app.currentVersion ? (snapshot.app.currentVersion.startsWith("v") || snapshot.app.currentVersion.includes("-") ? snapshot.app.currentVersion : `v${snapshot.app.currentVersion}`) : "正在获取…"}
                 </span>
                 {snapshot.app.runtimeSource && (
                   <span className="text-[11px] text-[color:var(--text-quiet)]">
@@ -111,13 +123,25 @@ export function UpdateModal({
             </div>
 
             <div className="shrink-0 text-right">
-              {snapshot.app.hasUpdate ? (
+              {snapshot.app.status === "update-available" ? (
                 <span className="rounded bg-amber-500/15 px-2.5 py-0.5 text-[11.5px] font-bold text-amber-400 border border-amber-500/30">
                   发现新版本 {snapshot.app.latestVersion}
                 </span>
-              ) : (
+              ) : snapshot.app.status === "up-to-date" ? (
                 <span className="text-[12px] text-emerald-400 font-medium">
                   ✓ 当前运行版本已是最新
+                </span>
+              ) : snapshot.app.status === "checking" ? (
+                <span className="text-[12px] text-blue-400 font-medium">
+                  检查中…
+                </span>
+              ) : snapshot.app.status === "error" ? (
+                <span className="text-[12px] text-rose-400 font-medium">
+                  检测失败 / 网络受限
+                </span>
+              ) : (
+                <span className="text-[12px] text-[color:var(--text-quiet)]">
+                  未检查 (点击按钮检测)
                 </span>
               )}
             </div>
@@ -165,13 +189,25 @@ export function UpdateModal({
             </div>
 
             <div className="shrink-0 text-right">
-              {snapshot.vault.hasUpdate ? (
+              {snapshot.vault.status === "update-available" ? (
                 <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-black">
                   有新批次 {snapshot.vault.latestVersion}
                 </span>
-              ) : (
+              ) : snapshot.vault.status === "up-to-date" ? (
                 <span className="text-[11.5px] text-emerald-400 font-medium">
-                  内容已同步
+                  ✓ 内容已确认最新
+                </span>
+              ) : snapshot.vault.status === "checking" ? (
+                <span className="text-[11.5px] text-blue-400 font-medium">
+                  检查中…
+                </span>
+              ) : snapshot.vault.status === "error" ? (
+                <span className="text-[11.5px] text-rose-400 font-medium">
+                  检测失败 / 网络受限
+                </span>
+              ) : (
+                <span className="text-[11.5px] text-[color:var(--text-quiet)]">
+                  未检查 (点击按钮检测)
                 </span>
               )}
             </div>

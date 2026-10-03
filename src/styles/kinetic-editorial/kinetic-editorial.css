@@ -1,0 +1,84 @@
+/* ==========================================================================
+   Kinetic Editorial — Stylesheet
+   ========================================================================== */
+
+html[data-style="kinetic-editorial"] {
+  --font-serif: "Georgia", "Times New Roman", "Noto Serif SC", serif;
+  background-color: var(--style-bg, #f5f3ec);
+  color: var(--text-primary, #111827);
+}
+
+/* Overall Broadsheet Frame */
+html[data-style="kinetic-editorial"] [data-shell-root] {
+  background-color: #f5f3ec;
+  background-image: 
+    linear-gradient(rgba(24, 24, 27, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 24, 27, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Editorial Masthead / Header rules */
+html[data-style="kinetic-editorial"] header,
+html[data-style="kinetic-editorial"] [data-nav] {
+  border-bottom: 2px solid #18181b !important;
+  background-color: #f5f3ec !important;
+}
+
+/* Headings in bold editorial serif */
+html[data-style="kinetic-editorial"] h1,
+html[data-style="kinetic-editorial"] h2,
+html[data-style="kinetic-editorial"] [data-page-title] {
+  font-family: var(--font-serif) !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.035em !important;
+}
+
+/* Card representation as editorial text blocks with rule separation */
+html[data-style="kinetic-editorial"] [data-software-card],
+html[data-style="kinetic-editorial"] [data-resource-card],
+html[data-style="kinetic-editorial"] [data-style-card],
+html[data-style="kinetic-editorial"] [data-experience-card] {
+  border-radius: 0px !important;
+  border: 2px solid #18181b !important;
+  background-color: #ffffff !important;
+  box-shadow: 4px 4px 0px 0px #18181b !important;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease-out !important;
+}
+
+html[data-style="kinetic-editorial"] [data-software-card]:hover,
+html[data-style="kinetic-editorial"] [data-resource-card]:hover,
+html[data-style="kinetic-editorial"] [data-style-card]:hover,
+html[data-style="kinetic-editorial"] [data-experience-card]:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 6px 6px 0px 0px #d63031 !important;
+}
+
+/* Buttons as crisp letterpress stamps */
+html[data-style="kinetic-editorial"] button {
+  border-radius: 0px !important;
+  font-family: var(--font-mono, monospace) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+html[data-style="kinetic-editorial"] button[data-variant="primary"],
+html[data-style="kinetic-editorial"] .btn-primary {
+  background-color: #d63031 !important;
+  color: #ffffff !important;
+  border: 2px solid #18181b !important;
+  box-shadow: 2px 2px 0px 0px #18181b !important;
+}
+
+html[data-style="kinetic-editorial"] button[data-variant="primary"]:hover,
+html[data-style="kinetic-editorial"] .btn-primary:hover {
+  background-color: #b71516 !important;
+}
+
+/* Editorial index numbers */
+html[data-style="kinetic-editorial"] [data-index-number] {
+  font-family: var(--font-serif) !important;
+  font-size: 2rem !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  color: #d63031 !important;
+}

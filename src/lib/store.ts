@@ -84,6 +84,53 @@ export type Section =
   | "license"
   | "about";
 
+export interface NavigationPreferences {
+  defaultSection: Section;
+  hiddenSections: Section[];
+}
+
+const NAV_PREFS_KEY = "setup-center:nav-preferences";
+
+export function loadNavPreferences(): NavigationPreferences {
+  if (typeof localStorage === "undefined") {
+    return { defaultSection: "overview", hiddenSections: [] };
+  }
+  try {
+    const raw = localStorage.getItem(NAV_PREFS_KEY);
+    if (!raw) return { defaultSection: "overview", hiddenSections: [] };
+    const parsed = JSON.parse(raw);
+    const validSections: Section[] = [
+      "overview",
+      "goals",
+      "software",
+      "repos",
+      "resources",
+      "library",
+      "style",
+      "config",
+      "history",
+      "plugins",
+      "license",
+      "about",
+    ];
+    return {
+      defaultSection: validSections.includes(parsed.defaultSection) ? parsed.defaultSection : "overview",
+      hiddenSections: Array.isArray(parsed.hiddenSections)
+        ? parsed.hiddenSections.filter((s: unknown): s is Section => typeof s === "string" && validSections.includes(s as Section) && s !== "overview")
+        : [],
+    };
+  } catch {
+    return { defaultSection: "overview", hiddenSections: [] };
+  }
+}
+
+export function saveNavPreferences(prefs: NavigationPreferences): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(NAV_PREFS_KEY, JSON.stringify(prefs));
+  } catch {}
+}
+
 /** Unified location modeling both Wizard screens and Dashboard sections */
 export type AppLocation =
   | {
@@ -95,6 +142,7 @@ export type AppLocation =
   | {
       surface: "wizard";
       screen: Screen;
+      scrollTop?: number;
     };
 
 /** The ambient theme. `system` follows the OS and is the default. */
@@ -176,6 +224,12 @@ interface AppStore {
   /** The dashboard's current section. */
   section: Section;
   setSection: (section: Section) => void;
+
+  // --- Navigation Preferences -----------------------------------------------
+  navPreferences: NavigationPreferences;
+  setDefaultSection: (section: Section) => void;
+  toggleSectionVisibility: (section: Section) => void;
+  setHiddenSections: (sections: Section[]) => void;
 
   /**
    * The item whose detail is shown in the right-hand panel.
@@ -485,6 +539,37 @@ const NAV_STACK_LIMIT = 50;
  */
 export const NO_HISTORY: readonly Screen[] = Object.freeze([]);
 
+function getScrollTop(): number {
+  if (typeof document === "undefined") return 0;
+  const page =
+    document.querySelector<HTMLElement>("section[data-page]") ??
+    document.querySelector<HTMLElement>("main");
+  return page?.scrollTop ?? 0;
+}
+
+function restoreScrollTop(top: number = 0) {
+  if (typeof document === "undefined") return;
+  // Use double rAF to ensure React commit and layout paint have finished
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const page =
+        document.querySelector<HTMLElement>("section[data-page]") ??
+        document.querySelector<HTMLElement>("main");
+      if (page) {
+        // Enforce instant layout restore without smooth animation or visible jump
+        const prevBehavior = page.style.scrollBehavior;
+        page.style.scrollBehavior = "auto";
+        if (typeof page.scrollTo === "function") {
+          page.scrollTo({ top, left: 0, behavior: "instant" });
+        } else {
+          page.scrollTop = top;
+        }
+        page.style.scrollBehavior = prevBehavior;
+      }
+    });
+  });
+}
+
 function isSameLocation(a: AppLocation, b: AppLocation): boolean {
   if (a.surface !== b.surface) return false;
   if (a.surface === "dashboard" && b.surface === "dashboard") {
@@ -496,17 +581,24 @@ function isSameLocation(a: AppLocation, b: AppLocation): boolean {
   return false;
 }
 
-function getCurrentLocation(state: { dashboardOpen: boolean; section: Section; selectedItemId: string | null; screen: Screen }): AppLocation {
+function getCurrentLocation(state: {
+  dashboardOpen: boolean;
+  section: Section;
+  selectedItemId: string | null;
+  screen: Screen;
+}): AppLocation {
   if (state.dashboardOpen) {
     return {
       surface: "dashboard",
       section: state.section,
       selectedItemId: state.selectedItemId,
+      scrollTop: getScrollTop(),
     };
   }
   return {
     surface: "wizard",
     screen: state.screen,
+    scrollTop: getScrollTop(),
   };
 }
 
@@ -536,6 +628,7 @@ export const useApp = create<AppStore>((set, get) => ({
           .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
           .map((loc) => loc.screen),
       });
+      restoreScrollTop(target.scrollTop ?? 0);
     } else {
       set({
         dashboardOpen: false,
@@ -546,6 +639,7 @@ export const useApp = create<AppStore>((set, get) => ({
           .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
           .map((loc) => loc.screen),
       });
+      restoreScrollTop(target.scrollTop ?? 0);
     }
   },
 
@@ -557,12 +651,14 @@ export const useApp = create<AppStore>((set, get) => ({
         selectedItemId: target.selectedItemId ?? null,
         location: target,
       });
+      restoreScrollTop(target.scrollTop ?? 0);
     } else {
       set({
         dashboardOpen: false,
         screen: target.screen,
         location: target,
       });
+      restoreScrollTop(target.scrollTop ?? 0);
     }
   },
 
@@ -585,6 +681,7 @@ export const useApp = create<AppStore>((set, get) => ({
           navStack: legacyStack.slice(0, -1),
           location: { surface: "wizard", screen: prev },
         });
+        restoreScrollTop(0);
       }
       return;
     }
@@ -603,6 +700,7 @@ export const useApp = create<AppStore>((set, get) => ({
           .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
           .map((loc) => loc.screen),
       });
+      restoreScrollTop(previous.scrollTop ?? 0);
     } else {
       set({
         dashboardOpen: false,
@@ -613,6 +711,7 @@ export const useApp = create<AppStore>((set, get) => ({
           .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
           .map((loc) => loc.screen),
       });
+      restoreScrollTop(previous.scrollTop ?? 0);
     }
   },
 
@@ -623,18 +722,45 @@ export const useApp = create<AppStore>((set, get) => ({
   // -------------------------------------------------------------------------
   dashboardOrigin: null,
   dashboardOpen: false,
+
+  navPreferences: loadNavPreferences(),
+  setDefaultSection: (defaultSection: Section) => {
+    const next: NavigationPreferences = { ...get().navPreferences, defaultSection };
+    saveNavPreferences(next);
+    set({ navPreferences: next });
+  },
+  toggleSectionVisibility: (section: Section) => {
+    if (section === "overview") return;
+    const curr = get().navPreferences.hiddenSections;
+    const nextHidden = curr.includes(section)
+      ? curr.filter((s) => s !== section)
+      : [...curr, section];
+    const next: NavigationPreferences = { ...get().navPreferences, hiddenSections: nextHidden };
+    saveNavPreferences(next);
+    set({ navPreferences: next });
+  },
+  setHiddenSections: (hiddenSections: Section[]) => {
+    const sanitized = hiddenSections.filter((s) => s !== "overview");
+    const next: NavigationPreferences = { ...get().navPreferences, hiddenSections: sanitized };
+    saveNavPreferences(next);
+    set({ navPreferences: next });
+  },
+
   openDashboard: (section?: Section) => {
-    get().navigate({ surface: "dashboard", section: section ?? "overview" });
+    get().navigate({
+      surface: "dashboard",
+      section: section ?? get().navPreferences.defaultSection,
+    });
   },
   closeDashboard: () => {
     if (get().canGoBack()) {
       get().goBack();
     } else {
-      get().navigate({ surface: "wizard", screen: "welcome" });
+      get().navigate({ surface: "wizard", screen: get().dashboardOrigin ?? "welcome" });
     }
   },
 
-  section: "overview",
+  section: loadNavPreferences().defaultSection,
   setSection: (section) => {
     get().navigate({ surface: "dashboard", section });
   },

@@ -12,6 +12,17 @@ import type { DiscoveryFilter, DiscoveryItem, DiscoverySearchResult } from "./ty
 
 export class DiscoveryService {
   /**
+   * Performs instant local multi-field search across software, styles, resources, templates, and patterns.
+   */
+  public static searchLocal(
+    query: string,
+    filter?: DiscoveryFilter,
+    limit: number = 30,
+  ): DiscoveryItem[] {
+    return LocalSearchIndex.search(query, filter, limit);
+  }
+
+  /**
    * Performs unified search across local, GitHub, and Winget.
    * Local items are returned immediately or aggregated with online results.
    */

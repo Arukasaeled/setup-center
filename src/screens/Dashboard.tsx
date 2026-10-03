@@ -80,11 +80,15 @@ import { ExperiencePlayground } from "../components/TokenTweaker";
 import { TransferHistoryTimeline } from "../components/TransferHistoryTimeline";
 import { Bookmarks } from "../core/transfer";
 import { resolveSetupAction } from "../core/setup/resolver";
+import { AwardAtlas } from "../components/AwardAtlas";
+import { PatternLab } from "../components/PatternLab";
+import type { ExperienceFamily } from "../styles/types";
 import {
   CARD_LABEL,
   COMPOSITION_LABEL,
   DENSITY_LABEL,
   DETAIL_LABEL,
+  FAMILY_LABEL,
   isRenderable,
   MOTION_LABEL,
   NAV_LABEL,
@@ -127,7 +131,7 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "repos", label: "GitHub 项目", hint: "开源优质仓库、对比与克隆" },
   { id: "resources", label: "开发资源", hint: "开源项目、模板与灵感" },
   { id: "library", label: "我的库", hint: "个人收藏、最近与自定义包" },
-  { id: "style", label: "视觉风格", hint: "20套界面体验与微调" },
+  { id: "style", label: "视觉实验室", hint: "Design Lab · 体验矩阵、标杆与交互原型" },
   { id: "config", label: "环境配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
   { id: "plugins", label: "插件增强", hint: "Claude 中文与效率增强" },
@@ -315,9 +319,10 @@ function DashboardNav({
   theme: "light" | "dark" | "system";
   onTheme: (t: "light" | "dark" | "system") => void;
 }) {
-  // One badge, on the section a student acts on. A badge on every item would
-  // turn navigation into a scoreboard, which reads as pressure rather than as
-  // information.
+  const navPreferences = useApp((s) => s.navPreferences);
+  const [showNavConfig, setShowNavConfig] = useState(false);
+
+  // One badge, on the section a student acts on.
   const softwareGaps = useApp((s) => {
     const items = s.inventory?.items ?? [];
     return items.filter((i) => !i.installed && i.confidence !== "unknown").length;
@@ -327,74 +332,196 @@ function DashboardNav({
     software: softwareGaps,
   };
 
-  return (
-    <nav
-      aria-label="导航"
-      data-nav
-      className="border-[color:var(--line-subtle)] flex w-[188px] shrink-0 flex-col border-r px-3 py-7"
-    >
-      <div data-nav-brand className="px-2.5 pb-5">
-        <div className="text-[color:var(--text-strong)] text-[13.5px] font-semibold tracking-[-0.01em]">
-          Setup Center
-        </div>
-        <div className="text-[color:var(--text-quiet)] mt-0.5 text-[11.5px]">
-          本机状态
-        </div>
-      </div>
+  const visibleSections = useMemo(() => {
+    return SECTIONS.filter(
+      (s) => !navPreferences.hiddenSections.includes(s.id) || s.id === section,
+    );
+  }, [navPreferences.hiddenSections, section]);
 
-      <div data-nav-list className="flex flex-col gap-0.5">
-        {SECTIONS.map((s) => {
-          const active = s.id === section;
-          const badge = badges[s.id];
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onSelect(s.id)}
-              aria-current={active ? "page" : undefined}
-              className={clsx(
-                "group flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left",
-                "transition-colors duration-150",
-                active
-                  ? "bg-[color:var(--surface-active)]"
-                  : "hover:bg-[color:var(--surface-hover)]",
-              )}
-            >
-              <span
+  return (
+    <>
+      <nav
+        aria-label="导航"
+        data-nav
+        className="border-[color:var(--line-subtle)] flex w-[188px] shrink-0 flex-col border-r px-3 py-7"
+      >
+        <div data-nav-brand className="px-2.5 pb-5">
+          <div className="text-[color:var(--text-strong)] text-[13.5px] font-semibold tracking-[-0.01em]">
+            Setup Center
+          </div>
+          <div className="text-[color:var(--text-quiet)] mt-0.5 text-[11.5px]">
+            本机状态
+          </div>
+        </div>
+
+        <div data-nav-list className="flex flex-col gap-0.5">
+          {visibleSections.map((s) => {
+            const active = s.id === section;
+            const badge = badges[s.id];
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onSelect(s.id)}
+                aria-current={active ? "page" : undefined}
                 className={clsx(
-                  "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
+                  "group flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left",
+                  "transition-colors duration-150 cursor-pointer",
                   active
-                    ? "bg-[color:var(--status-accent)]"
-                    : "bg-[color:var(--line-default)] group-hover:bg-[color:var(--text-quiet)]",
-                )}
-              />
-              <span
-                className={clsx(
-                  "flex-1 text-[13px] transition-colors duration-150",
-                  active
-                    ? "text-[color:var(--text-strong)]"
-                    : "text-[color:var(--text-secondary)]",
+                    ? "bg-[color:var(--surface-active)]"
+                    : "hover:bg-[color:var(--surface-hover)]",
                 )}
               >
-                {s.label}
-              </span>
-              {badge != null && badge > 0 && (
-                <span className="text-[color:var(--text-quiet)] tnum text-[11.5px]">
-                  {badge}
+                <span
+                  className={clsx(
+                    "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
+                    active
+                      ? "bg-[color:var(--status-accent)]"
+                      : "bg-[color:var(--line-default)] group-hover:bg-[color:var(--text-quiet)]",
+                  )}
+                />
+                <span
+                  className={clsx(
+                    "flex-1 text-[13px] transition-colors duration-150",
+                    active
+                      ? "text-[color:var(--text-strong)]"
+                      : "text-[color:var(--text-secondary)]",
+                  )}
+                >
+                  {s.label}
                 </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+                {badge != null && badge > 0 && (
+                  <span className="text-[color:var(--text-quiet)] tnum text-[11.5px]">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-      <div data-nav-foot className="mt-auto flex flex-col gap-2 pt-6">
-        <ThemeSwitch theme={theme} onTheme={onTheme} />
-        <Button variant="quiet" size="sm" onClick={onExit} className="justify-start">
-          回到首次设置
-        </Button>
+        <div data-nav-foot className="mt-auto flex flex-col gap-2 pt-6">
+          <button
+            type="button"
+            onClick={() => setShowNavConfig(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-primary)] rounded transition-colors text-left cursor-pointer"
+          >
+            <span>⚙</span>
+            <span>导航偏好设置</span>
+          </button>
+          <ThemeSwitch theme={theme} onTheme={onTheme} />
+          <Button variant="quiet" size="sm" onClick={onExit} className="justify-start">
+            回到首次设置
+          </Button>
+        </div>
+      </nav>
+
+      {showNavConfig && (
+        <NavPreferencesModal isOpen={showNavConfig} onClose={() => setShowNavConfig(false)} />
+      )}
+    </>
+  );
+}
+
+function NavPreferencesModal({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const navPreferences = useApp((s) => s.navPreferences);
+  const setDefaultSection = useApp((s) => s.setDefaultSection);
+  const toggleSectionVisibility = useApp((s) => s.toggleSectionVisibility);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+    >
+      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-[#121419] p-5 shadow-2xl text-zinc-100 space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <h3 className="text-[15px] font-bold text-white flex items-center gap-2">
+            <span>⚙ 导航偏好设置</span>
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-400 hover:text-white text-[13px] px-2 py-1 rounded cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* 1. Default Startup Section */}
+        <div className="space-y-1.5">
+          <label className="text-[12px] font-semibold text-zinc-300 block">
+            默认启动分区 (Default Startup Section):
+          </label>
+          <select
+            value={navPreferences.defaultSection}
+            onChange={(e) => setDefaultSection(e.target.value as Section)}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[12.5px] text-white focus:border-amber-500 focus:outline-none"
+          >
+            {SECTIONS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label} ({s.id})
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-zinc-500">
+            打开应用或 cold start 时自动进入的分区，已持久化于本地存储。
+          </p>
+        </div>
+
+        {/* 2. Hidden Sections Toggle */}
+        <div className="space-y-2 pt-2 border-t border-zinc-800">
+          <label className="text-[12px] font-semibold text-zinc-300 block">
+            导航项显示与隐藏 (Show / Hide):
+          </label>
+          <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+            {SECTIONS.map((s) => {
+              const isOverview = s.id === "overview";
+              const isHidden = navPreferences.hiddenSections.includes(s.id);
+              return (
+                <label
+                  key={s.id}
+                  className={clsx(
+                    "flex items-center justify-between p-2 rounded-lg border text-[12px] cursor-pointer transition-colors",
+                    isHidden
+                      ? "border-zinc-800/80 bg-zinc-950/40 text-zinc-500"
+                      : "border-zinc-800 bg-zinc-900/60 text-zinc-200",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!isHidden}
+                      disabled={isOverview}
+                      onChange={() => toggleSectionVisibility(s.id)}
+                      className="accent-amber-500"
+                    />
+                    <span className="font-medium">{s.label}</span>
+                  </div>
+                  <span className="text-[10.5px] font-mono text-zinc-500">
+                    {isOverview ? "首页固定" : isHidden ? "已隐藏" : "显示中"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="pt-2 flex justify-end">
+          <Button size="sm" variant="primary" onClick={onClose}>
+            完成
+          </Button>
+        </div>
       </div>
-    </nav>
+    </div>
   );
 }
 
@@ -568,7 +695,7 @@ function OverviewSection({
   return (
     <div className="flex flex-col gap-8 pb-10">
       {/* 1. Developer Start Center Hero */}
-      <section className="space-y-5 rise">
+      <section data-page-hero className="space-y-5 rise">
         <div>
           <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[color:var(--status-accent)] bg-[color:var(--surface-sunken)] mb-2">
             DEVELOPER START CENTER // 开发起步中心
@@ -1286,8 +1413,7 @@ function SoftwareSection() {
           size="sm"
           className="banner-cta"
           onClick={() => {
-            useApp.getState().closeDashboard();
-            useApp.getState().goTo("software");
+            useApp.getState().navigate({ surface: "wizard", screen: "software" });
           }}
         >
           打开自选卡片库 →
@@ -1809,14 +1935,12 @@ function HistorySection() {
   const canResume = useApp((s) => s.canResume);
   const canResumeBootstrap = useApp((s) => s.canResumeBootstrap);
   const resumeInstall = useApp((s) => s.resumeInstall);
-  const goTo = useApp((s) => s.goTo);
-  const closeDashboard = useApp((s) => s.closeDashboard);
+  const navigate = useApp((s) => s.navigate);
   const reportText = useApp((s) => s.reportText);
   const downloadReport = useApp((s) => s.downloadReport);
 
   const enterWizard = (screen: "install" | "bootstrap") => {
-    closeDashboard();
-    goTo(screen);
+    navigate({ surface: "wizard", screen });
   };
 
   const hasAnything = session || bootstrapSession;
@@ -2754,6 +2878,22 @@ function LoadingBlock({ label }: { label: string }) {
  *    `resolveSetupAction`, the same resolver every resource card uses. The
  *    gallery cannot drift from the contract because it does not own one.
  */
+type LabTab = "experiences" | "atlas" | "pattern-lab";
+
+const FAMILY_FILTER_OPTIONS: { id: ExperienceFamily | "all"; label: string }[] = [
+  { id: "all", label: "全部家族" },
+  { id: "editorial", label: "版式社论 Editorial" },
+  { id: "spatial", label: "星图空间 Spatial" },
+  { id: "hardware", label: "硬件触感 Hardware" },
+  { id: "cinematic", label: "宽幅电影 Cinematic" },
+  { id: "cyber", label: "桌面视窗 Desktop" },
+  { id: "terminal", label: "科学图集 Atlas" },
+  { id: "minimal", label: "静谧画廊 Gallery" },
+  { id: "playful", label: "先锋海报 Poster" },
+];
+
+const STYLE_PAGE_SIZE = 6;
+
 function StyleSection() {
   const activeStyle = useApp((s) => s.activeStyle);
   const inventory = useApp((s) => s.inventory);
@@ -2764,6 +2904,11 @@ function StyleSection() {
   const [previewWorkspaceStyle, setPreviewWorkspaceStyle] = useState<SetupStyle | null>(null);
   const [quickDetailStyle, setQuickDetailStyle] = useState<SetupStyle | null>(null);
   const [playgroundStyleId, setPlaygroundStyleId] = useState<string | null>(null);
+
+  // Design Lab tabs
+  const [labTab, setLabTab] = useState<LabTab>("experiences");
+  const [familyFilter, setFamilyFilter] = useState<ExperienceFamily | "all">("all");
+  const [page, setPage] = useState<number>(1);
   const [filter, setFilter] = useState<"all" | "implemented" | "bookmarks">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -2786,6 +2931,8 @@ function StyleSection() {
 
   const filteredStyles = useMemo(() => {
     return STYLE_REGISTRY.filter((preset) => {
+      const profile = resolveExperienceProfile(preset);
+      if (familyFilter !== "all" && profile.family !== familyFilter) return false;
       if (filter === "implemented" && !preset.implemented) return false;
       if (filter === "bookmarks" && !styleBookmarks.includes(preset.id)) return false;
       if (searchQuery.trim()) {
@@ -2800,7 +2947,40 @@ function StyleSection() {
     });
     // `customVersion` is a dependency on purpose: it is how a newly forked
     // experience reaches this list without a reload.
-  }, [filter, styleBookmarks, searchQuery, customVersion]);
+  }, [filter, familyFilter, styleBookmarks, searchQuery, customVersion]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStyles.length / STYLE_PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const pageStyles = useMemo(() => {
+    const start = (safePage - 1) * STYLE_PAGE_SIZE;
+    return filteredStyles.slice(start, start + STYLE_PAGE_SIZE);
+  }, [filteredStyles, safePage]);
+
+  // Arrow key navigation between pages in Experience matrix
+  useEffect(() => {
+    if (labTab !== "experiences" || previewWorkspaceStyle || quickDetailStyle || playgroundStyleId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      if (
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        setPage((p) => Math.max(1, p - 1));
+      } else if (e.key === "ArrowRight") {
+        setPage((p) => Math.min(totalPages, p + 1));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [labTab, previewWorkspaceStyle, quickDetailStyle, playgroundStyleId, totalPages]);
 
   const tierCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -2820,17 +3000,16 @@ function StyleSection() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <header className="rise flex flex-col md:flex-row md:items-start justify-between gap-4">
+      <header data-page-hero className="rise flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
-            EXPERIENCE GALLERY // 体验画廊
+          <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--accent-on)]">
+            DESIGN LAB // 视觉实验室 V3
           </div>
           <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
-            完整体验与版式语法画廊
+            前端视觉设计实验场 · 体验矩阵与交互实验室
           </h1>
-          <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
-            每一套体验声明自己的外壳语法、导航语法、详情呈现、卡片语言与版面构成，不再只是换色。
-            卡片上是缩略样张，点击可预览完整样张后再决定是否应用。
+          <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-3xl">
+            面向未来的体验运行时。通过严苛剪影测试（Silhouette Test）的 8 大旗舰体验家族、行业级设计标杆（Award Atlas）与高保真交互物理原型（Pattern Lab），让同一功能呈现出截然不同的视觉灵魂。
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-quiet)]">
             {(["token", "component", "composition", "experience"] as const).map((tier) => (
@@ -2855,10 +3034,7 @@ function StyleSection() {
         </div>
       </header>
 
-      {/* The Experience Playground. It replaces the old standalone "token
-          tweaker": adjustments happen against a specimen beside the controls and
-          only reach the app on 应用到应用, so dragging a slider no longer
-          repaints the whole window on every frame. */}
+      {/* The Experience Playground */}
       {playgroundStyleId && (
         <div className="rise">
           <ExperiencePlayground styleId={playgroundStyleId} />
@@ -2871,184 +3047,383 @@ function StyleSection() {
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setFilter("all")}
-            className={clsx(
-              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
-              filter === "all"
-                ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
-                : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
-            )}
-          >
-            全部体验 ({STYLE_REGISTRY.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("implemented")}
-            className={clsx(
-              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
-              filter === "implemented"
-                ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
-                : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
-            )}
-          >
-            已实装 ({STYLE_REGISTRY.filter((s) => s.implemented).length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("bookmarks")}
-            className={clsx(
-              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
-              filter === "bookmarks"
-                ? "bg-[color:var(--status-warn)] text-[color:var(--accent-on)] border-transparent font-bold"
-                : "border-[color:var(--status-warn)]/30 bg-[color:var(--status-warn)]/5 text-[color:var(--status-warn)] hover:bg-[color:var(--status-warn)]/10",
-            )}
-          >
-            ★ 收藏 ({styleBookmarks.filter((id) => STYLE_REGISTRY.some((s) => s.id === id)).length})
-          </button>
-        </div>
+      {/* 3-Segmented Tabs Switcher */}
+      <div className="flex items-center gap-2 border-b border-[color:var(--line-default)] pb-px">
+        <button
+          type="button"
+          onClick={() => setLabTab("experiences")}
+          className={clsx(
+            "flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold border-b-2 transition-all cursor-pointer",
+            labTab === "experiences"
+              ? "border-[color:var(--status-accent)] text-[color:var(--text-strong)] bg-[color:var(--surface-raised)]/60 rounded-t-[var(--radius-control)]"
+              : "border-transparent text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] hover:border-[color:var(--line-strong)]",
+          )}
+        >
+          <span>体验矩阵 (Experiences)</span>
+          <span className="rounded-full bg-[color:var(--surface-hover)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]">
+            {STYLE_REGISTRY.length}
+          </span>
+        </button>
 
-        <div className="relative max-w-xs w-full">
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索体验名称、灵感、标签…"
-            className="w-full rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setLabTab("atlas")}
+          className={clsx(
+            "flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold border-b-2 transition-all cursor-pointer",
+            labTab === "atlas"
+              ? "border-[color:var(--status-accent)] text-[color:var(--text-strong)] bg-[color:var(--surface-raised)]/60 rounded-t-[var(--radius-control)]"
+              : "border-transparent text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] hover:border-[color:var(--line-strong)]",
+          )}
+        >
+          <span>设计标杆 (Award Atlas)</span>
+          <span className="rounded-full bg-[color:var(--status-accent)]/15 px-2 py-0.5 text-[10.5px] font-mono font-bold text-[color:var(--status-accent)]">
+            12 案例
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setLabTab("pattern-lab")}
+          className={clsx(
+            "flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold border-b-2 transition-all cursor-pointer",
+            labTab === "pattern-lab"
+              ? "border-[color:var(--status-accent)] text-[color:var(--text-strong)] bg-[color:var(--surface-raised)]/60 rounded-t-[var(--radius-control)]"
+              : "border-transparent text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] hover:border-[color:var(--line-strong)]",
+          )}
+        >
+          <span>交互实验室 (Pattern Lab)</span>
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10.5px] font-mono font-bold text-emerald-500">
+            6 原型
+          </span>
+        </button>
       </div>
 
-      {/* Gallery — composed by the live composition grammar rather than a fixed
-          four-up grid, so the page itself demonstrates what the styles claim. */}
-      <div data-composition-grid className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-        {filteredStyles.map((preset) => {
-          const profile = resolveExperienceProfile(preset);
-          const resolved = resolvedFor(preset);
-          const isActive = isActiveStyle(preset.id);
-          const isStarred = styleBookmarks.includes(preset.id);
-          const live = isRenderable(preset);
+      {/* Tab 2: Award Atlas */}
+      {labTab === "atlas" && (
+        <div className="rise">
+          <AwardAtlas onNotice={(msg) => setNotice(msg)} />
+        </div>
+      )}
 
-          return (
-            <div
-              key={preset.id}
-              data-style-card={preset.id}
-              data-tier={profile.tier}
-              onClick={() => setQuickDetailStyle(preset)}
-              className={clsx(
-                "group relative flex flex-col justify-between rounded-[var(--radius-panel)] border p-3.5 transition-all duration-200 cursor-pointer select-none",
-                isActive
-                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] shadow-[var(--shadow-hard)]"
-                  : "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/70 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]",
-              )}
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[14.5px] font-bold text-[color:var(--text-strong)] truncate">
-                        {preset.name}
-                      </span>
-                      <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] font-mono font-bold text-[color:var(--text-secondary)] border border-[color:var(--line-subtle)]">
-                        {TIER_SHORT[profile.tier]}
-                      </span>
-                      {isActive && (
-                        <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-[color:var(--accent-on)]">
-                          已启用
-                        </span>
-                      )}
-                      {!live && (
-                        <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)]">
-                          需要更新应用
-                        </span>
-                      )}
+      {/* Tab 3: Pattern Lab */}
+      {labTab === "pattern-lab" && (
+        <div className="rise">
+          <PatternLab onNotice={(msg) => setNotice(msg)} />
+        </div>
+      )}
+
+      {/* Tab 1: Experience Matrix */}
+      {labTab === "experiences" && (
+        <div className="flex flex-col gap-4 rise">
+          {/* Family Filter Chips */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-[color:var(--text-quiet)] mr-1">
+              视觉家族:
+            </span>
+            {FAMILY_FILTER_OPTIONS.map((f) => {
+              const count =
+                f.id === "all"
+                  ? STYLE_REGISTRY.length
+                  : STYLE_REGISTRY.filter((s) => resolveExperienceProfile(s).family === f.id).length;
+              const selected = familyFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    setFamilyFilter(f.id);
+                    setPage(1);
+                  }}
+                  className={clsx(
+                    "px-2.5 py-1 rounded-[var(--radius-control)] text-[11px] font-medium transition-colors border flex items-center gap-1.5 cursor-pointer",
+                    selected
+                      ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold shadow-sm"
+                      : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] hover:border-[color:var(--line-strong)]",
+                  )}
+                >
+                  <span>{f.label}</span>
+                  <span
+                    className={clsx(
+                      "text-[9.5px] font-mono px-1 py-0.2 rounded",
+                      selected
+                        ? "bg-black/20 text-white"
+                        : "bg-[color:var(--surface-hover)] text-[color:var(--text-quiet)]",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-Filter and Search Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilter("all");
+                  setPage(1);
+                }}
+                className={clsx(
+                  "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
+                  filter === "all"
+                    ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
+                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
+                )}
+              >
+                全部体验 ({STYLE_REGISTRY.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilter("implemented");
+                  setPage(1);
+                }}
+                className={clsx(
+                  "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
+                  filter === "implemented"
+                    ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
+                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
+                )}
+              >
+                已实装 ({STYLE_REGISTRY.filter((s) => s.implemented).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilter("bookmarks");
+                  setPage(1);
+                }}
+                className={clsx(
+                  "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
+                  filter === "bookmarks"
+                    ? "bg-[color:var(--status-warn)] text-[color:var(--accent-on)] border-transparent font-bold"
+                    : "border-[color:var(--status-warn)]/30 bg-[color:var(--status-warn)]/5 text-[color:var(--status-warn)] hover:bg-[color:var(--status-warn)]/10",
+                )}
+              >
+                ★ 收藏 ({styleBookmarks.filter((id) => STYLE_REGISTRY.some((s) => s.id === id)).length})
+              </button>
+            </div>
+
+            <div className="relative max-w-xs w-full">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="搜索体验名称、灵感、标签…"
+                className="w-full rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Pagination Toolbar Header */}
+          <div className="flex items-center justify-between gap-3 pt-2 text-[12px] text-[color:var(--text-secondary)] border-t border-[color:var(--line-subtle)]">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11.5px] text-[color:var(--text-quiet)]">
+                显示 {filteredStyles.length > 0 ? (safePage - 1) * STYLE_PAGE_SIZE + 1 : 0}-
+                {Math.min(safePage * STYLE_PAGE_SIZE, filteredStyles.length)} / 共 {filteredStyles.length} 套体验
+              </span>
+              <span className="text-[10px] text-[color:var(--text-quiet)] font-mono hidden md:inline">
+                (支持键盘 ← / → 翻页)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[12px] font-medium hover:border-[color:var(--line-strong)] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                title="上一页 (键盘 ←)"
+              >
+                ‹ 上一页
+              </button>
+              <span className="px-2 font-mono text-[12px] font-bold text-[color:var(--text-strong)]">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2.5 py-1 rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[12px] font-medium hover:border-[color:var(--line-strong)] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                title="下一页 (键盘 →)"
+              >
+                下一页 ›
+              </button>
+            </div>
+          </div>
+
+          {/* 3x2 Grid for 6 items per page */}
+          <div data-composition-grid className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            {pageStyles.map((preset) => {
+              const profile = resolveExperienceProfile(preset);
+              const resolved = resolvedFor(preset);
+              const isActive = isActiveStyle(preset.id);
+              const isStarred = styleBookmarks.includes(preset.id);
+              const live = isRenderable(preset);
+              const familyLabel = profile.family ? (FAMILY_LABEL[profile.family] ?? profile.family) : null;
+
+              return (
+                <div
+                  key={preset.id}
+                  data-style-card={preset.id}
+                  data-tier={profile.tier}
+                  onClick={() => setQuickDetailStyle(preset)}
+                  className={clsx(
+                    "group relative flex flex-col justify-between rounded-[var(--radius-panel)] border p-3.5 transition-all duration-200 cursor-pointer select-none",
+                    isActive
+                      ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] shadow-[var(--shadow-hard)]"
+                      : "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/70 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]",
+                  )}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[14.5px] font-bold text-[color:var(--text-strong)] truncate">
+                            {preset.name}
+                          </span>
+                          <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] font-mono font-bold text-[color:var(--text-secondary)] border border-[color:var(--line-subtle)]">
+                            {TIER_SHORT[profile.tier]}
+                          </span>
+                          {familyLabel && (
+                            <span className="rounded bg-[color:var(--surface-raised)] px-1.5 py-0.2 text-[9.5px] font-mono text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
+                              {familyLabel.split("/")[0]?.trim()}
+                            </span>
+                          )}
+                          {isActive && (
+                            <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-[color:var(--accent-on)]">
+                              已启用
+                            </span>
+                          )}
+                          {!live && (
+                            <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)]">
+                              需要更新应用
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[color:var(--text-quiet)] text-[11px] font-mono mt-0.5 truncate">
+                          {preset.subtitle}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          Bookmarks.toggle(preset.id, preset.name);
+                        }}
+                        className={`text-[13px] p-0.5 shrink-0 hover:scale-125 transition-transform cursor-pointer ${
+                          isStarred
+                            ? "text-[color:var(--status-warn)] font-bold"
+                            : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
+                        }`}
+                        title={isStarred ? "取消收藏" : "收藏"}
+                        aria-label={isStarred ? "取消收藏" : "收藏"}
+                      >
+                        {isStarred ? "★" : "☆"}
+                      </button>
                     </div>
-                    <div className="text-[color:var(--text-quiet)] text-[11px] font-mono mt-0.5 truncate">
-                      {preset.subtitle}
+
+                    {/* The specimen thumbnail — clicking it opens the full workspace */}
+                    <div
+                      className="mt-3 overflow-hidden rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] hover:border-[color:var(--status-accent)] transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewWorkspaceStyle(preset);
+                      }}
+                      title="点击打开完整预览工作区"
+                    >
+                      <ExperienceThumbnail style={preset} className="h-[132px] w-full" />
                     </div>
+
+                    {/* Grammar readout */}
+                    <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10px] text-[color:var(--text-quiet)]">
+                      <span className="truncate">{SHELL_LABEL[profile.shell ?? "sidebar"]}</span>
+                      <span className="truncate">{NAV_LABEL[profile.navigation ?? "sidebar"]}</span>
+                      <span className="truncate">{COMPOSITION_LABEL[profile.composition ?? "solid-grid"]}</span>
+                      <span className="truncate">{CARD_LABEL[profile.card ?? "panel"]}</span>
+                    </div>
+
+                    <p className="mt-2 text-[11.5px] text-[color:var(--text-tertiary)] line-clamp-2 leading-relaxed">
+                      {preset.description}
+                    </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      Bookmarks.toggle(preset.id, preset.name);
-                    }}
-                    className={`text-[13px] p-0.5 shrink-0 hover:scale-125 transition-transform ${
-                      isStarred
-                        ? "text-[color:var(--status-warn)] font-bold"
-                        : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
-                    }`}
-                    title={isStarred ? "取消收藏" : "收藏"}
-                    aria-label={isStarred ? "取消收藏" : "收藏"}
-                  >
-                    {isStarred ? "★" : "☆"}
-                  </button>
+                  {/* Primary Setup Action */}
+                  <div className="mt-3 pt-2.5 border-t border-[color:var(--line-subtle)]">
+                    <SetupActionButton
+                      action={resolved.primaryAction}
+                      secondaryActions={resolved.secondaryActions}
+                      itemMeta={{ id: preset.id, name: preset.name, type: "style" }}
+                      size="sm"
+                      showPmSelector={false}
+                      disabled={!live}
+                      onActionSuccess={(m) => setNotice(m)}
+                      className="w-full"
+                    />
+                    <button
+                      type="button"
+                      data-preview-trigger={preset.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewWorkspaceStyle(preset);
+                      }}
+                      className="mt-2 w-full text-left text-[11px] text-[color:var(--status-accent)] hover:underline cursor-pointer"
+                    >
+                      预览完整样张 ↗
+                    </button>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
 
-                {/* The specimen thumbnail — clicking it opens the full workspace */}
-                <div
-                  className="mt-3 overflow-hidden rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] hover:border-[color:var(--status-accent)] transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPreviewWorkspaceStyle(preset);
-                  }}
-                  title="点击打开完整预览工作区"
-                >
-                  <ExperienceThumbnail style={preset} className="h-[132px] w-full" />
-                </div>
+          {filteredStyles.length === 0 && (
+            <EmptyBlock
+              title="没有匹配的体验"
+              body="换个关键词、清除家族筛选，或切回「全部体验」。"
+            />
+          )}
 
-                {/* Grammar readout */}
-                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10px] text-[color:var(--text-quiet)]">
-                  <span className="truncate">{SHELL_LABEL[profile.shell ?? "sidebar"]}</span>
-                  <span className="truncate">{NAV_LABEL[profile.navigation ?? "sidebar"]}</span>
-                  <span className="truncate">{COMPOSITION_LABEL[profile.composition ?? "solid-grid"]}</span>
-                  <span className="truncate">{CARD_LABEL[profile.card ?? "panel"]}</span>
-                </div>
-
-                <p className="mt-2 text-[11.5px] text-[color:var(--text-tertiary)] line-clamp-2 leading-relaxed">
-                  {preset.description}
-                </p>
-              </div>
-
-              {/* Primary Setup Action */}
-              <div className="mt-3 pt-2.5 border-t border-[color:var(--line-subtle)]">
-                <SetupActionButton
-                  action={resolved.primaryAction}
-                  secondaryActions={resolved.secondaryActions}
-                  itemMeta={{ id: preset.id, name: preset.name, type: "style" }}
-                  size="sm"
-                  showPmSelector={false}
-                  disabled={!live}
-                  onActionSuccess={(m) => setNotice(m)}
-                  className="w-full"
-                />
+          {/* Bottom Pagination Toolbar when multiple pages */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-[color:var(--line-subtle)] text-[12px] text-[color:var(--text-secondary)]">
+              <span className="font-mono text-[11.5px] text-[color:var(--text-quiet)]">
+                第 {safePage} 页，共 {totalPages} 页 (每页 6 套)
+              </span>
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  data-preview-trigger={preset.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPreviewWorkspaceStyle(preset);
+                  disabled={safePage <= 1}
+                  onClick={() => {
+                    setPage((p) => Math.max(1, p - 1));
+                    window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
-                  className="mt-2 w-full text-left text-[11px] text-[color:var(--status-accent)] hover:underline cursor-pointer"
+                  className="px-3 py-1 rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[12px] font-medium hover:border-[color:var(--line-strong)] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
                 >
-                  预览完整样张 ↗
+                  ‹ 上一页
+                </button>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => {
+                    setPage((p) => Math.min(totalPages, p + 1));
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="px-3 py-1 rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[12px] font-medium hover:border-[color:var(--line-strong)] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                >
+                  下一页 ›
                 </button>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {filteredStyles.length === 0 && (
-        <EmptyBlock
-          title="没有匹配的体验"
-          body="换个关键词，或切回「全部体验」。"
-        />
+          )}
+        </div>
       )}
 
       {/* Quick Detail modal for brief inspection (DetailShell) */}

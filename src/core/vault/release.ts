@@ -8,6 +8,14 @@
  */
 
 import { appCanonicalVersion, isTauri } from "../../lib/ipc";
+import { getCachedContentVersion } from "./cache";
+
+export type UpdateCheckStatus =
+  | "unchecked"
+  | "checking"
+  | "up-to-date"
+  | "update-available"
+  | "error";
 
 export interface AppReleaseInfo {
   currentVersion: string;
@@ -16,6 +24,7 @@ export interface AppReleaseInfo {
   releaseUrl?: string;
   publishedAt?: string;
   notes?: string;
+  status: UpdateCheckStatus;
   hasUpdate: boolean;
 }
 
@@ -25,6 +34,7 @@ export interface VaultReleaseInfo {
   publishedAt?: string;
   summary?: string;
   changes?: string[];
+  status: UpdateCheckStatus;
   hasUpdate: boolean;
 }
 
@@ -36,18 +46,22 @@ export interface ReleaseStatusSnapshot {
   error?: string;
 }
 
-const STORAGE_KEY = "setup-center.release-status.v1";
+const STORAGE_KEY = "setup-center.release-status.v2";
 
 class ReleaseManager {
   private status: ReleaseStatusSnapshot = {
     app: {
-      currentVersion: "0.2.0",
-      runtimeSource: isTauri() ? "Tauri Desktop Runtime" : "Browser Preview",
+      currentVersion: isTauri() ? "" : "dev-preview",
+      runtimeSource: isTauri()
+        ? "Tauri Desktop Runtime (待检测)"
+        : "Browser Preview (无原生环境)",
+      status: "unchecked",
       hasUpdate: false,
       releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
     },
     vault: {
-      currentVersion: "2026.10.03.1",
+      currentVersion: getCachedContentVersion() || "builtin",
+      status: "unchecked",
       hasUpdate: false,
     },
     isChecking: false,
@@ -106,15 +120,24 @@ class ReleaseManager {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const cur = this.status.app.currentVersion;
+        const curApp = this.status.app.currentVersion;
+        const curVault = this.status.vault.currentVersion;
         this.status = {
           ...this.status,
           ...parsed,
           app: {
             ...this.status.app,
-            currentVersion: cur,
-            latestVersion: parsed.app?.latestVersion,
-            hasUpdate: parsed.app?.latestVersion && parsed.app.latestVersion !== `v${cur}` && parsed.app.latestVersion !== cur,
+            ...parsed.app,
+            currentVersion: curApp,
+            status: parsed.app?.status || "unchecked",
+            hasUpdate: Boolean(parsed.app?.hasUpdate),
+          },
+          vault: {
+            ...this.status.vault,
+            ...parsed.vault,
+            currentVersion: curVault,
+            status: parsed.vault?.status || "unchecked",
+            hasUpdate: Boolean(parsed.vault?.hasUpdate),
           },
           isChecking: false,
         };
@@ -135,7 +158,9 @@ class ReleaseManager {
   public setVaultCurrentVersion(version: string): void {
     this.status.vault.currentVersion = version;
     if (this.status.vault.latestVersion) {
-      this.status.vault.hasUpdate = this.compareVersions(this.status.vault.latestVersion, version) > 0;
+      const hasUpdate = this.compareVersions(this.status.vault.latestVersion, version) > 0;
+      this.status.vault.hasUpdate = hasUpdate;
+      this.status.vault.status = hasUpdate ? "update-available" : "up-to-date";
     }
     this.notify();
     this.saveToStorage();
@@ -149,7 +174,7 @@ class ReleaseManager {
     this.status.error = undefined;
     this.notify();
 
-    const [appRes, vaultRes] = await Promise.allSettled([
+    await Promise.allSettled([
       this.checkAppRelease(),
       this.checkVaultRelease(),
     ]);
@@ -157,7 +182,10 @@ class ReleaseManager {
     this.status.isChecking = false;
     this.status.lastCheckedAt = new Date().toISOString();
 
-    if (appRes.status === "rejected" && vaultRes.status === "rejected") {
+    if (
+      this.status.app.status === "error" &&
+      this.status.vault.status === "error"
+    ) {
       this.status.error = "无法连接至发布检测服务，请检查网络";
     }
 
@@ -171,6 +199,9 @@ class ReleaseManager {
    */
   public async checkAppRelease(): Promise<AppReleaseInfo> {
     const cur = this.status.app.currentVersion;
+    this.status.app.status = "checking";
+    this.notify();
+
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
@@ -183,7 +214,7 @@ class ReleaseManager {
       if (res.ok) {
         const data = await res.json();
         const tag = (data.tag_name || "").replace(/^v/, "");
-        const hasUpdate = this.compareVersions(tag, cur) > 0;
+        const hasUpdate = Boolean(cur && cur !== "dev-preview" && this.compareVersions(tag, cur) > 0);
         this.status.app = {
           ...this.status.app,
           currentVersion: cur,
@@ -191,26 +222,22 @@ class ReleaseManager {
           releaseUrl: data.html_url || "https://github.com/arukas0623-ai/setup-center/releases",
           publishedAt: data.published_at,
           notes: data.body,
+          status: hasUpdate ? "update-available" : "up-to-date",
           hasUpdate,
         };
       } else {
-        // Fallback info if API rate limited
+        // Fallback info if API rate limited or server error
         this.status.app = {
           ...this.status.app,
-          currentVersion: cur,
-          latestVersion: `v${cur}`,
+          status: "error",
           hasUpdate: false,
-          releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
         };
       }
     } catch {
-      // Safe fallback
       this.status.app = {
         ...this.status.app,
-        currentVersion: cur,
-        latestVersion: `v${cur}`,
+        status: "error",
         hasUpdate: false,
-        releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
       };
     }
     return this.status.app;
@@ -220,6 +247,10 @@ class ReleaseManager {
    * Check release checkpoint in Setup Vault
    */
   public async checkVaultRelease(): Promise<VaultReleaseInfo> {
+    const cur = this.status.vault.currentVersion;
+    this.status.vault.status = "checking";
+    this.notify();
+
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
@@ -232,31 +263,28 @@ class ReleaseManager {
       if (res.ok) {
         const data = await res.json();
         const latest = data.releaseVersion || data.contentVersion;
-        const hasUpdate = this.compareVersions(latest, this.status.vault.currentVersion) > 0;
+        const hasUpdate = Boolean(latest && this.compareVersions(latest, cur) > 0);
         this.status.vault = {
-          currentVersion: this.status.vault.currentVersion,
+          currentVersion: cur,
           latestVersion: latest,
           publishedAt: data.publishedAt,
           summary: data.summary,
           changes: data.changes,
+          status: hasUpdate ? "update-available" : "up-to-date",
           hasUpdate,
         };
       } else {
-        // Fallback to manifest contentVersion
         this.status.vault = {
-          currentVersion: this.status.vault.currentVersion,
-          latestVersion: this.status.vault.currentVersion,
+          ...this.status.vault,
+          status: "error",
           hasUpdate: false,
-          summary: "当前内容已是最新稳定批次",
         };
       }
     } catch {
-      // Fallback
       this.status.vault = {
-        currentVersion: this.status.vault.currentVersion,
-        latestVersion: this.status.vault.currentVersion,
+        ...this.status.vault,
+        status: "error",
         hasUpdate: false,
-        summary: "当前内容已是最新稳定批次",
       };
     }
     return this.status.vault;

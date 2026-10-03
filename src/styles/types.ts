@@ -283,6 +283,76 @@ export interface OrnamentGrammar {
   chrome?: "none" | "title" | "menu" | "status" | "title-menu" | "full";
 }
 
+export type ExperienceFamily =
+  | "editorial"
+  | "spatial"
+  | "hardware"
+  | "cinematic"
+  | "terminal"
+  | "minimal"
+  | "cyber"
+  | "playful";
+
+export type SceneGrammar =
+  | "split-reading"
+  | "constellation"
+  | "instrument-panel"
+  | "viewport-hud"
+  | "windowed-desktop"
+  | "coordinate-atlas"
+  | "poster-canvas"
+  | "minimal-gallery";
+
+export type ContentFlowGrammar =
+  | "asymmetric-split"
+  | "orbital-nodes"
+  | "dense-rack"
+  | "widescreen-timeline"
+  | "floating-windows"
+  | "cartesian-matrix"
+  | "tilted-columns"
+  | "serene-centered";
+
+export type NavigationFlowGrammar =
+  | "ticker-rail"
+  | "radial-dock"
+  | "hardware-tabs"
+  | "cinematic-scrubber"
+  | "window-taskbar"
+  | "coordinate-ruler"
+  | "slant-tabs"
+  | "ghost-pill";
+
+export type PageTransitionGrammar =
+  | "newspaper-fold"
+  | "constellation-drift"
+  | "knob-snap"
+  | "camera-cut"
+  | "window-cascade"
+  | "telemetry-glitch"
+  | "poster-flip"
+  | "subtle-fade";
+
+export type HeroModeGrammar =
+  | "giant-serif"
+  | "hologram"
+  | "synth-rack"
+  | "anamorphic-scope"
+  | "desktop-stage"
+  | "data-readout"
+  | "bold-marquee"
+  | "monolithic-focus";
+
+export type LayeringGrammar =
+  | "paper-stack"
+  | "deep-space"
+  | "chassis-chassis"
+  | "optical-glass"
+  | "overlapping-windows"
+  | "blueprint-grid"
+  | "overlapping-stickers"
+  | "single-plane";
+
 /**
  * A complete declarative description of one experience.
  *
@@ -291,6 +361,13 @@ export interface OrnamentGrammar {
  */
 export interface ExperienceProfile {
   tier: ExperienceTier;
+  family?: ExperienceFamily;
+  scene?: SceneGrammar;
+  contentFlow?: ContentFlowGrammar;
+  navigationFlow?: NavigationFlowGrammar;
+  pageTransition?: PageTransitionGrammar;
+  heroMode?: HeroModeGrammar;
+  layering?: LayeringGrammar;
   shell?: ShellGrammar;
   navigation?: NavigationGrammar;
   detail?: DetailGrammar;

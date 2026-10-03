@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Data Atlas — Stylesheet
+   ========================================================================== */
+
+html[data-style="data-atlas"] {
+  background-color: var(--style-bg, #0f172a);
+  color: var(--text-primary, #f1f5f9);
+}
+
+/* Coordinate Rulers along Top & Left */
+html[data-style="data-atlas"] [data-shell-root] {
+  background-color: #0f172a;
+  background-image:
+    linear-gradient(rgba(51, 65, 85, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 65, 85, 0.25) 1px, transparent 1px);
+  background-size: 20px 20px;
+  position: relative;
+}
+
+/* Scientific Instrument Cards */
+html[data-style="data-atlas"] [data-software-card],
+html[data-style="data-atlas"] [data-resource-card],
+html[data-style="data-atlas"] [data-style-card],
+html[data-style="data-atlas"] [data-experience-card] {
+  border-radius: 0px !important;
+  background-color: #1e293b !important;
+  border: 1px dashed #475569 !important;
+  box-shadow: none !important;
+  font-family: ui-monospace, Consolas, monospace !important;
+}
+
+html[data-style="data-atlas"] [data-software-card]:hover,
+html[data-style="data-atlas"] [data-resource-card]:hover {
+  border: 1px solid #10b981 !important;
+  background-color: #162032 !important;
+}
+
+/* Telemetry Green Primary Buttons */
+html[data-style="data-atlas"] button {
+  border-radius: 0px !important;
+  font-family: ui-monospace, Consolas, monospace !important;
+  letter-spacing: -0.01em !important;
+}
+
+html[data-style="data-atlas"] button[data-variant="primary"],
+html[data-style="data-atlas"] .btn-primary {
+  background-color: #10b981 !important;
+  color: #022c22 !important;
+  font-weight: 800 !important;
+  border: 1px solid #059669 !important;
+}
+
+html[data-style="data-atlas"] button[data-variant="primary"]:hover,
+html[data-style="data-atlas"] .btn-primary:hover {
+  background-color: #34d399 !important;
+}

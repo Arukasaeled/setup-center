@@ -119,6 +119,8 @@ pub fn run() {
             commands::detect_editors,
             commands::open_in_editor,
             commands::app_canonical_version,
+            commands::get_downloads_dir,
+            commands::verify_file_sha256,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");

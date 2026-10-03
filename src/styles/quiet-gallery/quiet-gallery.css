@@ -1,0 +1,69 @@
+/* ==========================================================================
+   Quiet Gallery — Stylesheet
+   Minimal museum plinth, hairline borders, serene whitespace
+   ========================================================================== */
+
+html[data-style="quiet-gallery"] {
+  background-color: var(--style-bg, #0e0e11);
+  color: var(--text-primary, #f4f2ee);
+}
+
+/* Serene Centered Container */
+html[data-style="quiet-gallery"] [data-shell-root] {
+  background-color: #0e0e11;
+  letter-spacing: -0.01em;
+}
+
+/* Museum Plinth Cards */
+html[data-style="quiet-gallery"] [data-software-card],
+html[data-style="quiet-gallery"] [data-resource-card],
+html[data-style="quiet-gallery"] [data-style-card],
+html[data-style="quiet-gallery"] [data-experience-card] {
+  border-radius: 6px !important;
+  background-color: #141417 !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+html[data-style="quiet-gallery"] [data-software-card]:hover,
+html[data-style="quiet-gallery"] [data-resource-card]:hover,
+html[data-style="quiet-gallery"] [data-style-card]:hover,
+html[data-style="quiet-gallery"] [data-experience-card]:hover {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background-color: #18181c !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Hairline Ghost Nav Buttons */
+html[data-style="quiet-gallery"] [data-nav-item] {
+  border-radius: 9999px !important;
+  font-weight: 400 !important;
+  border: 1px solid transparent !important;
+  transition: all 0.25s ease !important;
+}
+
+html[data-style="quiet-gallery"] [data-nav-item][aria-selected="true"],
+html[data-style="quiet-gallery"] [data-nav-item].active {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f4f2ee !important;
+}
+
+/* Minimalist Alabaster Buttons */
+html[data-style="quiet-gallery"] button[data-variant="primary"],
+html[data-style="quiet-gallery"] .btn-primary {
+  background-color: #f4f2ee !important;
+  color: #0e0e11 !important;
+  font-weight: 500 !important;
+  border-radius: 4px !important;
+  border: 1px solid #e2ded7 !important;
+  transition: all 0.25s ease !important;
+}
+
+html[data-style="quiet-gallery"] button[data-variant="primary"]:hover,
+html[data-style="quiet-gallery"] .btn-primary:hover {
+  background-color: #ffffff !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2) !important;
+}

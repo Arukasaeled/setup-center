@@ -8,7 +8,7 @@
  * directly to required system capabilities, starter templates, curated repos, and toolchains.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import clsx from "clsx";
 import { useApp } from "../lib/store";
 import { Button } from "../components/ui";
@@ -16,6 +16,8 @@ import { ScaffoldModal } from "../components/ScaffoldModal";
 import { CloneRepoModal } from "../components/CloneRepoModal";
 import { RepoDetailModal } from "../components/RepoDetailModal";
 import { Bookmarks } from "../core/transfer/bookmarks";
+import { RecentTracker } from "../core/transfer/recent";
+import { PersonalCatalog } from "../core/transfer/catalog";
 import { fetchGitHubRepoDetails } from "../core/discovery/github";
 import type { DiscoveryItem } from "../core/discovery/types";
 
@@ -194,6 +196,33 @@ export function GoalModeScreen() {
 
   const currentTrack = GOAL_TRACKS.find((t) => t.id === selectedTrackId) ?? GOAL_TRACKS[0];
 
+  // Asynchronously hydrate live stars for repos of current track
+  const [liveRepoStars, setLiveRepoStars] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const repo of currentTrack.repos) {
+      if (liveRepoStars[repo.repoUrl]) continue;
+      fetchGitHubRepoDetails(repo.repoUrl)
+        .then((real) => {
+          if (cancelled) return;
+          if (real?.origin?.stars !== undefined && real?.origin?.stars !== null) {
+            setLiveRepoStars((prev) => ({ ...prev, [repo.repoUrl]: String(real.origin!.stars) }));
+          } else {
+            setLiveRepoStars((prev) => ({ ...prev, [repo.repoUrl]: "未获取" }));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setLiveRepoStars((prev) => ({ ...prev, [repo.repoUrl]: "未获取" }));
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack]);
+
   // Calculate readiness of current track
   const readiness = useMemo(() => {
     if (!capabilities || capabilities.length === 0) return { ready: 0, total: currentTrack.capabilities.length, pct: 0 };
@@ -230,7 +259,8 @@ export function GoalModeScreen() {
     });
   };
 
-  const handleInspectRepo = (repo: { title: string; repoUrl: string; desc: string; tech: string }) => {
+  const handleInspectRepo = (repo: { title: string; repoUrl: string; desc: string; tech: string; stars?: string }) => {
+    const liveStar = liveRepoStars[repo.repoUrl];
     const item: DiscoveryItem = {
       id: `repo:${repo.title}`,
       title: repo.title,
@@ -242,19 +272,28 @@ export function GoalModeScreen() {
         type: "github",
         repository: repo.repoUrl,
         url: repo.repoUrl,
-        license: "开源",
+        stars: liveStar && liveStar !== "未获取" ? liveStar : undefined,
       },
-      health: "active",
       tags: [repo.tech],
     };
     setDetailItem(item);
+    RecentTracker.record(
+      {
+        id: item.id,
+        title: item.title,
+        type: "repo",
+        category: item.category,
+        subtitle: item.subtitle,
+      },
+      item,
+    );
 
     // Hydrate real GitHub metadata asynchronously
     fetchGitHubRepoDetails(repo.repoUrl).then((realDetails) => {
       if (realDetails) {
         setDetailItem((current) => {
           if (!current || current.id !== item.id) return current;
-          return {
+          const updated: DiscoveryItem = {
             ...current,
             origin: {
               type: "github",
@@ -265,14 +304,39 @@ export function GoalModeScreen() {
             },
             health: realDetails.health,
           };
+          PersonalCatalog.saveItem(updated);
+          return updated;
         });
       }
     });
   };
 
-  const handleBookmark = (title: string, e: React.MouseEvent) => {
+  const handleBookmark = (
+    title: string,
+    e: React.MouseEvent,
+    repoObj?: { title: string; repoUrl: string; desc: string; tech: string; stars?: string },
+  ) => {
     e.stopPropagation();
-    Bookmarks.toggle(`goal:${title}`, title);
+    const id = repoObj ? `repo:${title}` : `goal:${title}`;
+    const liveStar = repoObj ? liveRepoStars[repoObj.repoUrl] : undefined;
+    const snapshot: DiscoveryItem = {
+      id,
+      title,
+      subtitle: repoObj?.tech || currentTrack.name,
+      description: repoObj?.desc || currentTrack.description,
+      type: repoObj ? "repo" : "learning",
+      category: repoObj ? "repository" : "roadmap",
+      origin: repoObj
+        ? {
+            type: "github",
+            repository: repoObj.repoUrl,
+            url: repoObj.repoUrl,
+            stars: liveStar && liveStar !== "未获取" ? liveStar : undefined,
+          }
+        : undefined,
+      tags: repoObj ? [repoObj.tech] : ["goal", currentTrack.id],
+    };
+    Bookmarks.toggle(id, title, snapshot);
     setNotice(`已更新收藏：${title}`);
     setTimeout(() => setNotice(null), 2000);
   };
@@ -507,14 +571,12 @@ export function GoalModeScreen() {
                     {repo.title}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {repo.stars && (
-                      <span className="rounded bg-[color:var(--surface-panel)] border border-[color:var(--line-subtle)] px-1.5 py-0.5 text-[10px] font-mono text-[color:var(--text-tertiary)]">
-                        ★ {repo.stars}
-                      </span>
-                    )}
+                    <span className="rounded bg-[color:var(--surface-panel)] border border-[color:var(--line-subtle)] px-1.5 py-0.5 text-[10px] font-mono text-[color:var(--text-tertiary)]">
+                      ★ {liveRepoStars[repo.repoUrl] || "获取中…"}
+                    </span>
                     <button
                       type="button"
-                      onClick={(e) => handleBookmark(repo.title, e)}
+                      onClick={(e) => handleBookmark(repo.title, e, repo)}
                       className="p-1 text-[color:var(--text-quiet)] hover:text-amber-400 transition-colors"
                       title="收藏"
                     >

@@ -12,23 +12,26 @@
 import type { SoftwareId } from "../../lib/types";
 
 export type SetupActionType =
-  | "install"     // Native installer / Winget execution
-  | "command"     // Package manager / CLI command (pnpm, npm, cargo, uv, etc.)
-  | "download"    // Direct asset download via AssetDownloader
-  | "clone"       // Git repository clone
-  | "scaffold"    // Project generator / template initialisation
-  | "apply"       // Visual style / design token activation
-  | "copy"        // Snippet / CSS / Config / Prompt to clipboard
-  | "open"        // Documentation / Browser URL navigation
-  | "import"      // Transfer inbox / Bookmark intake
-  | "reveal"      // Local folder / detail view
+  | "install"         // Native installer / Winget execution
+  | "copy-command"    // Package manager / CLI command copied to clipboard
+  | "native-command"  // Real native process execution in console
+  | "command"         // Deprecated alias for backwards compatibility -> copy-command
+  | "download"        // Direct asset download via AssetDownloader
+  | "clone"           // Git repository clone
+  | "scaffold"        // Project generator / template initialisation
+  | "apply"           // Visual style / design token activation
+  | "preview"         // Preview complete style specimen/workspace without applying
+  | "copy"            // Snippet / CSS / Config / Prompt to clipboard
+  | "open"            // Documentation / Browser URL navigation
+  | "import"          // Transfer inbox / Bookmark intake
+  | "reveal"          // Local folder / detail view
   // Experience actions. A Style is content like any other, so tuning one has to
   // be an action rather than a button the gallery invents on the side — that is
   // why these are members of the shared union and dispatched by the shared
   // executor, instead of living in StyleSection (brief §27).
-  | "customize"   // Open the Experience Playground for a style
-  | "export"      // Export a style's token set as a portable envelope
-  | "fork";       // Derive a custom experience from a preset + overrides
+  | "customize"       // Open the Experience Playground for a style
+  | "export"          // Export a style's token set as a portable envelope
+  | "fork";           // Derive a custom experience from a preset + overrides
 
 export type PackageManager =
   | "pnpm"

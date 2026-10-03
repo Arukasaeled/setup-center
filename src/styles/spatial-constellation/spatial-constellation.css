@@ -1,0 +1,76 @@
+/* ==========================================================================
+   Spatial Constellation — Stylesheet
+   ========================================================================== */
+
+html[data-style="spatial-constellation"] {
+  background-color: var(--style-bg, #080914);
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* Starfield Cosmos Ambient Canvas */
+html[data-style="spatial-constellation"] [data-shell-root] {
+  background-color: #080914;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 85% 75%, rgba(0, 240, 255, 0.10) 0%, transparent 45%),
+    radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px;
+}
+
+/* Floating Glassmorphic Panels with Neon Cyan Rim */
+html[data-style="spatial-constellation"] [data-software-card],
+html[data-style="spatial-constellation"] [data-resource-card],
+html[data-style="spatial-constellation"] [data-style-card],
+html[data-style="spatial-constellation"] [data-experience-card] {
+  border-radius: 20px !important;
+  background: linear-gradient(135deg, rgba(23, 27, 54, 0.75), rgba(15, 18, 38, 0.65)) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  border: 1px solid rgba(0, 240, 255, 0.25) !important;
+  box-shadow: 
+    0 20px 45px -10px rgba(0, 0, 0, 0.6),
+    0 0 20px -5px rgba(0, 240, 255, 0.12),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.15) !important;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease-out, border-color 0.25s ease-out !important;
+}
+
+html[data-style="spatial-constellation"] [data-software-card]:hover,
+html[data-style="spatial-constellation"] [data-resource-card]:hover,
+html[data-style="spatial-constellation"] [data-style-card]:hover,
+html[data-style="spatial-constellation"] [data-experience-card]:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+  border-color: rgba(0, 240, 255, 0.7) !important;
+  box-shadow: 
+    0 30px 60px -12px rgba(0, 0, 0, 0.75),
+    0 0 35px 2px rgba(0, 240, 255, 0.25),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Floating Dock Navigation */
+html[data-style="spatial-constellation"] [data-nav] {
+  border-radius: 9999px !important;
+  background: rgba(15, 18, 38, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(0, 240, 255, 0.3) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 240, 255, 0.15) !important;
+}
+
+/* Buttons with luminous glow */
+html[data-style="spatial-constellation"] button {
+  border-radius: 9999px !important;
+  letter-spacing: 0.03em !important;
+}
+
+html[data-style="spatial-constellation"] button[data-variant="primary"],
+html[data-style="spatial-constellation"] .btn-primary {
+  background: linear-gradient(135deg, #00f0ff, #a855f7) !important;
+  color: #080914 !important;
+  font-weight: 800 !important;
+  border: none !important;
+  box-shadow: 0 4px 20px rgba(0, 240, 255, 0.4) !important;
+}
+
+html[data-style="spatial-constellation"] button[data-variant="primary"]:hover,
+html[data-style="spatial-constellation"] .btn-primary:hover {
+  box-shadow: 0 6px 28px rgba(0, 240, 255, 0.65) !important;
+  filter: brightness(1.1) !important;
+}

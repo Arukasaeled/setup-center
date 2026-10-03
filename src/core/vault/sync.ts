@@ -146,7 +146,6 @@ class VaultSyncManager {
         // network or offline, fallback to rawVaultOrigin
       }
 
-      const hasPin = targetBaseUrl !== rawVaultOrigin;
       let client = new VaultClient(targetBaseUrl);
       let remoteManifest: VaultManifest | null = null;
       let pinFallbackReason: string | null = null;
@@ -155,10 +154,8 @@ class VaultSyncManager {
         remoteManifest = await client.fetchManifest();
       } catch (pinErr) {
         const msg = pinErr instanceof Error ? pinErr.message : String(pinErr);
-        // If a pin was attempted and failed, check if we have a Last Known Good (LKG) cache.
-        // Stable sync must NEVER fall back to unverified raw main if we already have verified LKG.
         const cachedLkg = loadVaultCache();
-        if (hasPin && cachedLkg) {
+        if (cachedLkg) {
           console.warn(
             `[VaultSync] Release pin ${targetBaseUrl} unavailable (${msg}); preserving Last Known Good (LKG) cache v${cachedLkg.manifest.contentVersion} rather than pulling unverified raw main.`,
           );
@@ -179,17 +176,18 @@ class VaultSyncManager {
           return lkgResult;
         }
 
-        // If no LKG exists (clean install) or not pinned, attempt raw origin
-        if (hasPin) {
-          console.warn(
-            `[VaultSync] Release pin ${targetBaseUrl} unavailable (${msg}) and no LKG cache found; falling back to ${rawVaultOrigin}`,
-          );
-          pinFallbackReason = msg;
-          client = new VaultClient(rawVaultOrigin);
-          remoteManifest = await client.fetchManifest();
-        } else {
-          throw pinErr;
-        }
+        // Clean install without LKG: Stable Vault NEVER consumes raw main!
+        console.warn(
+          `[VaultSync] Release pin ${targetBaseUrl} unavailable (${msg}) and no LKG cache found; stable remote unavailable. Using built-in content.`,
+        );
+        const errResult: VaultSyncResult = {
+          ok: false,
+          updated: false,
+          contentVersion: "builtin",
+          error: `Release pin unavailable (${msg}) and clean install has no LKG; stable remote unavailable`,
+        };
+        this.notify("idle", errResult);
+        return errResult;
       }
 
       if (!remoteManifest) throw new Error("Vault manifest unavailable");
@@ -217,67 +215,90 @@ class VaultSyncManager {
 
       this.notify("syncing");
 
-      // Fetch Styles
+      // =====================================================================
+      // Candidate Snapshot Construction (Atomic Swap)
+      // Fetch ALL required assets. Any failure aborts candidate creation and
+      // leaves existing LKG cache 100% untouched.
+      // =====================================================================
+
+      // 1. Fetch Styles
       const stylesRecord: Record<string, VaultStyleManifest> = {};
       if (remoteManifest.collections.styles?.items) {
         for (const itemRef of remoteManifest.collections.styles.items) {
-          try {
-            const styleManifest = await client.fetchAssetJson<VaultStyleManifest>(itemRef.path);
-            if (itemRef.cssPath) {
-              try {
-                styleManifest.cssContent = await client.fetchAssetText(itemRef.cssPath);
-              } catch (cssErr) {
-                console.warn(`[VaultSync] Failed to fetch CSS for ${itemRef.id}:`, cssErr);
-              }
-            }
-            stylesRecord[styleManifest.id] = styleManifest;
-          } catch (err) {
-            console.warn(`[VaultSync] Failed to fetch style ${itemRef.id}:`, err);
+          const styleManifest = await client.fetchAssetJson<VaultStyleManifest>(itemRef.path);
+          if (!styleManifest || !styleManifest.id || !styleManifest.name) {
+            throw new Error(`Style asset ${itemRef.id} failed schema validation`);
           }
+          if (itemRef.cssPath) {
+            styleManifest.cssContent = await client.fetchAssetText(itemRef.cssPath);
+          }
+          stylesRecord[styleManifest.id] = styleManifest;
         }
       }
 
-      // Fetch Resources
+      // 2. Fetch Resources
       const resourcesList: ResourceItem[] = [];
       if (remoteManifest.collections.resources?.items) {
         for (const itemRef of remoteManifest.collections.resources.items) {
-          try {
-            const catItems = await client.fetchAssetJson<ResourceItem[]>(itemRef.path);
-            if (Array.isArray(catItems)) {
-              resourcesList.push(...catItems);
-            }
-          } catch (err) {
-            console.warn(`[VaultSync] Failed to fetch resource cat ${itemRef.id}:`, err);
+          const catItems = await client.fetchAssetJson<ResourceItem[]>(itemRef.path);
+          if (!Array.isArray(catItems)) {
+            throw new Error(`Resource collection ${itemRef.id} is not an array`);
           }
+          resourcesList.push(...catItems);
         }
       }
 
-      // Fetch Templates
+      // 3. Fetch Templates
       const templatesList: VaultTemplateItem[] = [];
       if (remoteManifest.collections.templates?.items) {
         for (const itemRef of remoteManifest.collections.templates.items) {
-          try {
-            const tpl = await client.fetchAssetJson<VaultTemplateItem>(itemRef.path);
-            templatesList.push(tpl);
-          } catch (err) {
-            console.warn(`[VaultSync] Failed to fetch template ${itemRef.id}:`, err);
+          const tpl = await client.fetchAssetJson<VaultTemplateItem>(itemRef.path);
+          if (!tpl || !tpl.id || !tpl.name) {
+            throw new Error(`Template asset ${itemRef.id} failed schema validation`);
           }
+          templatesList.push(tpl);
         }
       }
 
-      // Fetch Patterns
+      // 4. Fetch Patterns
       const patternsList: VaultPatternItem[] = [];
       if (remoteManifest.collections.patterns?.items) {
         for (const itemRef of remoteManifest.collections.patterns.items) {
-          try {
-            const pat = await client.fetchAssetJson<VaultPatternItem>(itemRef.path);
-            patternsList.push(pat);
-          } catch (err) {
-            console.warn(`[VaultSync] Failed to fetch pattern ${itemRef.id}:`, err);
+          const pat = await client.fetchAssetJson<VaultPatternItem>(itemRef.path);
+          if (!pat || !pat.id || !pat.name) {
+            throw new Error(`Pattern asset ${itemRef.id} failed schema validation`);
           }
+          patternsList.push(pat);
         }
       }
 
+      // 5. Verification checks on Candidate Snapshot
+      if (
+        remoteManifest.collections.styles?.items &&
+        Object.keys(stylesRecord).length < remoteManifest.collections.styles.items.length
+      ) {
+        throw new Error(
+          `Candidate incomplete: styles count mismatch (${Object.keys(stylesRecord).length}/${remoteManifest.collections.styles.items.length})`,
+        );
+      }
+      if (
+        remoteManifest.collections.templates?.items &&
+        templatesList.length < remoteManifest.collections.templates.items.length
+      ) {
+        throw new Error(
+          `Candidate incomplete: templates count mismatch (${templatesList.length}/${remoteManifest.collections.templates.items.length})`,
+        );
+      }
+      if (
+        remoteManifest.collections.patterns?.items &&
+        patternsList.length < remoteManifest.collections.patterns.items.length
+      ) {
+        throw new Error(
+          `Candidate incomplete: patterns count mismatch (${patternsList.length}/${remoteManifest.collections.patterns.items.length})`,
+        );
+      }
+
+      // Candidate is complete and validated! Perform atomic swap
       const freshVaultData: CachedVaultData = {
         manifest: remoteManifest,
         syncedAt: new Date().toISOString(),

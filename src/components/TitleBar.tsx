@@ -156,9 +156,13 @@ export function TitleBar() {
         >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              releaseSnapshot.app.hasUpdate || releaseSnapshot.vault.hasUpdate
+              releaseSnapshot.app.status === "update-available" || releaseSnapshot.vault.status === "update-available"
                 ? "bg-[color:var(--status-accent)] animate-pulse"
-                : "bg-emerald-400"
+                : releaseSnapshot.app.status === "up-to-date" && releaseSnapshot.vault.status === "up-to-date"
+                ? "bg-emerald-400"
+                : releaseSnapshot.app.status === "error" || releaseSnapshot.vault.status === "error"
+                ? "bg-rose-400/80"
+                : "bg-[color:var(--line-strong)]"
             }`}
           />
           <span>版本查看</span>

@@ -1358,3 +1358,108 @@ html[data-experience] [data-software-row] {
   content: none !important;
 }
 
+/* ==========================================================================
+   SCENE GRAMMAR V3 — Generic Primitives for Scene Composition
+   ========================================================================== */
+
+/* 1. Content Flow Primitives */
+html[data-content-flow="one-screen"] [data-shell-root] section[data-page] {
+  overflow-y: hidden;
+  height: 100%;
+}
+
+html[data-content-flow="horizontal"] [data-shell-root] section[data-page] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+html[data-content-flow="paged"] [data-shell-root] section[data-page] {
+  scroll-snap-type: y mandatory;
+}
+html[data-content-flow="paged"] [data-shell-root] section[data-page] > * {
+  scroll-snap-align: start;
+}
+
+/* 2. Navigation Flow Primitives */
+html[data-nav-flow="dock"] [data-shell-root] nav[data-nav] {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  border-radius: 9999px;
+  flex-direction: row;
+}
+
+html[data-nav-flow="orbit"] [data-shell-root] nav[data-nav] {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 40;
+  border-radius: 1rem;
+}
+
+/* 3. Hero Mode Primitives */
+html[data-hero-mode="oversized"] [data-page-hero] {
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 800;
+  margin-bottom: 2rem;
+}
+
+html[data-hero-mode="film-strip"] [data-page-hero] {
+  aspect-ratio: 21 / 9;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+}
+
+html[data-hero-mode="none"] [data-page-hero] {
+  display: none;
+}
+
+/* 4. Layering Primitives */
+html[data-layering="optical-glass"] [data-shell-root] :is(nav[data-nav], aside[data-detail], [data-composition-grid] > *) {
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+html[data-layering="paper-stack"] [data-shell-root] [data-composition-grid] > * {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+html[data-layering="overlapping-windows"] [data-shell-root] [data-composition-grid] > * {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+html[data-layering="blueprint-grid"] [data-shell-root] section[data-page] {
+  background-image: linear-gradient(to right, var(--line-subtle) 1px, transparent 1px),
+                    linear-gradient(to bottom, var(--line-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* 5. Scene Primitives */
+html[data-scene="split-reading"] [data-shell-root] section[data-page] {
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 2.5rem;
+  padding-right: 2.5rem;
+}
+
+html[data-scene="minimal-gallery"] [data-shell-root] section[data-page] {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
+}
+
+html[data-scene="coordinate-atlas"] [data-shell-root] {
+  font-family: var(--font-mono);
+}
+
+html[data-scene="instrument-panel"] [data-shell-root] {
+  user-select: none;
+}
+
+
