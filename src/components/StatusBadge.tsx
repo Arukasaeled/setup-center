@@ -62,6 +62,10 @@ export function StatusBadge({
   return (
     <span
       title={state.title}
+      /* A stable hook for the style layer. Without it, stylesheets that want to
+         treat "已安装" differently from "未安装" have to match on the tone's
+         utility classes, which breaks the moment the palette is tokenised. */
+      data-status={confidence}
       className={clsx(
         "inline-flex items-center gap-1.5 rounded-full border",
         size === "sm" ? "px-1.5 py-[1px] text-[10.5px]" : "px-2 py-[3px] text-[11px]",

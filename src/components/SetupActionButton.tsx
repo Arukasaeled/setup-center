@@ -13,6 +13,14 @@ export interface SetupActionButtonProps {
   size?: "sm" | "md" | "lg";
   className?: string;
   showPmSelector?: boolean;
+  /**
+   * Renders the control inert with its reason visible. Used for content the
+   * running build cannot honour — an experience whose manifest declares a newer
+   * `runtimeCapability`, or a draft that is not implemented yet — where offering
+   * a button that would silently do nothing is worse than offering none.
+   */
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export function SetupActionButton({
@@ -25,6 +33,8 @@ export function SetupActionButton({
   size = "md",
   className,
   showPmSelector = true,
+  disabled = false,
+  disabledReason,
 }: SetupActionButtonProps) {
   const [activePm, setActivePm] = useState<PackageManager>(
     action.activePackageManager || (availablePackageManagers?.[0] ?? "pnpm"),
@@ -90,25 +100,36 @@ export function SetupActionButton({
 
   return (
     <div className={clsx("inline-flex flex-col gap-1.5", className)}>
-      <div className="inline-flex items-center rounded-lg border border-[color:var(--line-strong)] bg-[color:var(--surface-raised)] shadow-sm">
+      {/* `rounded-[var(--radius-control)]` rather than a literal: this is the
+          primary control of every card in the app, so a radius override that
+          does not reach *this* button would not look like it reached anything.
+          The fill reads `--accent` and its foreground reads `--accent-on`,
+          both runtime-owned, so an accent override reaches the control the user
+          is looking at when they change it. */}
+      <div
+        data-setup-action
+        className="inline-flex items-center rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[color:var(--surface-raised)] shadow-sm"
+      >
         {/* Main Action Button */}
         <button
           type="button"
           onClick={() => handleRun(currentAction)}
-          disabled={isExecuting}
+          disabled={isExecuting || disabled}
           className={clsx(
-            "inline-flex items-center justify-center rounded-l-lg transition-all duration-150 active:scale-[0.98]",
-            "bg-[color:var(--accent)] text-white hover:brightness-110",
+            "inline-flex items-center justify-center rounded-l-[var(--radius-control)] transition-all duration-150 active:scale-[0.98]",
+            disabled
+              ? "bg-[color:var(--surface-hover)] text-[color:var(--text-quiet)] cursor-not-allowed"
+              : "bg-[color:var(--accent)] text-[color:var(--accent-on)] hover:brightness-110",
             sizeClasses,
-            secondaryActions.length === 0 && !availablePackageManagers?.length && "rounded-r-lg",
+            secondaryActions.length === 0 && !availablePackageManagers?.length && "rounded-r-[var(--radius-control)]",
           )}
           title={currentAction.description || currentAction.label}
         >
           {isExecuting ? (
-            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
           ) : feedback ? (
             <span className="flex items-center gap-1 text-[12px]">
-              <span className="font-bold text-white">✓</span> {feedback}
+              <span className="font-bold">✓</span> {feedback}
             </span>
           ) : (
             <>
@@ -205,6 +226,12 @@ export function SetupActionButton({
         <div className="flex items-center gap-1.5 text-[11px] text-amber-500/90 font-mono">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
           <span>{prerequisites.warningHint || `环境依赖: ${prerequisites.missingNames.join("、")}`}</span>
+        </div>
+      )}
+
+      {disabled && disabledReason && (
+        <div className="text-[11px] font-mono text-[color:var(--text-quiet)]">
+          {disabledReason}
         </div>
       )}
     </div>

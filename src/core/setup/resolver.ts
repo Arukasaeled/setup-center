@@ -10,6 +10,13 @@
 
 import type { ResourceItem } from "../../content/resources/types";
 import type { SetupStyle } from "../../styles/types";
+import {
+  composeShadow,
+  NAV_LABEL,
+  resolveExperienceProfile,
+  resolveTokens,
+  SHELL_LABEL,
+} from "../../styles/runtime";
 import type { VaultPatternItem, VaultTemplateItem } from "../vault/types";
 import type { SoftwareId, SoftwareInventory } from "../../lib/types";
 import { KID_SOFTWARE_MAP } from "../../lib/softwareMeta";
@@ -163,7 +170,7 @@ export function resolveSetupAction(
       ? {
           id: `software-installed-${item.id}`,
           type: "reveal",
-          label: "已在环境就绪",
+          label: "查看详情",
           payload: item.id,
           description: "该软件已正确检测到本机构建路径",
           isPrimary: true,
@@ -203,26 +210,68 @@ export function resolveSetupAction(
     };
   }
 
-  // 2. Style item
+  // 2. Style / Experience item
   if (item.type === "style") {
     const s = item.data;
+    const profile = resolveExperienceProfile(s);
+    const tokens = resolveTokens(s);
+
     const primaryAction: SetupAction = {
       id: `style-apply-${s.id}`,
       type: "apply",
       label: "立即应用视觉语言",
-      description: `切换至 ${s.name} 主题令牌与排版模式`,
+      description: `切换至 ${s.name} 的完整体验：${SHELL_LABEL[profile.shell ?? "sidebar"]} · ${NAV_LABEL[profile.navigation ?? "sidebar"]}`,
       payload: s.id,
       isPrimary: true,
       successMessage: `已切换至「${s.name}」风格`,
     };
 
+    // Every style exposes the same three secondary affordances, because a style
+    // with only "Apply" forces the user to guess that tuning even exists. The
+    // 调校台 opens the playground for this style; 导出 and 另存为 produce an
+    // artefact the user can keep or share. All three are resolved here rather
+    // than hand-written in the gallery, so the gallery cannot drift from the
+    // contract (brief §27).
     const secondaryActions: SetupAction[] = [
+      {
+        id: `style-tune-${s.id}`,
+        type: "customize",
+        label: "调校此体验",
+        description: "打开体验调校台，调节圆角 / 阴影 / 强调色 / 密度",
+        payload: s.id,
+      },
+      {
+        id: `style-export-${s.id}`,
+        type: "export",
+        label: "导出令牌",
+        description: "导出该体验的令牌 JSON，可在另一台机器导入",
+        payload: s.id,
+      },
+      {
+        id: `style-fork-${s.id}`,
+        type: "fork",
+        label: "另存为自定义",
+        description: `基于 ${s.name} 创建一份可继续修改的派生体验`,
+        payload: s.id,
+      },
       {
         id: `style-copy-tokens-${s.id}`,
         type: "copy",
         label: "复制 CSS 调色板变量",
-        description: "提取该风格的 hex 配色与圆角阴影令牌",
-        payload: `:root {\n  --style-bg: ${s.palette.baseBg};\n  --style-surface: ${s.palette.surface};\n  --style-border: ${s.palette.cardBorder};\n  --style-accent: ${s.palette.accent};\n  --style-text: ${s.palette.text};\n  --style-radius: ${s.tokens?.borderRadius || "6px"};\n  --style-border-w: ${s.tokens?.borderWidth || "1px"};\n}`,
+        description: "提取该风格的 hex 配色、圆角、阴影与边框令牌",
+        payload: [
+          ":root {",
+          `  --style-bg: ${s.palette.baseBg};`,
+          `  --style-surface: ${tokens.surface};`,
+          `  --style-border: ${s.palette.cardBorder};`,
+          `  --style-accent: ${tokens.accent};`,
+          `  --style-text: ${tokens.text};`,
+          `  --style-radius: ${tokens.panelRadius};`,
+          `  --style-radius-control: ${tokens.controlRadius};`,
+          `  --style-border-w: ${tokens.borderWidth};`,
+          `  --style-shadow: ${composeShadow(tokens.shadow)};`,
+          "}",
+        ].join("\n"),
         successMessage: "风格 CSS 令牌已复制到剪贴板",
       },
     ];
@@ -354,7 +403,23 @@ export function resolveSetupAction(
     const secondaryActions: SetupAction[] = [];
     let prereq: SetupPrerequisite | undefined;
 
-    if (packageCommands) {
+    if (r.category === "templates" && !packageCommands) {
+      // A template's primary action is instantiating it, not reading about it.
+      // This used to be a hand-written "创建工程" button in the resource card,
+      // which meant the detail view and the card disagreed about what the same
+      // template's main action was. Resolved here, both surfaces agree.
+      prereq = { requiredSoftwareIds: ["node", "git"], hint: "实例化工程模板需要 Node.js 与 Git" };
+      primaryAction = {
+        id: `resource-scaffold-${r.id}`,
+        type: "scaffold",
+        label: "创建工程",
+        description: "基于该模板实例化一个本地项目目录",
+        payload: r.id,
+        isPrimary: true,
+        prerequisites: prereq,
+        successMessage: `已调起「${r.name}」工程生成向导`,
+      };
+    } else if (packageCommands) {
       prereq = {
         requiredSoftwareIds: ["node"],
         hint: "安装该前端模块需要 Node.js 运行时",

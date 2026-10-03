@@ -21,7 +21,14 @@ export type SetupActionType =
   | "copy"        // Snippet / CSS / Config / Prompt to clipboard
   | "open"        // Documentation / Browser URL navigation
   | "import"      // Transfer inbox / Bookmark intake
-  | "reveal";     // Local folder / detail view
+  | "reveal"      // Local folder / detail view
+  // Experience actions. A Style is content like any other, so tuning one has to
+  // be an action rather than a button the gallery invents on the side — that is
+  // why these are members of the shared union and dispatched by the shared
+  // executor, instead of living in StyleSection (brief §27).
+  | "customize"   // Open the Experience Playground for a style
+  | "export"      // Export a style's token set as a portable envelope
+  | "fork";       // Derive a custom experience from a preset + overrides
 
 export type PackageManager =
   | "pnpm"

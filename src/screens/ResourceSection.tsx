@@ -21,13 +21,14 @@ import { SetupActionButton } from "../components/SetupActionButton";
 import { resolveSetupAction } from "../core/setup";
 import { useApp } from "../lib/store";
 
-function openUrl(url?: string) {
-  if (!url) return;
-  try {
-    window.open(url, "_blank", "noopener,noreferrer");
-  } catch {
-    // fallback
-  }
+/**
+ * Identity handed to the executor so TransferHistory records the *content* that
+ * was acted on rather than the action id. Declared once because every surface
+ * that renders a Setup Action — card, detail, future surfaces — must report the
+ * same thing.
+ */
+function itemMeta(item: ResourceItem) {
+  return { id: item.id, name: item.name, type: "resource" };
 }
 
 export function ResourceSection() {
@@ -69,6 +70,35 @@ export function ResourceSection() {
   } | null>(null);
 
   const [showInbox, setShowInbox] = useState(false);
+
+  /**
+   * The scaffold action is a `scaffold` Setup Action, and executing one
+   * dispatches `setup:open-scaffold` with the template id. This is the single
+   * listener for that event, which is why the card no longer needs a
+   * `category === "templates"` branch of its own.
+   *
+   * The command is derived from the repository rather than left to the modal's
+   * fallback. The fallback is a Tauri-specific command, so before this the
+   * "创建工程" button on *every* template in the catalogue offered to scaffold a
+   * Tauri app, regardless of which template the user clicked.
+   */
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ templateId?: string }>).detail;
+      const item = RESOURCE_CATALOG.find((r) => r.id === detail?.templateId);
+      if (!item) return;
+      setScaffoldTemplate({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        command: item.repository ? `git clone ${item.repository} {{projectName}}` : undefined,
+        defaultDir: item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        postInstallNotice: item.homepage ? `项目文档：${item.homepage}` : undefined,
+      });
+    };
+    window.addEventListener("setup:open-scaffold", onOpen);
+    return () => window.removeEventListener("setup:open-scaffold", onOpen);
+  }, []);
 
   // Trigger manual sync
   const handleSyncVault = async () => {
@@ -141,6 +171,23 @@ export function ResourceSection() {
     if (!selectedResourceForDetail) return null;
     return resolveSetupAction({ type: "resource", data: selectedResourceForDetail }, inventory);
   }, [selectedResourceForDetail, inventory]);
+
+  /**
+   * Resolved once per visible card and reused by the card's action bar, so the
+   * card and the detail view are guaranteed to agree about what the primary
+   * action for an item is — they call the same function with the same input.
+   *
+   * Keyed by id rather than by render because the resolver allocates new action
+   * objects each call; without memoising, every keystroke in the search box
+   * would rebuild an action for every card on screen.
+   */
+  const resolvedByCard = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof resolveSetupAction>>();
+    for (const item of filteredResources) {
+      map.set(item.id, resolveSetupAction({ type: "resource", data: item }, inventory));
+    }
+    return map;
+  }, [filteredResources, inventory]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -385,10 +432,15 @@ export function ResourceSection() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <div
+          data-composition-grid
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5"
+        >
           {filteredResources.map((item) => {
             const isStarred = bookmarkedIds.includes(item.id);
             const downloadTask = downloads.find((d) => d.url === item.downloadUrl);
+            const resolved = resolvedByCard.get(item.id);
+            if (!resolved) return null;
 
             return (
               <div
@@ -479,80 +531,38 @@ export function ResourceSection() {
                   </div>
                 </div>
 
-                {/* Bottom Actions */}
-                <div className="mt-3.5 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {item.repository && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openUrl(item.repository);
-                        }}
-                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-active)] px-2 py-0.8 text-[11px] font-bold text-[color:var(--text-primary)] hover:bg-[color:var(--status-accent)] hover:text-black transition-colors border border-[color:var(--line-default)]"
-                      >
-                        <span>GitHub</span>
-                        <span className="text-[9.5px]">↗</span>
-                      </button>
-                    )}
-                    {item.homepage && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openUrl(item.homepage);
-                        }}
-                        className="inline-flex items-center gap-1 rounded bg-[color:var(--surface-inset)] px-2 py-0.8 text-[11px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors border border-[color:var(--line-subtle)]"
-                      >
-                        <span>官网</span>
-                        <span className="text-[9.5px]">↗</span>
-                      </button>
-                    )}
-                  </div>
+                {/* Bottom Actions.
 
-                  <div className="flex items-center gap-2">
-                    {item.category === "templates" && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setScaffoldTemplate({
-                            id: item.id,
-                            name: item.name,
-                            description: item.description,
-                            defaultDir: item.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-                          });
-                        }}
-                        className="rounded-lg px-2 py-0.8 text-[11px] font-bold bg-[color:var(--status-accent)] text-black hover:opacity-90 transition-opacity"
-                      >
-                        创建工程 ◩
-                      </button>
-                    )}
+                    One control, one resolver. The card previously hand-wrote
+                    four branches here — repository → GitHub, homepage → 官网,
+                    category === "templates" → 创建工程, actionType === "download"
+                    → 下载 — which is a second, private action system that the
+                    Universal Setup Action contract knew nothing about, and which
+                    drifted from the detail view's actions for the same item.
 
-                    {item.actionType === "download" && item.downloadUrl && (
-                      <button
-                        type="button"
-                        disabled={downloadTask?.status === "downloading"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          AssetDownloader.startDownload(
-                            item.downloadUrl!,
-                            `${item.name.toLowerCase().replace(/\s+/g, "_")}.zip`,
-                            item.name,
-                          );
-                        }}
-                        className="rounded-lg px-2 py-0.8 text-[11px] font-bold bg-emerald-400 text-black hover:bg-emerald-300 transition-colors"
-                      >
-                        {downloadTask?.status === "downloading"
-                          ? `${downloadTask.progress}%`
-                          : "下载 ⤓"}
-                      </button>
-                    )}
-
-                    <span className="text-[11px] text-[color:var(--status-accent)] group-hover:underline">
-                      详情 ↗
+                    Now the card asks the same resolver the detail view asks, and
+                    renders whatever it returns. A card cannot offer an action the
+                    contract does not define, and adding an action type to
+                    `resolveSetupAction` reaches every card at once. */}
+                <div
+                  className="mt-3.5 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <SetupActionButton
+                    action={resolved.primaryAction}
+                    itemMeta={itemMeta(item)}
+                    secondaryActions={resolved.secondaryActions}
+                    availablePackageManagers={resolved.availablePackageManagers}
+                    prerequisites={resolved.prerequisites}
+                    size="sm"
+                    showPmSelector={false}
+                    className="min-w-0 flex-1"
+                  />
+                  {downloadTask?.status === "downloading" && (
+                    <span className="tnum shrink-0 text-[10.5px] font-mono text-[color:var(--text-quiet)]">
+                      {downloadTask.progress}%
                     </span>
-                  </div>
+                  )}
                 </div>
               </div>
             );

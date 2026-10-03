@@ -12,18 +12,37 @@
  * sections a student can move between freely, with a detail pane that explains
  * whatever they point at. Nothing is a step; nothing must be completed.
  *
- * ## The three-column structure, and why each column exists
+ * ## Layout is declared, not inferred
  *
- * * **Left** — five sections. Answers "what kinds of fact are there about my
- *   computer". Fixed, small, and never a progress indicator.
- * * **Centre** — the actual state. Rows of `name · status · version · purpose`.
- * * **Right** — the selected row, expanded: what it is, why it matters, what we
- *   observed, and (when something is missing) the one action that would fix it.
+ * This screen used to describe itself as a fixed "three-column structure": a
+ * 188px navigation rail, a centre column, and a 340px detail rail. That stopped
+ * being true the moment Style and Resources were added, and the code coped the
+ * way code usually copes — with a growing chain of exclusions deciding whether
+ * the detail rail was allowed to exist:
  *
- * The right column is the part that was missing entirely before. Every row used
- * to say `Git · 已安装` and nothing said why a student should care. Explanations
- * belong somewhere with room for them, not crammed into a row and not hidden
- * behind a modal that interrupts.
+ *     section !== "style" && section !== "resources" &&
+ *     !(section === "software" && selectedItemId?.startsWith("sw:")) && …
+ *
+ * Four sections that nobody remembered (`history`, `plugins`, `license`,
+ * `about`) therefore mounted a 340px column whose only possible content was an
+ * empty placeholder. The bug was not the chain; it was that layout was inferred
+ * from a list of exceptions rather than declared per page.
+ *
+ * Each section now declares a {@link PageLayoutContract}: a layout *mode* and
+ * whether selecting an item in that section can produce a detail. A new section
+ * cannot forget to opt out, because the default is explicit and the shell reads
+ * the contract rather than a pile of `section !== …` conditions.
+ *
+ * ## The three slots, and why they are still semantic
+ *
+ * Whatever the arrangement, the dashboard renders three roles — navigation,
+ * primary content, and detail — tagged with `data-nav`, `data-page` and
+ * `data-detail`. The **Experience runtime** writes `data-shell`,
+ * `data-nav`, `data-detail` and `data-composition` onto `<html>`, and
+ * `src/styles/shell.css` rearranges these same elements accordingly. That is how
+ * a style can turn the sidebar into a dock or a menu bar without a single
+ * `if (style === …)` reaching this file, and why a style published to the Vault
+ * later can do the same without a rebuild.
  *
  * ## Why the rail was kept
  *
@@ -54,12 +73,28 @@ import {
 } from "../components/ActivationPanel";
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
-import type { SetupStyle } from "../styles/types";
+import type { PageLayoutContract, SetupStyle } from "../styles/types";
 import { ResourceSection } from "./ResourceSection";
-import { TokenTweaker } from "../components/TokenTweaker";
 import { DetailShell } from "../components/DetailShell";
+import { SetupActionButton } from "../components/SetupActionButton";
+import { ExperienceSpecimen, ExperienceThumbnail } from "../components/ExperienceSpecimen";
+import { ExperiencePlayground } from "../components/TokenTweaker";
 import { TransferHistoryTimeline } from "../components/TransferHistoryTimeline";
 import { Bookmarks } from "../core/transfer";
+import { resolveSetupAction } from "../core/setup/resolver";
+import {
+  CARD_LABEL,
+  COMPOSITION_LABEL,
+  DENSITY_LABEL,
+  DETAIL_LABEL,
+  isRenderable,
+  MOTION_LABEL,
+  NAV_LABEL,
+  resolveExperienceProfile,
+  SHELL_LABEL,
+  TIER_LABEL,
+  TIER_SHORT,
+} from "../styles/runtime";
 import type {
   CapabilityStatus,
   Confidence,
@@ -93,6 +128,46 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "license", label: "版本与授权", hint: "当前权益与激活" },
   { id: "about", label: "关于", hint: "购买与联系作者" },
 ];
+
+/**
+ * The page-layout contract, per section.
+ *
+ * This replaces the chain of `section !== …` exclusions that used to decide
+ * whether the detail rail existed. Read it as the answer to two questions per
+ * page: *how is this page laid out*, and *can selecting something in it produce
+ * a detail*.
+ *
+ * The distinction that matters is `selectable`. Only three sections ever put a
+ * key into the store's `selectedItemId`: overview (`cap:` and `fact:` keys),
+ * software (`sw:`), and config (`config.*` requirements). Every other section
+ * used to receive the same 340px rail anyway, which is why opening 历史记录 or
+ * 关于 showed a permanently empty column.
+ */
+const PAGE_LAYOUTS: Record<Section, PageLayoutContract> = {
+  // Capabilities and machine facts both select into the detail rail.
+  overview: { mode: "master-detail", selectable: true },
+  // The software list has its own in-section master-detail pane; the global
+  // rail stands down so the same explanation is never rendered twice.
+  software: { mode: "master-detail", selectable: true },
+  // A dense browsable index with its own filters, search and category pills.
+  resources: { mode: "explorer", selectable: false },
+  // A gallery of specimens whose detail opens over the page, not beside it.
+  style: { mode: "gallery", selectable: false },
+  // Config requirements select into the rail: this is genuinely master-detail.
+  config: { mode: "master-detail", selectable: true },
+  // Resumable sessions and a transfer timeline, read top to bottom.
+  history: { mode: "timeline", selectable: false },
+  // Plugin toggles and licence scope are prose and controls.
+  plugins: { mode: "document", selectable: false },
+  license: { mode: "document", selectable: false },
+  about: { mode: "document", selectable: false },
+};
+
+/** The layout contract for a section, with an explicit default for unknowns. */
+function pageLayout(section: Section): PageLayoutContract {
+  return PAGE_LAYOUTS[section] ?? { mode: "document", selectable: false };
+}
+
 export function Dashboard() {
   const section = useApp((s) => s.section);
   const setSection = useApp((s) => s.setSection);
@@ -138,8 +213,32 @@ export function Dashboard() {
     inventoryPhase === "idle" ||
     inventoryPhase === "scanning";
 
+  /* Whether the *global* detail slot is on screen with something to show, as
+     opposed to whether this page could have one at all.
+     The `modal` and `full-page` detail grammars need that distinction; the
+     rail-style grammars do not read it.
+
+     `asideMounted` must be computed the same way the render below computes it,
+     not merely from `selectable`: in the software section the global rail stands
+     down while a program is selected (the section draws its own pane inside
+     `section[data-page]`), so a full-page grammar that collapsed the page there
+     would hide the pane that is doing the work. */
+  const asideMounted =
+    pageLayout(section).selectable &&
+    !(section === "software" && selectedItemId?.startsWith("sw:"));
+  const detailOpen = asideMounted && selectedItemId !== null;
+
   return (
-    <div className="flex h-full">
+    <div
+      data-shell-root
+      /* `data-detail-open` tells the `modal` and `full-page` detail grammars
+         whether there is genuinely something to show. Those two grammars cover
+         the page when a detail exists, so they must not fire on a page that is
+         merely *selectable* but has never been clicked — that collapsed the page
+         into an empty dialog. Every other grammar ignores the attribute. */
+      data-detail-open={detailOpen ? "" : undefined}
+      className="flex h-full"
+    >
       <DashboardNav
         section={section}
         onSelect={setSection}
@@ -148,8 +247,16 @@ export function Dashboard() {
         onTheme={setTheme}
       />
 
-      <div className="flex min-w-0 flex-1">
-        <section className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
+      {/* `display: contents` for layout, a real element for React. The page and
+          the detail rail are the shell's direct flex children, so a shell
+          grammar can reorder or resize them without fighting a wrapper that
+          hardcodes `flex-1`. */}
+      <div data-shell-body className="flex min-w-0 flex-1">
+        <section
+          data-page
+          data-window-title={`Setup Center — ${SECTIONS.find((s) => s.id === section)?.label ?? ""}`}
+          className="min-w-0 flex-1 overflow-y-auto px-8 py-7"
+        >
           {/* The persistent tier row. It sits at the top of every section rather
               than only on 版本与授权, because the whole gap this closes is that a
               FREE customer had no visible route to activation anywhere they
@@ -191,18 +298,23 @@ export function Dashboard() {
           {section === "about" && <AboutSection />}
         </section>
 
-        {/* The global detail rail. The software section renders its own pane
-            beside the list — that is the master-detail the brief asks for — so
-            this one stands down while a program is selected there, rather than
-            showing the same explanation twice in two columns.
+        {/* The global detail rail, mounted only when the page's layout contract
+            says this page can produce a detail.
 
-            It still serves every other section: a capability, a machine fact and
-            a config requirement all select into it, and none of them has a list
-            of its own to sit beside. */}
-        {section !== "style" &&
-          section !== "resources" &&
-          !(section === "software" && selectedItemId?.startsWith("sw:")) && (
-            <aside className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7">
+            Two conditions, and both are facts about the page rather than a list
+            of section names to exclude:
+
+            * `selectable` — only overview, software and config ever write a
+              `selectedItemId`. Every other section used to mount this column and
+              render `DetailPlaceholder` into it forever.
+            * the software section renders its *own* pane beside its list, so the
+              global rail stands down while a program is selected there rather
+              than showing the same explanation in two columns at once. */}
+        {asideMounted && (
+          <aside
+            data-detail
+            className="border-[color:var(--line-subtle)] w-[340px] shrink-0 overflow-y-auto border-l px-6 py-7"
+          >
               <DetailPane
                 selectedId={selectedItemId}
                 capabilities={capabilities}
@@ -247,9 +359,10 @@ function DashboardNav({
   return (
     <nav
       aria-label="导航"
+      data-nav
       className="border-[color:var(--line-subtle)] flex w-[188px] shrink-0 flex-col border-r px-3 py-7"
     >
-      <div className="px-2.5 pb-5">
+      <div data-nav-brand className="px-2.5 pb-5">
         <div className="text-[color:var(--text-strong)] text-[13.5px] font-semibold tracking-[-0.01em]">
           Setup Center
         </div>
@@ -258,7 +371,7 @@ function DashboardNav({
         </div>
       </div>
 
-      <div className="flex flex-col gap-0.5">
+      <div data-nav-list className="flex flex-col gap-0.5">
         {SECTIONS.map((s) => {
           const active = s.id === section;
           const badge = badges[s.id];
@@ -304,7 +417,7 @@ function DashboardNav({
         })}
       </div>
 
-      <div className="mt-auto flex flex-col gap-2 pt-6">
+      <div data-nav-foot className="mt-auto flex flex-col gap-2 pt-6">
         <ThemeSwitch theme={theme} onTheme={onTheme} />
         <Button variant="quiet" size="sm" onClick={onExit} className="justify-start">
           回到首次设置
@@ -1147,22 +1260,48 @@ function SoftwareGrid({
           visible.map((item) => {
             const id = softwareKey(item.id);
             const descriptor = categoryOf.get(item.id);
+            const knowledge = knowledgeById.get(item.id) ?? null;
+            // Every software row carries its own resolved Setup Action, exactly
+            // like a resource card does — the row is never a dead entry that
+            // only becomes actionable after you open its detail.
+            //
+            // The action renders as a SIBLING of the row, not inside it: the row
+            // root is a whole-row <button>, and nesting a control there is the
+            // DOM bug tools/hydration-sweep.mjs asserts against. It also keeps
+            // the row's own accessible name (and innerText) untouched.
+            const resolved = resolveSetupAction({
+              type: "software",
+              id: item.id,
+              name: knowledge?.knowledge.name ?? item.name,
+              installed: item.installed,
+            });
             return (
-              <SoftwareRow
-                key={item.id}
-                item={item}
-                catalogue={catalogue}
-                knowledge={knowledgeById.get(item.id) ?? null}
-                // A program this tool cannot install is never "可选": offering it
-                // as a recommendation would promise an action that does not exist.
-                recommendation={
-                  descriptor && !descriptor.installable
-                    ? "detectOnly"
-                    : (recommendations.get(item.id) ?? "optional")
-                }
-                selected={selectedItemId === id}
-                onClick={() => onSelect(id)}
-              />
+              <div key={item.id} className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <SoftwareRow
+                    item={item}
+                    catalogue={catalogue}
+                    knowledge={knowledge}
+                    // A program this tool cannot install is never "可选": offering it
+                    // as a recommendation would promise an action that does not exist.
+                    recommendation={
+                      descriptor && !descriptor.installable
+                        ? "detectOnly"
+                        : (recommendations.get(item.id) ?? "optional")
+                    }
+                    selected={selectedItemId === id}
+                    onClick={() => onSelect(id)}
+                  />
+                </div>
+                <SetupActionButton
+                  action={resolved.primaryAction}
+                  secondaryActions={resolved.secondaryActions}
+                  itemMeta={{ id: item.id, name: item.name, type: "software" }}
+                  size="sm"
+                  showPmSelector={false}
+                  className="shrink-0"
+                />
+              </div>
             );
           })
         )}
@@ -1529,6 +1668,52 @@ function DetailPaneShell({
   );
 }
 
+/**
+ * The Setup Action for a software item, resolved from the same contract every
+ * other card type uses.
+ *
+ * `reveal` used to be a dead label — a student was told 「已在环境就绪」 with no
+ * way to act, and the executor had no `reveal` arm at all, so the button would
+ * have reported 「未知的 Setup 操作类型」. Both sides are now real: this renders
+ * whatever the resolver decides, and the executor knows how to honour it.
+ */
+function DetailSetupAction({
+  item,
+  knowledge,
+}: {
+  item: SoftwareInfo;
+  knowledge: ExplainedSoftware | null;
+}) {
+  const resolved = resolveSetupAction({
+    type: "software",
+    id: item.id,
+    name: knowledge?.knowledge.name ?? item.name,
+    installed: item.installed,
+  });
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionLabel>可执行操作</SectionLabel>
+      <SetupActionButton
+        action={resolved.primaryAction}
+        secondaryActions={resolved.secondaryActions}
+        itemMeta={{
+          id: resolved.itemId,
+          name: resolved.name,
+          type: "software",
+        }}
+        size="sm"
+        showPmSelector={false}
+        className="w-full"
+      />
+      {resolved.primaryAction.description && (
+        <p className="text-[color:var(--text-quiet)] text-[11.5px] leading-relaxed">
+          {resolved.primaryAction.description}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CapabilityDetail({
   capability,
   onClear,
@@ -1677,6 +1862,10 @@ function SoftwareDetail({
             catalog's own grouping does not — "编程语言" against "开发工具". */}
         {k && k.category && <DetailRow label="分类" value={k.category} />}
       </div>
+
+      {/* The detail pane carries the same resolved action as the row, so the two
+          never disagree and neither is the only door to the real flow. */}
+      <DetailSetupAction item={item} knowledge={knowledge} />
 
       {/*
         Version notes, and the deliberate absence of a verdict.
@@ -2127,23 +2316,51 @@ function LoadingBlock({ label }: { label: string }) {
  */
 
 /**
- * Visual Style Gallery & Laboratory.
+ * Experience Gallery.
  *
- * High-density gallery grid for browsing design systems, inspectable
- * with deep DetailShell overlays and a collapsible design token tweaker.
+ * Browses what this build can render as *whole products*, not as palettes. Each
+ * card shows a live specimen of the experience's shell, navigation, composition
+ * and card language, and states its tier and grammar in words — because "Neo
+ * Brutalism vs DOS Utility" has to be legible as a structural difference, not
+ * just as a difference in hue.
+ *
+ * Two rules the previous gallery broke and this one keeps:
+ *
+ *  - **Preview before Apply.** Seeing an experience used to require becoming it
+ *    app-wide, so browsing repainted the whole window on every click. The
+ *    specimen renders from the same token table and the same grammar enum the
+ *    app does, so preview fidelity is structural rather than approximate.
+ *  - **No hand-written actions.** Apply, 调校, 导出 and 另存为 all come from
+ *    `resolveSetupAction`, the same resolver every resource card uses. The
+ *    gallery cannot drift from the contract because it does not own one.
  */
 function StyleSection() {
   const activeStyle = useApp((s) => s.activeStyle);
-  const setActiveStyle = useApp((s) => s.setActiveStyle);
+  const inventory = useApp((s) => s.inventory);
+  // Subscribed rather than read once: forking a style registers a new entry in
+  // STYLE_REGISTRY from outside React, so the grid has to be told to re-render.
+  const customVersion = useApp((s) => s.customExperiencesVersion);
   const [styleBookmarks, setStyleBookmarks] = useState<string[]>(() => Bookmarks.getAll());
-  const [selectedStyleForDetail, setSelectedStyleForDetail] = useState<SetupStyle | null>(null);
-  const [showTweaker, setShowTweaker] = useState(false);
+  const [previewStyle, setPreviewStyle] = useState<SetupStyle | null>(null);
+  const [playgroundStyleId, setPlaygroundStyleId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "implemented" | "bookmarks">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
+  useEffect(() => Bookmarks.subscribe((b) => setStyleBookmarks(b)), []);
+
+  // The playground is opened by the Setup Action executor rather than by a
+  // button in this file, so a card's 「调校此体验」 secondary works through the
+  // same contract every other action uses.
   useEffect(() => {
-    return Bookmarks.subscribe((b) => setStyleBookmarks(b));
-  }, []);
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ styleId?: string }>).detail;
+      setPreviewStyle(null);
+      setPlaygroundStyleId(detail?.styleId ?? activeStyle);
+    };
+    window.addEventListener("setup:open-playground", onOpen);
+    return () => window.removeEventListener("setup:open-playground", onOpen);
+  }, [activeStyle]);
 
   const filteredStyles = useMemo(() => {
     return STYLE_REGISTRY.filter((preset) => {
@@ -2159,7 +2376,24 @@ function StyleSection() {
       }
       return true;
     });
-  }, [filter, styleBookmarks, searchQuery]);
+    // `customVersion` is a dependency on purpose: it is how a newly forked
+    // experience reaches this list without a reload.
+  }, [filter, styleBookmarks, searchQuery, customVersion]);
+
+  const tierCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const preset of STYLE_REGISTRY) {
+      const tier = resolveExperienceProfile(preset).tier;
+      counts[tier] = (counts[tier] ?? 0) + 1;
+    }
+    return counts;
+  }, [customVersion]);
+
+  const isActiveStyle = (id: string) =>
+    activeStyle === id || (activeStyle === "p5-comic" && id === "phantom-comic");
+
+  const resolvedFor = (preset: SetupStyle) =>
+    resolveSetupAction({ type: "style", data: preset }, inventory);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2167,36 +2401,51 @@ function StyleSection() {
       <header className="rise flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-[color:var(--status-accent)] text-[color:var(--text-inverse)]">
-            STYLE GALLERY // 视觉语言画廊
+            EXPERIENCE GALLERY // 体验画廊
           </div>
           <h1 className="text-[color:var(--text-strong)] mt-2 text-[22px] font-bold tracking-[-0.02em]">
-            设计系统与交互范式画廊
+            完整体验与版式语法画廊
           </h1>
           <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed max-w-2xl">
-            收录 Setup Center 的多套完整视觉语言。以小卡片画廊形式高密度浏览，点击卡片展开详情与设计规范。
+            每一套体验声明自己的外壳语法、导航语法、详情呈现、卡片语言与版面构成，不再只是换色。
+            卡片上是缩略样张，点击可预览完整样张后再决定是否应用。
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-quiet)]">
+            {(["token", "component", "composition", "experience"] as const).map((tier) => (
+              <span key={tier} className="font-mono">
+                {TIER_SHORT[tier]} {TIER_LABEL[tier].split("·")[1]?.trim() ?? tier}
+                <span className="text-[color:var(--text-secondary)]"> {tierCounts[tier] ?? 0}</span>
+              </span>
+            ))}
+          </div>
         </div>
 
-        {/* Header Action: Token Tweaker Toggle */}
         <div className="flex items-center gap-2 shrink-0">
           <Button
             size="sm"
-            variant={showTweaker ? "primary" : "quiet"}
-            onClick={() => setShowTweaker((prev) => !prev)}
+            variant={playgroundStyleId ? "primary" : "quiet"}
+            onClick={() =>
+              setPlaygroundStyleId((prev) => (prev ? null : activeStyle))
+            }
           >
-            {showTweaker ? "收起令牌调节" : "⌗ 调节设计令牌"}
+            {playgroundStyleId ? "收起调校台" : "⌗ 调校当前体验"}
           </Button>
         </div>
       </header>
 
-      {/* Collapsible Token Tweaker */}
-      {showTweaker && (
+      {/* The Experience Playground. It replaces the old standalone "token
+          tweaker": adjustments happen against a specimen beside the controls and
+          only reach the app on 应用到应用, so dragging a slider no longer
+          repaints the whole window on every frame. */}
+      {playgroundStyleId && (
         <div className="rise">
-          <TokenTweaker
-            activeStyleId={activeStyle}
-            isCollapsed={false}
-            onToggleCollapse={() => setShowTweaker(false)}
-          />
+          <ExperiencePlayground styleId={playgroundStyleId} />
+        </div>
+      )}
+
+      {notice && (
+        <div className="rise rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] px-3.5 py-2 text-[12px] text-[color:var(--text-primary)]">
+          {notice}
         </div>
       )}
 
@@ -2207,21 +2456,21 @@ function StyleSection() {
             type="button"
             onClick={() => setFilter("all")}
             className={clsx(
-              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
               filter === "all"
-                ? "bg-[color:var(--status-accent)] text-black border-transparent font-bold shadow-sm"
+                ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
                 : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
             )}
           >
-            全部风格 ({STYLE_REGISTRY.length})
+            全部体验 ({STYLE_REGISTRY.length})
           </button>
           <button
             type="button"
             onClick={() => setFilter("implemented")}
             className={clsx(
-              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
               filter === "implemented"
-                ? "bg-[color:var(--status-accent)] text-black border-transparent font-bold shadow-sm"
+                ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] border-transparent font-bold"
                 : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/70 text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)]",
             )}
           >
@@ -2231,9 +2480,9 @@ function StyleSection() {
             type="button"
             onClick={() => setFilter("bookmarks")}
             className={clsx(
-              "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors border",
+              "px-3 py-1.5 rounded-[var(--radius-control)] text-[12px] font-medium transition-colors border",
               filter === "bookmarks"
-                ? "bg-amber-400 text-black border-transparent font-bold shadow-sm"
+                ? "bg-amber-400 text-black border-transparent font-bold"
                 : "border-amber-500/30 bg-amber-500/5 text-amber-300 hover:bg-amber-500/10",
             )}
           >
@@ -2246,49 +2495,53 @@ function StyleSection() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索风格名称、灵感、标签…"
-            className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+            placeholder="搜索体验名称、灵感、标签…"
+            className="w-full rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
           />
         </div>
       </div>
 
-      {/* Gallery Cards Grid (High Density) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+      {/* Gallery — composed by the live composition grammar rather than a fixed
+          four-up grid, so the page itself demonstrates what the styles claim. */}
+      <div data-composition-grid className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
         {filteredStyles.map((preset) => {
-          const isActive =
-            activeStyle === preset.id ||
-            (activeStyle === "p5-comic" && preset.id === "phantom-comic");
+          const profile = resolveExperienceProfile(preset);
+          const resolved = resolvedFor(preset);
+          const isActive = isActiveStyle(preset.id);
           const isStarred = styleBookmarks.includes(preset.id);
+          const live = isRenderable(preset);
 
           return (
             <div
               key={preset.id}
-              onClick={() => setSelectedStyleForDetail(preset)}
+              data-style-card={preset.id}
+              data-tier={profile.tier}
+              onClick={() => setPreviewStyle(preset)}
               className={clsx(
-                "group relative flex flex-col justify-between rounded-xl border p-4 transition-all duration-200 cursor-pointer select-none",
+                "group relative flex flex-col justify-between rounded-[var(--radius-panel)] border p-3.5 transition-all duration-200 cursor-pointer select-none",
                 isActive
-                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] ring-2 ring-[color:var(--status-accent)]/50 shadow-md"
-                  : preset.implemented
-                    ? "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/70 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]"
-                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/30 opacity-70 hover:opacity-100",
+                  ? "border-[color:var(--status-accent)] bg-[color:var(--surface-raised)] shadow-[var(--shadow-hard)]"
+                  : "border-[color:var(--line-default)] bg-[color:var(--surface-raised)]/70 hover:border-[color:var(--line-strong)] hover:bg-[color:var(--surface-raised)]",
               )}
             >
               <div>
-                {/* Top bar: Name + Favorite + Status */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[14.5px] font-bold text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors truncate">
+                      <span className="text-[14.5px] font-bold text-[color:var(--text-strong)] truncate">
                         {preset.name}
                       </span>
+                      <span className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] font-mono font-bold text-[color:var(--text-secondary)] border border-[color:var(--line-subtle)]">
+                        {TIER_SHORT[profile.tier]}
+                      </span>
                       {isActive && (
-                        <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-black">
+                        <span className="rounded bg-[color:var(--status-accent)] px-1.5 py-0.2 text-[10px] font-black text-[color:var(--accent-on)]">
                           已启用
                         </span>
                       )}
-                      {!preset.implemented && (
+                      {!live && (
                         <span className="rounded bg-zinc-500/20 px-1.5 py-0.2 text-[10px] text-zinc-400">
-                          草案
+                          需要更新应用
                         </span>
                       )}
                     </div>
@@ -2304,306 +2557,295 @@ function StyleSection() {
                       Bookmarks.toggle(preset.id, preset.name);
                     }}
                     className={`text-[13px] p-0.5 shrink-0 hover:scale-125 transition-transform ${
-                      isStarred ? "text-amber-400 font-bold" : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
+                      isStarred
+                        ? "text-amber-400 font-bold"
+                        : "text-[color:var(--text-quiet)] opacity-50 hover:opacity-100"
                     }`}
                     title={isStarred ? "取消收藏" : "收藏"}
+                    aria-label={isStarred ? "取消收藏" : "收藏"}
                   >
                     {isStarred ? "★" : "☆"}
                   </button>
                 </div>
 
-                {/* Color Palette Preview */}
-                <div className="mt-3 flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2 py-0.8">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full border border-black/20"
-                      style={{ backgroundColor: preset.palette.baseBg }}
-                      title={`基底色: ${preset.palette.baseBg}`}
-                    />
-                    <span
-                      className="h-2.5 w-2.5 rounded-full border border-black/20"
-                      style={{ backgroundColor: preset.palette.accent }}
-                      title={`强调色: ${preset.palette.accent}`}
-                    />
-                    {preset.palette.accentSecondary && (
-                      <span
-                        className="h-2.5 w-2.5 rounded-full border border-black/20"
-                        style={{ backgroundColor: preset.palette.accentSecondary }}
-                        title={`次级色: ${preset.palette.accentSecondary}`}
-                      />
-                    )}
-                  </div>
-                  <span className="text-[11px] text-[color:var(--text-quiet)] truncate">
-                    {preset.author}
-                  </span>
+                {/* The specimen replaces three colour dots. A design gallery has
+                    to show what the product becomes, and a palette swatch can
+                    only ever answer "which hues" — never "which layout". */}
+                <div className="mt-3 overflow-hidden rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)]">
+                  <ExperienceThumbnail style={preset} className="h-[132px] w-full" />
                 </div>
 
-                {/* Inspiration snippet */}
-                <p className="mt-2.5 text-[11.5px] text-[color:var(--text-tertiary)] line-clamp-2 leading-relaxed">
+                {/* Grammar readout: what makes this entry Tier 3/4 rather than a
+                    palette, stated plainly so the difference is not inferred. */}
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10px] text-[color:var(--text-quiet)]">
+                  <span className="truncate">{SHELL_LABEL[profile.shell ?? "sidebar"]}</span>
+                  <span className="truncate">{NAV_LABEL[profile.navigation ?? "sidebar"]}</span>
+                  <span className="truncate">{COMPOSITION_LABEL[profile.composition ?? "solid-grid"]}</span>
+                  <span className="truncate">{CARD_LABEL[profile.card ?? "panel"]}</span>
+                </div>
+
+                <p className="mt-2 text-[11.5px] text-[color:var(--text-tertiary)] line-clamp-2 leading-relaxed">
                   {preset.description}
                 </p>
-
-                {/* Tags */}
-                <div className="mt-2.5 flex flex-wrap gap-1">
-                  {preset.tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded bg-[color:var(--surface-hover)] px-1.5 py-0.2 text-[10px] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {preset.tags.length > 3 && (
-                    <span className="text-[10px] text-[color:var(--text-quiet)] font-mono self-center">
-                      +{preset.tags.length - 3}
-                    </span>
-                  )}
-                </div>
               </div>
 
-              {/* Bottom Actions */}
-              <div className="mt-3.5 pt-2.5 border-t border-[color:var(--line-subtle)] flex items-center justify-between">
-                <span className="text-[11px] text-[color:var(--status-accent)] group-hover:underline">
-                  查看详情 ↗
-                </span>
-
-                <Button
+              {/* Primary Setup Action, straight from the resolver — the card and
+                  the detail view cannot disagree about what applying means,
+                  because neither of them wrote the action. */}
+              <div className="mt-3 pt-2.5 border-t border-[color:var(--line-subtle)]">
+                <SetupActionButton
+                  action={resolved.primaryAction}
+                  secondaryActions={resolved.secondaryActions}
+                  itemMeta={{ id: preset.id, name: preset.name, type: "style" }}
                   size="sm"
-                  disabled={!preset.implemented}
+                  showPmSelector={false}
+                  disabled={!live}
+                  onActionSuccess={(m) => setNotice(m)}
+                  className="w-full"
+                />
+                <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (preset.implemented) setActiveStyle(preset.id);
+                    setPreviewStyle(preset);
                   }}
-                  className={clsx(
-                    "text-[11px] font-bold px-2.5 py-0.8",
-                    isActive
-                      ? "bg-[color:var(--status-accent)] text-black"
-                      : preset.implemented
-                        ? "bg-[color:var(--surface-active)] text-[color:var(--text-strong)] hover:bg-[color:var(--status-accent)] hover:text-black"
-                        : "opacity-30",
-                  )}
+                  className="mt-2 w-full text-left text-[11px] text-[color:var(--status-accent)] hover:underline"
                 >
-                  {isActive ? "正在使用" : preset.implemented ? "应用" : "敬请期待"}
-                </Button>
+                  预览完整样张 ↗
+                </button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Style Detail Modal (DetailShell) */}
-      {selectedStyleForDetail && (
-        <DetailShell
-          isOpen={true}
-          onClose={() => setSelectedStyleForDetail(null)}
-          title={selectedStyleForDetail.name}
-          subtitle={`${selectedStyleForDetail.subtitle} · v${selectedStyleForDetail.version} · 由 ${selectedStyleForDetail.author} 维护`}
-          tags={selectedStyleForDetail.tags}
-          badge={
-            selectedStyleForDetail.id === activeStyle ||
-            (activeStyle === "p5-comic" && selectedStyleForDetail.id === "phantom-comic") ? (
-              <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-black">
-                全局已启用
-              </span>
-            ) : selectedStyleForDetail.implemented ? (
-              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
-                可立即使用
-              </span>
-            ) : (
-              <span className="rounded bg-zinc-500/20 px-2 py-0.5 text-[11px] text-zinc-400">
-                设计草案
-              </span>
-            )
-          }
-          actions={
-            <>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    Bookmarks.toggle(selectedStyleForDetail.id, selectedStyleForDetail.name);
-                  }}
-                  className="rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors"
-                >
-                  {styleBookmarks.includes(selectedStyleForDetail.id) ? "★ 已收藏" : "☆ 加入收藏"}
-                </button>
-              </div>
+      {filteredStyles.length === 0 && (
+        <EmptyBlock
+          title="没有匹配的体验"
+          body="换个关键词，或切回「全部体验」。"
+        />
+      )}
 
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelectedStyleForDetail(null)}
-                >
-                  关闭
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!selectedStyleForDetail.implemented}
-                  onClick={() => {
-                    if (selectedStyleForDetail.implemented) {
-                      setActiveStyle(selectedStyleForDetail.id);
-                      setSelectedStyleForDetail(null);
-                    }
-                  }}
-                  className={clsx(
-                    "font-bold text-[12px]",
-                    selectedStyleForDetail.id === activeStyle
-                      ? "bg-[color:var(--status-accent)] text-black"
-                      : "bg-[color:var(--surface-active)] text-[color:var(--text-strong)]",
-                  )}
-                >
-                  {selectedStyleForDetail.id === activeStyle ? "正在生效中" : "应用为此风格"}
-                </Button>
-              </div>
-            </>
-          }
-        >
-          {/* Palette Deep Breakdown */}
-          <div>
-            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
-              色彩语义调色板 (Color Palette)
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                <span
-                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                  style={{ backgroundColor: selectedStyleForDetail.palette.baseBg }}
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[color:var(--text-quiet)]">基底色 (Base)</div>
-                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                    {selectedStyleForDetail.palette.baseBg}
-                  </div>
-                </div>
-              </div>
+      {/* Preview-before-Apply. Applying a style used to be the only way to see
+          it, which meant every browse repainted the whole app; the specimen
+          shows the tokens, the shell grammar and the card language without
+          committing anything. */}
+      {previewStyle && (
+        <StylePreviewShell
+          style={previewStyle}
+          inventory={inventory}
+          active={isActiveStyle(previewStyle.id)}
+          starred={styleBookmarks.includes(previewStyle.id)}
+          onToggleStar={() => Bookmarks.toggle(previewStyle.id, previewStyle.name)}
+          onClose={() => setPreviewStyle(null)}
+          onNotice={setNotice}
+        />
+      )}
+    </div>
+  );
+}
 
-              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                <span
-                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                  style={{ backgroundColor: selectedStyleForDetail.palette.surface }}
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[color:var(--text-quiet)]">面板色 (Surface)</div>
-                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                    {selectedStyleForDetail.palette.surface}
-                  </div>
-                </div>
-              </div>
+/**
+ * The Style preview + detail surface: a full-size specimen on the left and the
+ * experience's declared grammar, palette and design principles on the right.
+ *
+ * It exists as its own component because it needs the hook order of a component
+ * (it resolves actions) while `StyleSection` renders it conditionally.
+ */
+function StylePreviewShell({
+  style,
+  inventory,
+  active,
+  starred,
+  onToggleStar,
+  onClose,
+  onNotice,
+}: {
+  style: SetupStyle;
+  inventory: ReturnType<typeof useApp.getState>["inventory"];
+  active: boolean;
+  starred: boolean;
+  onToggleStar: () => void;
+  onClose: () => void;
+  onNotice: (msg: string) => void;
+}) {
+  const profile = resolveExperienceProfile(style);
+  const resolved = useMemo(
+    () => resolveSetupAction({ type: "style", data: style }, inventory),
+    [style, inventory],
+  );
+  const live = isRenderable(style);
 
-              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                <span
-                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                  style={{ backgroundColor: selectedStyleForDetail.palette.accent }}
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[color:var(--text-quiet)]">强调色 (Accent)</div>
-                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                    {selectedStyleForDetail.palette.accent}
-                  </div>
-                </div>
-              </div>
+  const grammar: Array<[string, string]> = [
+    ["体验等级", TIER_LABEL[profile.tier]],
+    ["外壳语法", SHELL_LABEL[profile.shell ?? "sidebar"]],
+    ["导航语法", NAV_LABEL[profile.navigation ?? "sidebar"]],
+    ["详情呈现", DETAIL_LABEL[profile.detail ?? "rail"]],
+    ["卡片语言", CARD_LABEL[profile.card ?? "panel"]],
+    ["版面构成", COMPOSITION_LABEL[profile.composition ?? "solid-grid"]],
+    ["密度", DENSITY_LABEL[profile.density ?? "normal"]],
+    ["动效", MOTION_LABEL[profile.motion ?? "normal"]],
+  ];
 
-              {selectedStyleForDetail.palette.accentSecondary && (
-                <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                  <span
-                    className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                    style={{ backgroundColor: selectedStyleForDetail.palette.accentSecondary }}
-                  />
-                  <div className="min-w-0">
-                    <div className="text-[11px] text-[color:var(--text-quiet)]">次级强调 (Secondary)</div>
-                    <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                      {selectedStyleForDetail.palette.accentSecondary}
-                    </div>
-                  </div>
-                </div>
-              )}
+  const swatches: Array<[string, string]> = [
+    ["基底色 (Base)", style.palette.baseBg],
+    ["面板色 (Surface)", style.palette.surface],
+    ["强调色 (Accent)", style.palette.accent],
+    ...(style.palette.accentSecondary
+      ? ([["次级强调 (Secondary)", style.palette.accentSecondary]] as Array<[string, string]>)
+      : []),
+    ["正文字色 (Text)", style.palette.text],
+    ["边框色 (Border)", style.palette.cardBorder],
+  ];
 
-              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                <span
-                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                  style={{ backgroundColor: selectedStyleForDetail.palette.text }}
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[color:var(--text-quiet)]">正文字色 (Text)</div>
-                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                    {selectedStyleForDetail.palette.text}
-                  </div>
-                </div>
-              </div>
+  return (
+    <DetailShell
+      isOpen={true}
+      onClose={onClose}
+      title={style.name}
+      subtitle={`${style.subtitle} · v${style.version} · 由 ${style.author} 维护`}
+      tags={style.tags}
+      width="xl"
+      badge={
+        active ? (
+          <span className="rounded bg-[color:var(--status-accent)] px-2 py-0.5 text-[11px] font-black text-[color:var(--accent-on)]">
+            全局已启用
+          </span>
+        ) : live ? (
+          <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+            可立即使用
+          </span>
+        ) : (
+          <span className="rounded bg-zinc-500/20 px-2 py-0.5 text-[11px] text-zinc-400">
+            需要更新应用
+          </span>
+        )
+      }
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={onToggleStar}
+            className="rounded-[var(--radius-control)] border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:text-[color:var(--text-strong)] transition-colors"
+          >
+            {starred ? "★ 已收藏" : "☆ 加入收藏"}
+          </button>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            关闭
+          </Button>
+          <SetupActionButton
+            action={resolved.primaryAction}
+            secondaryActions={resolved.secondaryActions}
+            itemMeta={{ id: style.id, name: style.name, type: "style" }}
+            size="sm"
+            showPmSelector={false}
+            disabled={!live}
+            onActionSuccess={onNotice}
+          />
+        </>
+      }
+    >
+      {/* Live Specimen Preview (brief §34): the whole point is that seeing an
+          experience must not require becoming it app-wide. */}
+      <div data-specimen-frame className="overflow-hidden rounded-[var(--radius-panel)] border border-[color:var(--line-default)]">
+        <ExperienceSpecimen style={style} scale="full" />
+      </div>
 
-              <div className="flex items-center gap-2.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2">
-                <span
-                  className="h-6 w-6 rounded-md border border-white/10 shrink-0"
-                  style={{ backgroundColor: selectedStyleForDetail.palette.cardBorder }}
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[color:var(--text-quiet)]">边框色 (Border)</div>
-                  <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
-                    {selectedStyleForDetail.palette.cardBorder}
-                  </div>
+      <div>
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+          体验语法 (Experience Grammar)
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {grammar.map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2.5 py-1.5"
+            >
+              <div className="text-[10.5px] text-[color:var(--text-quiet)]">{label}</div>
+              <div className="text-[11.5px] text-[color:var(--text-primary)] truncate">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+          色彩语义调色板 (Color Palette)
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {swatches.map(([label, hex]) => (
+            <div
+              key={label}
+              className="flex items-center gap-2.5 rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-2"
+            >
+              <span
+                className="h-6 w-6 shrink-0 border border-white/10"
+                style={{
+                  backgroundColor: hex,
+                  borderRadius: "var(--radius-control)",
+                }}
+              />
+              <div className="min-w-0">
+                <div className="text-[11px] text-[color:var(--text-quiet)]">{label}</div>
+                <div className="text-[11.5px] font-mono text-[color:var(--text-primary)] truncate">
+                  {hex}
                 </div>
               </div>
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
 
-          {/* Description */}
-          <div>
-            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-1.5">
-              设计语言概述
-            </h3>
-            <p className="text-[13px] text-[color:var(--text-secondary)] leading-relaxed">
-              {selectedStyleForDetail.description}
-            </p>
-          </div>
+      <div>
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-1.5">
+          设计语言概述
+        </h3>
+        <p className="text-[13px] text-[color:var(--text-secondary)] leading-relaxed">
+          {style.description}
+        </p>
+      </div>
 
-          {/* Inspiration Source */}
-          <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
-            <div className="text-[11px] font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
-              设计语言灵感来源
-            </div>
-            <p className="text-[12px] text-[color:var(--text-tertiary)] mt-1 leading-relaxed">
-              {selectedStyleForDetail.inspiration}
-            </p>
-          </div>
+      <div className="rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
+        <div className="text-[11px] font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
+          设计语言灵感来源
+        </div>
+        <p className="text-[12px] text-[color:var(--text-tertiary)] mt-1 leading-relaxed">
+          {style.inspiration}
+        </p>
+      </div>
 
-          {/* Key Features */}
-          <div>
-            <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
-              关键视觉特征
-            </h3>
-            <ul className="space-y-1.5 text-[12.5px] text-[color:var(--text-secondary)]">
-              {selectedStyleForDetail.features.map((feat, idx) => (
+      <div>
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+          关键视觉特征
+        </h3>
+        <ul className="space-y-1.5 text-[12.5px] text-[color:var(--text-secondary)]">
+          {style.features.map((feat, idx) => (
+            <li key={idx} className="flex items-start gap-2">
+              <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">•</span>
+              <span>{feat}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {style.designPrinciples && style.designPrinciples.length > 0 && (
+        <div>
+          <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
+            设计规范与原则参考
+          </h3>
+          <div className="rounded-[var(--radius-control)] border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
+            <ul className="space-y-2 text-[12px] text-[color:var(--text-secondary)] font-mono">
+              {style.designPrinciples.map((dp, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">•</span>
-                  <span>{feat}</span>
+                  <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">◈</span>
+                  <span>{dp}</span>
                 </li>
               ))}
             </ul>
           </div>
-
-          {/* Design Principles / Guidelines */}
-          {selectedStyleForDetail.designPrinciples &&
-            selectedStyleForDetail.designPrinciples.length > 0 && (
-              <div>
-                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[color:var(--text-secondary)] mb-2">
-                  设计规范与原则参考
-                </h3>
-                <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3.5">
-                  <ul className="space-y-2 text-[12px] text-[color:var(--text-secondary)] font-mono">
-                    {selectedStyleForDetail.designPrinciples.map((dp, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="text-[color:var(--status-accent)] shrink-0 mt-0.5">◈</span>
-                        <span>{dp}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-        </DetailShell>
+        </div>
       )}
-    </div>
+    </DetailShell>
   );
 }
 

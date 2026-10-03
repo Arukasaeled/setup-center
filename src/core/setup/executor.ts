@@ -1,14 +1,27 @@
 /**
  * Setup Center — Setup Action Execution Runtime
  *
- * Dispatches concrete actions (Command, Copy, Download, Clone, Apply, Scaffold)
- * with reliable clipboard fallback and TransferHistory logging.
+ * Dispatches concrete actions (Command, Copy, Download, Clone, Apply, Scaffold,
+ * Reveal, Install) with reliable clipboard fallback and TransferHistory logging.
+ *
+ * Software items are special: their `install` / `reveal` arms drive the real
+ * store flow (planner + wizard) rather than copying a command, so a card-level
+ * Setup Action and the wizard's own row button end at the same place.
  */
 
 import { TransferHistory } from "../transfer/history";
 import { AssetDownloader } from "../transfer/downloader";
 import { useApp } from "../../lib/store";
 import type { StyleId } from "../../lib/styles";
+import type { SoftwareId } from "../../lib/types";
+import { getStyle } from "../../styles/registry";
+import {
+  buildExport,
+  deriveCustomExperience,
+  hasOverrides,
+  loadOverrides,
+  saveCustomExperience,
+} from "../../styles/runtime";
 import type { SetupAction } from "./types";
 
 export interface ExecutionFeedback {
@@ -204,7 +217,140 @@ export async function executeSetupAction(
       };
     }
 
+    case "customize": {
+      // The playground is a surface, not a value swap, so this dispatches an
+      // event like `scaffold` does rather than reaching into a screen's state.
+      // The payload is the style to tune, and the gallery listens for it.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("setup:open-playground", {
+            detail: { styleId: action.payload },
+          }),
+        );
+      }
+      return { ok: true, message: "已打开体验调校台" };
+    }
+
+    case "export": {
+      const styleId = action.payload as StyleId;
+      const style = getStyle(styleId);
+      if (!style) return { ok: false, message: "找不到该体验" };
+      const overrides = loadOverrides(styleId);
+      const envelope = buildExport(style, overrides);
+      const ok = await copyToClipboard(JSON.stringify(envelope, null, 2));
+      if (!ok) return { ok: false, message: "复制导出内容失败" };
+      TransferHistory.record({
+        type: "sync",
+        title: "导出体验令牌",
+        targetId,
+        targetName,
+        status: "info",
+        summary: hasOverrides(styleId)
+          ? `已导出「${targetName}」及其自定义覆盖`
+          : `已导出「${targetName}」的原始令牌`,
+      });
+      return {
+        ok: true,
+        message: action.successMessage || `已复制「${targetName}」的令牌 JSON`,
+      };
+    }
+
+    case "fork": {
+      const styleId = action.payload as StyleId;
+      const style = getStyle(styleId);
+      if (!style) return { ok: false, message: "找不到该体验" };
+      // A fork keeps only the delta. Copying the stylesheet would freeze this
+      // derivation against every future fix to the preset it came from.
+      const derived = deriveCustomExperience(style, loadOverrides(styleId));
+      saveCustomExperience(derived);
+      useApp.getState().refreshCustomExperiences();
+      TransferHistory.record({
+        type: "sync",
+        title: "派生自定义体验",
+        targetId,
+        targetName,
+        status: "success",
+        summary: `已基于「${style.name}」创建「${derived.name}」`,
+      });
+      return { ok: true, message: `已创建「${derived.name}」` };
+    }
+
+    case "reveal": {
+      // "reveal" has no filesystem backend: there is no Tauri command that
+      // hands a path to Explorer. What it CAN honestly mean is "bring this
+      // item's own detail into view", which is the dashboard's job. The
+      // resolver only emits reveal for already-installed software, so that is
+      // the presentation this arm drives.
+      if (itemMeta?.type === "software") {
+        const store = useApp.getState();
+        store.openDashboard();
+        store.setSection("software");
+        store.selectItem(`sw:${action.payload}`);
+        TransferHistory.record({
+          type: "setup",
+          title: "查看已就绪软件",
+          targetId,
+          targetName,
+          status: "info",
+          summary: `已在软件工作台展开 ${targetName}`,
+        });
+        return { ok: true, message: `已展开 ${targetName}` };
+      }
+      return { ok: true, message: action.payload || "已定位到该条目" };
+    }
+
     case "install": {
+      // Software items must run the REAL install flow. Every software surface
+      // in the app (dashboard row, command palette) resolves through here, and
+      // a copied winget string is not an install — the wizard owns plan
+      // building plus the live progress surface, so route there instead. All
+      // non-software callers keep the clipboard behaviour below, so cards and
+      // search results elsewhere are unaffected.
+      if (itemMeta?.type === "software") {
+        const store = useApp.getState();
+        // `SoftwareId` is a closed union of catalogue ids, but a Setup Action
+        // payload only carries a string. The resolver is the only producer of
+        // these actions and it sources the id from the catalogue, so the cast
+        // restores the type the action already proved at construction time.
+        const softwareId = action.payload as SoftwareId;
+
+        // Without an install entitlement the wizard still owns the honest
+        // explanation (ManualPanel), so land there rather than reporting a
+        // failure the user cannot act on.
+        if (!store.entitlements?.canInstall) {
+          store.closeDashboard();
+          store.goTo("software");
+          TransferHistory.record({
+            type: "install",
+            title: "查看软件安装方式",
+            targetId,
+            targetName,
+            status: "info",
+            summary: `已打开软件页查看 ${targetName} 的手动安装方式`,
+          });
+          return { ok: true, message: "已打开安装方式说明" };
+        }
+
+        await store.buildPlanFor([softwareId]);
+        if (useApp.getState().plan) {
+          store.closeDashboard();
+          store.goTo("install");
+          TransferHistory.record({
+            type: "install",
+            title: "载入软件安装方案",
+            targetId,
+            targetName,
+            status: "info",
+            summary: `已载入 ${targetName} 的安装方案`,
+          });
+          return { ok: true, message: `已载入 ${targetName} 的安装方案` };
+        }
+
+        store.closeDashboard();
+        store.goTo("software");
+        return { ok: false, message: "未能载入安装方案，请手动选择" };
+      }
+
       // If package command or winget command exists, copy it
       const cmd = action.packageCommands?.winget || action.payload;
       if (cmd) {
