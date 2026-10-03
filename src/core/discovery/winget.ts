@@ -5,7 +5,13 @@
  * and install thousands of tools even if not in the curated catalog.
  */
 
-import { isTauri, wingetSearch, type WingetSearchResultItem } from "../../lib/ipc";
+import {
+  isTauri,
+  wingetSearch,
+  wingetShow,
+  type WingetSearchResultItem,
+  type WingetPackageDetails,
+} from "../../lib/ipc";
 import type { DiscoveryItem } from "./types";
 
 export async function searchWingetPackages(query: string): Promise<DiscoveryItem[]> {
@@ -78,5 +84,27 @@ export async function searchWingetPackages(query: string): Promise<DiscoveryItem
   } catch (err) {
     console.warn("[WingetSearch] Search failed:", err);
     return [];
+  }
+}
+
+export async function fetchWingetPackageDetails(
+  packageId: string,
+): Promise<WingetPackageDetails | null> {
+  if (!isTauri()) {
+    return {
+      id: packageId,
+      name: packageId,
+      version: "1.0.0",
+      publisher: "Community",
+      description: "通过 Windows 软件包管理器安装的软件。",
+      homepage: `https://github.com/microsoft/winget-pkgs`,
+      source: "winget",
+    };
+  }
+  try {
+    return await wingetShow(packageId);
+  } catch (err) {
+    console.warn("[WingetShow] Failed to get details for", packageId, err);
+    return null;
   }
 }

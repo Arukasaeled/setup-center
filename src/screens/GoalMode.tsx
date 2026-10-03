@@ -16,6 +16,7 @@ import { ScaffoldModal } from "../components/ScaffoldModal";
 import { CloneRepoModal } from "../components/CloneRepoModal";
 import { RepoDetailModal } from "../components/RepoDetailModal";
 import { Bookmarks } from "../core/transfer/bookmarks";
+import { fetchGitHubRepoDetails } from "../core/discovery/github";
 import type { DiscoveryItem } from "../core/discovery/types";
 
 export interface GoalTrack {
@@ -241,14 +242,32 @@ export function GoalModeScreen() {
         type: "github",
         repository: repo.repoUrl,
         url: repo.repoUrl,
-        stars: 1000,
-        license: "MIT",
-        lastUpdated: "近期活跃",
+        license: "开源",
       },
       health: "active",
       tags: [repo.tech],
     };
     setDetailItem(item);
+
+    // Hydrate real GitHub metadata asynchronously
+    fetchGitHubRepoDetails(repo.repoUrl).then((realDetails) => {
+      if (realDetails) {
+        setDetailItem((current) => {
+          if (!current || current.id !== item.id) return current;
+          return {
+            ...current,
+            origin: {
+              type: "github",
+              ...current.origin,
+              ...realDetails.origin,
+              repository: repo.repoUrl,
+              url: repo.repoUrl,
+            },
+            health: realDetails.health,
+          };
+        });
+      }
+    });
   };
 
   const handleBookmark = (title: string, e: React.MouseEvent) => {

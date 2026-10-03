@@ -5,6 +5,8 @@
  */
 
 import { TransferHistory } from "./history";
+import { PersonalCatalog } from "./catalog";
+import type { DiscoveryItem } from "../discovery/types";
 
 const BOOKMARKS_STORAGE_KEY = "setup-center.bookmarks.v1";
 
@@ -64,7 +66,7 @@ class BookmarkManager {
     return this.bookmarks.has(id);
   }
 
-  public toggle(id: string, name?: string): boolean {
+  public toggle(id: string, name?: string, snapshot?: DiscoveryItem): boolean {
     let nowBookmarked = false;
     if (this.bookmarks.has(id)) {
       this.bookmarks.delete(id);
@@ -72,6 +74,10 @@ class BookmarkManager {
     } else {
       this.bookmarks.add(id);
       nowBookmarked = true;
+
+      if (snapshot) {
+        PersonalCatalog.saveItem(snapshot);
+      }
 
       TransferHistory.record({
         type: "bookmark",

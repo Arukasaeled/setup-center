@@ -186,9 +186,7 @@ export function DoneScreen() {
           <Button
             disabled={!passed.length}
             onClick={() => {
-              useApp.setState({
-                notice: "「打开概览」：请返回概览页查看这台电脑的完整状态。",
-              });
+              useApp.getState().openDashboard("overview");
             }}
           >
             返回概览

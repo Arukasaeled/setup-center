@@ -69,7 +69,7 @@ export function BackButton({
 }) {
   const goBack = useApp((s) => s.goBack);
   const goTo = useApp((s) => s.goTo);
-  const canGoBack = useApp((s) => s.navStack.length > 0);
+  const canGoBack = useApp((s) => s.canGoBack());
 
   // With an explicit destination there is always somewhere to go, so the button
   // is enabled; without one, an empty history disables it rather than offering a

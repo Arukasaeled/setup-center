@@ -15,6 +15,7 @@ import type { DiscoveryItem } from "../core/discovery/types";
 import { Bookmarks } from "../core/transfer/bookmarks";
 import { PersonalNotes } from "../core/transfer/notes";
 import { TransferInbox } from "../core/transfer/inbox";
+import { CustomPacks } from "../core/transfer/packs";
 import { CloneRepoModal } from "./CloneRepoModal";
 
 export interface RepoDetailModalProps {
@@ -39,6 +40,8 @@ export function RepoDetailModal({
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [transferDone, setTransferDone] = useState(false);
+  const [showPackPicker, setShowPackPicker] = useState(false);
+  const packs = CustomPacks.getAll();
 
   if (!isOpen) return null;
 
@@ -67,6 +70,20 @@ export function RepoDetailModal({
     });
     setTransferDone(true);
     onNotice?.(`已收录「${item.title}」至我的库 · 稍后整理`);
+  };
+
+  const handleAddToPack = (packId: string) => {
+    CustomPacks.addItem(packId, {
+      id: item.id,
+      name: item.title,
+      type: "repo",
+      category: "GitHub 仓库",
+      url: repoUrl,
+      command: `git clone ${repoUrl}.git`,
+      note: item.description,
+    });
+    setShowPackPicker(false);
+    onNotice?.(`已将「${item.title}」加入开发套件`);
   };
 
   const handleCopyClone = async () => {
@@ -248,11 +265,54 @@ export function RepoDetailModal({
                 </p>
               )}
             </div>
+
+            {/* Pack Picker Popover */}
+            {showPackPicker && (
+              <div className="rounded-xl border border-blue-500/40 bg-[#151c28] p-4 space-y-3 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12.5px] font-bold text-blue-200">
+                    选择要收录进的开发套件:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowPackPicker(false)}
+                    className="text-zinc-400 hover:text-white text-[12px] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {packs.length === 0 ? (
+                  <p className="text-[12px] text-zinc-400">尚未创建任何开发套件，请先至「我的库」新建开发包。</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {packs.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleAddToPack(p.id)}
+                        className="rounded-lg border border-zinc-700 bg-zinc-800/70 p-2.5 text-left hover:border-blue-500/50 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      >
+                        <div className="font-bold text-[12.5px] text-white truncate">{p.title}</div>
+                        <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{p.items.length} 项工具</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer Actions */}
           <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-zinc-800 bg-[#141820] px-6 py-3.5">
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPackPicker((prev) => !prev)}
+                className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
+              >
+                + 加入开发套件
+              </button>
+
               {!item.isCurated && (
                 <button
                   type="button"

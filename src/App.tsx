@@ -49,6 +49,7 @@ import {
 } from "./styles/runtime";
 import { getStyle, STYLE_REGISTRY } from "./styles/registry";
 import { VaultSync } from "./core/vault";
+import { ReleaseManagerInstance } from "./core/vault/release";
 import { CommandPalette } from "./components/CommandPalette";
 
 /**
@@ -129,6 +130,7 @@ export default function App() {
     if (useApp.getState().entitlementsPhase === "idle") void loadEntitlements();
     VaultSync.hydrateFromCache();
     void VaultSync.sync();
+    void ReleaseManagerInstance.hydrateRuntimeVersion();
   }, [loadStatus, loadResumable, loadEntitlements]);
 
 

@@ -151,8 +151,8 @@ export function TitleBar() {
         <button
           type="button"
           onClick={() => setShowUpdateModal(true)}
-          className="titlebar-nodrag flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-quiet)] hover:border-[color:var(--line-strong)] hover:text-[color:var(--text-primary)] transition-colors ml-1"
-          title="点击打开版本与更新控制台 (Release Console)"
+          className="titlebar-nodrag flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2.5 py-0.5 text-[11px] font-sans text-[color:var(--text-quiet)] hover:border-[color:var(--line-strong)] hover:text-[color:var(--text-primary)] transition-colors ml-1 cursor-pointer"
+          title="点击打开版本与更新控制台 (Version Inspector)"
         >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
@@ -161,7 +161,7 @@ export function TitleBar() {
                 : "bg-emerald-400"
             }`}
           />
-          <span>v0.1.4</span>
+          <span>版本查看</span>
         </button>
       </div>
 

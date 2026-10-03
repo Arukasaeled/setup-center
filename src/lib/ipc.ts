@@ -512,11 +512,26 @@ export interface WingetSearchResultItem {
   source?: string;
 }
 
+export interface WingetPackageDetails {
+  id: string;
+  name: string;
+  version?: string;
+  publisher?: string;
+  description?: string;
+  homepage?: string;
+  license?: string;
+  installerType?: string;
+  installerUrl?: string;
+  installerSha256?: string;
+  source?: string;
+}
+
 export interface DetectedEditor {
-  id: "vscode" | "cursor" | "zed" | string;
+  id: "vscode" | "cursor" | "windsurf" | "zed" | string;
   name: string;
   command: string;
   installed: boolean;
+  executablePath?: string;
 }
 
 /** Executes a native program with args and optional cwd, capturing stdout/stderr */
@@ -526,22 +541,122 @@ export const executeNativeCommand = (
   cwd?: string,
 ) => call<CommandOutput>("execute_native_command", { program, args, cwd });
 
+/** Starts streaming command execution emitting stdout/stderr/exit events over Tauri channel */
+export const executeStreamingCommand = (
+  executionId: string,
+  program: string,
+  args: string[],
+  cwd?: string,
+) => call<void>("execute_streaming_command", { executionId, program, args, cwd });
+
+/** Cancels an active streaming execution by execution ID */
+export const cancelNativeExecution = (executionId: string) =>
+  call<boolean>("cancel_native_execution", { executionId });
+
+/** Downloads a remote file to a destination path using native curl streaming */
+export const nativeDownload = (url: string, destinationPath: string) =>
+  call<void>("native_download", { url, destinationPath });
+
 /** Searches winget for packages matching query */
 export const wingetSearch = (query: string) =>
   call<WingetSearchResultItem[]>("winget_search", { query });
+
+/** Fetches rich package details for a specific winget package id */
+export const wingetShow = (packageId: string) =>
+  call<WingetPackageDetails>("winget_show", { packageId });
 
 /** Reveals a file or directory in Windows Explorer */
 export const revealInExplorer = (path: string) =>
   call<void>("reveal_in_explorer", { path });
 
-/** Probes which editors (VS Code, Cursor, Zed) are installed on this machine */
+/** Probes which editors (VS Code, Cursor, Windsurf, Zed) are installed on this machine */
 export const detectEditors = () => call<DetectedEditor[]>("detect_editors");
 
-/** Launches a file or directory in an installed editor */
-export const openInEditor = (editor: string, path: string) =>
-  call<void>("open_in_editor", { editor, path });
+/** Launches a file or directory in an installed editor, using executablePath if known */
+export const openInEditor = (editor: string, path: string, executablePath?: string) =>
+  call<void>("open_in_editor", { editor, path, executablePath });
 
 /** Returns the canonical application version from Cargo manifest */
 export const appCanonicalVersion = () =>
   call<string>("app_canonical_version");
+
+export interface StreamingOutputPayload {
+  executionId: string;
+  text: string;
+}
+
+export interface StreamingExitPayload {
+  executionId: string;
+  success: boolean;
+  exitCode: number | null;
+}
+
+/** Attaches listener to native://stdout streaming events */
+export async function onNativeStdout(
+  handler: (payload: StreamingOutputPayload) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<StreamingOutputPayload>("native://stdout", (event) => {
+      handler(event.payload);
+    });
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      void Promise.resolve()
+        .then(() => unlisten())
+        .catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+/** Attaches listener to native://stderr streaming events */
+export async function onNativeStderr(
+  handler: (payload: StreamingOutputPayload) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<StreamingOutputPayload>("native://stderr", (event) => {
+      handler(event.payload);
+    });
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      void Promise.resolve()
+        .then(() => unlisten())
+        .catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+/** Attaches listener to native://exit streaming events */
+export async function onNativeExit(
+  handler: (payload: StreamingExitPayload) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<StreamingExitPayload>("native://exit", (event) => {
+      handler(event.payload);
+    });
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      void Promise.resolve()
+        .then(() => unlisten())
+        .catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
 

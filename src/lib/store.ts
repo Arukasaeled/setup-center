@@ -84,6 +84,19 @@ export type Section =
   | "license"
   | "about";
 
+/** Unified location modeling both Wizard screens and Dashboard sections */
+export type AppLocation =
+  | {
+      surface: "dashboard";
+      section: Section;
+      selectedItemId?: string | null;
+      scrollTop?: number;
+    }
+  | {
+      surface: "wizard";
+      screen: Screen;
+    };
+
 /** The ambient theme. `system` follows the OS and is the default. */
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -96,6 +109,10 @@ export type DetectPhase =
 
 interface AppStore {
   // --- Navigation -----------------------------------------------------------
+  location: AppLocation;
+  locationHistory: AppLocation[];
+  navigate: (target: AppLocation) => void;
+  replaceLocation: (target: AppLocation) => void;
   screen: Screen;
   /**
    * Where "返回" came from.
@@ -153,7 +170,7 @@ interface AppStore {
    * meaningful exit without the wizard having to be the one that remembers.
    */
   dashboardOpen: boolean;
-  openDashboard: () => void;
+  openDashboard: (section?: Section) => void;
   closeDashboard: () => void;
 
   /** The dashboard's current section. */
@@ -468,104 +485,159 @@ const NAV_STACK_LIMIT = 50;
  */
 export const NO_HISTORY: readonly Screen[] = Object.freeze([]);
 
-export const useApp = create<AppStore>((set, get) => ({
-  screen: "welcome",
+function isSameLocation(a: AppLocation, b: AppLocation): boolean {
+  if (a.surface !== b.surface) return false;
+  if (a.surface === "dashboard" && b.surface === "dashboard") {
+    return a.section === b.section && (a.selectedItemId ?? null) === (b.selectedItemId ?? null);
+  }
+  if (a.surface === "wizard" && b.surface === "wizard") {
+    return a.screen === b.screen;
+  }
+  return false;
+}
 
-  // -------------------------------------------------------------------------
-  // Navigation
-  //
-  // `goTo` is the only writer of `screen` in the wizard, and every navigation
-  // goes through it so the history cannot be bypassed. The three rules it
-  // implements are the ones documented on `navStack` above; the short version is
-  // "push where you were, then move, and never move nowhere".
-  //
-  // Nothing else is touched. That is deliberate and is the whole point of the
-  // requirement: a student who picks a goal, narrows the install set and then
-  // presses 返回 to check something must find the goal still chosen, the set
-  // still narrowed and the plan still built when they come forward again. Every
-  // field in this store therefore survives a navigation; any future `set` added
-  // here that clears flow state is a bug, not a convenience.
-  // -------------------------------------------------------------------------
+function getCurrentLocation(state: { dashboardOpen: boolean; section: Section; selectedItemId: string | null; screen: Screen }): AppLocation {
+  if (state.dashboardOpen) {
+    return {
+      surface: "dashboard",
+      section: state.section,
+      selectedItemId: state.selectedItemId,
+    };
+  }
+  return {
+    surface: "wizard",
+    screen: state.screen,
+  };
+}
+
+export const useApp = create<AppStore>((set, get) => ({
+  location: { surface: "wizard", screen: "welcome" },
+  locationHistory: [],
+
+  navigate: (target: AppLocation) => {
+    const state = get();
+    const current = getCurrentLocation(state);
+    if (isSameLocation(current, target)) return;
+
+    const history = state.locationHistory;
+    const nextHistory =
+      history.length > 0 && isSameLocation(history[history.length - 1], current)
+        ? history
+        : [...history, current].slice(-NAV_STACK_LIMIT);
+
+    if (target.surface === "dashboard") {
+      set({
+        dashboardOpen: true,
+        section: target.section,
+        selectedItemId: target.selectedItemId ?? null,
+        location: target,
+        locationHistory: nextHistory,
+        navStack: nextHistory
+          .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
+          .map((loc) => loc.screen),
+      });
+    } else {
+      set({
+        dashboardOpen: false,
+        screen: target.screen,
+        location: target,
+        locationHistory: nextHistory,
+        navStack: nextHistory
+          .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
+          .map((loc) => loc.screen),
+      });
+    }
+  },
+
+  replaceLocation: (target: AppLocation) => {
+    if (target.surface === "dashboard") {
+      set({
+        dashboardOpen: true,
+        section: target.section,
+        selectedItemId: target.selectedItemId ?? null,
+        location: target,
+      });
+    } else {
+      set({
+        dashboardOpen: false,
+        screen: target.screen,
+        location: target,
+      });
+    }
+  },
+
+  screen: "welcome",
   navStack: [...NO_HISTORY],
 
   goTo: (next) => {
-    const current = get().screen;
-
-    // Already there: neither switch nor push. Pushing would be the classic
-    // "back button that does nothing" — the stack would fill with the same
-    // screen and each press would return to it.
-    if (current === next) return;
-
-    set((state) => ({
-      screen: next,
-      // The guard is belt-and-braces: `current === next` already rules out a
-      // duplicate of the screen being left. It also keeps the stack honest if a
-      // future caller reaches `goTo` from somewhere other than `screen`.
-      navStack:
-        state.navStack[state.navStack.length - 1] === current
-          ? state.navStack
-          : [...state.navStack, current].slice(-NAV_STACK_LIMIT),
-    }));
+    get().navigate({ surface: "wizard", screen: next });
   },
 
   goBack: () => {
-    const stack = get().navStack;
+    const history = get().locationHistory;
+    if (history.length === 0) {
+      const legacyStack = get().navStack;
+      if (legacyStack.length > 0) {
+        const prev = legacyStack[legacyStack.length - 1];
+        set({
+          dashboardOpen: false,
+          screen: prev,
+          navStack: legacyStack.slice(0, -1),
+          location: { surface: "wizard", screen: prev },
+        });
+      }
+      return;
+    }
 
-    // The empty-stack case is a NO-OP by contract, and it is worth being
-    // explicit about why rather than falling through to a default screen:
-    //   * `welcome` would be a lie — the student did not come from there.
-    //   * the dashboard would be a worse lie, and it would bypass the gate.
-    // A root screen renders no back button, so this path is only reachable from
-    // programmatic callers (a keyboard shortcut, a test). Doing nothing is the
-    // only truthful answer when there is no previous page.
-    if (stack.length === 0) return;
+    const previous = history[history.length - 1];
+    const nextHistory = history.slice(0, -1);
 
-    const previous = stack[stack.length - 1];
-    set({
-      screen: previous,
-      navStack: stack.slice(0, -1),
-    });
+    if (previous.surface === "dashboard") {
+      set({
+        dashboardOpen: true,
+        section: previous.section,
+        selectedItemId: previous.selectedItemId ?? null,
+        location: previous,
+        locationHistory: nextHistory,
+        navStack: nextHistory
+          .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
+          .map((loc) => loc.screen),
+      });
+    } else {
+      set({
+        dashboardOpen: false,
+        screen: previous.screen,
+        location: previous,
+        locationHistory: nextHistory,
+        navStack: nextHistory
+          .filter((loc): loc is { surface: "wizard"; screen: Screen } => loc.surface === "wizard")
+          .map((loc) => loc.screen),
+      });
+    }
   },
 
-  canGoBack: () => get().navStack.length > 0,
+  canGoBack: () => get().locationHistory.length > 0 || get().navStack.length > 0,
 
   // -------------------------------------------------------------------------
   // Dashboard
   // -------------------------------------------------------------------------
-  // Opening the dashboard closes the wizard surface and vice versa. They are two
-  // views of one machine, so having both visible would mean two "current"
-  // answers to the same question.
-  //
-  // `dashboardOrigin` records *which* wizard screen we were on. The dashboard is
-  // a root and renders no back button — a root with a back button claims a page
-  // it does not have — but it still needs a meaningful exit, and guessing
-  // `welcome` for a student who was halfway through 安装 would throw away the
-  // very state this release is protecting. Recording it here rather than
-  // passing it in keeps every existing `openDashboard()` call site working.
-  //
-  // A cold start (launch, gate, licence-active) has no wizard screen to return
-  // to, so the origin stays `null` and the dashboard's exit falls back to the
-  // wizard's first screen.
   dashboardOrigin: null,
   dashboardOpen: false,
-  openDashboard: () => {
-    const state = get();
-    set({
-      dashboardOpen: true,
-      // Only recorded when the wizard was actually showing. `dashboardOpen`
-      // already true means this is a re-entry (a licence reload, an effect
-      // re-run) and overwriting would lose the real origin.
-      dashboardOrigin:
-        state.dashboardOpen || state.screen === "welcome"
-          ? state.dashboardOrigin
-          : state.screen,
-    });
+  openDashboard: (section?: Section) => {
+    get().navigate({ surface: "dashboard", section: section ?? "overview" });
   },
-  closeDashboard: () =>
-    set({ dashboardOpen: false, selectedItemId: null, dashboardOrigin: null }),
+  closeDashboard: () => {
+    if (get().canGoBack()) {
+      get().goBack();
+    } else {
+      get().navigate({ surface: "wizard", screen: "welcome" });
+    }
+  },
 
   section: "overview",
-  setSection: (section) => set({ section }),
+  setSection: (section) => {
+    get().navigate({ surface: "dashboard", section });
+  },
 
   selectedItemId: null,
   selectItem: (selectedItemId) => set({ selectedItemId }),

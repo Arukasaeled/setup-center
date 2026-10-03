@@ -15,6 +15,7 @@ import { RecentTracker, type RecentItem } from "../core/transfer/recent";
 import { PersonalNotes } from "../core/transfer/notes";
 import { CustomPacks, type CustomPack } from "../core/transfer/packs";
 import { TransferInbox } from "../core/transfer/inbox";
+import { PersonalCatalog } from "../core/transfer/catalog";
 import { LocalSearchIndex } from "../core/discovery/searchIndex";
 import type { DiscoveryItem } from "../core/discovery/types";
 import type { TransferInboxItem } from "../core/transfer/types";
@@ -41,6 +42,8 @@ export function LibraryScreen() {
   const [newPackTitle, setNewPackTitle] = useState("");
   const [newPackDesc, setNewPackDesc] = useState("");
 
+  const [, setCatalogTick] = useState(0);
+
   // Subscriptions
   useEffect(() => {
     const unsubBookmarks = Bookmarks.subscribe((b) => setBookmarkIds(b));
@@ -48,6 +51,7 @@ export function LibraryScreen() {
     const unsubPacks = CustomPacks.subscribe((p) => setPacks(p));
     const unsubInbox = TransferInbox.subscribe((i) => setInboxItems(i));
     const unsubNotes = PersonalNotes.subscribe((n) => setNotes(n));
+    const unsubCatalog = PersonalCatalog.subscribe(() => setCatalogTick((t) => t + 1));
 
     return () => {
       unsubBookmarks();
@@ -55,11 +59,17 @@ export function LibraryScreen() {
       unsubPacks();
       unsubInbox();
       unsubNotes();
+      unsubCatalog();
     };
   }, []);
 
-  const allItems = LocalSearchIndex.getAll();
-  const bookmarkedItems = allItems.filter((i) => bookmarkIds.includes(i.id));
+  const resolveItem = (id: string): DiscoveryItem | undefined => {
+    return PersonalCatalog.getItem(id) || LocalSearchIndex.get(id);
+  };
+
+  const bookmarkedItems = bookmarkIds
+    .map((id) => resolveItem(id))
+    .filter((i): i is DiscoveryItem => Boolean(i));
 
   const filteredBookmarks = bookmarkedItems.filter((i) => {
     if (!searchFilter.trim()) return true;
@@ -270,12 +280,20 @@ export function LibraryScreen() {
           ) : (
             <div className="divide-y divide-[color:var(--line-subtle)] rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] overflow-hidden">
               {recentItems.map((r) => {
-                const found = allItems.find((i) => i.id === r.id);
+                const found = resolveItem(r.id) || ({
+                  id: r.id,
+                  title: r.title,
+                  subtitle: r.subtitle,
+                  description: `${r.category} · ${r.type}`,
+                  category: (r.category as any) || "software",
+                  type: (r.type as any) || "tool",
+                  tags: [r.category, r.type],
+                } as DiscoveryItem);
                 return (
                   <div
                     key={`${r.id}-${r.visitedAt}`}
                     onClick={() => {
-                      if (found) setActiveDetailItem(found);
+                      setActiveDetailItem(found);
                     }}
                     className="flex items-center justify-between gap-4 p-3.5 hover:bg-[color:var(--surface-hover)] transition-colors cursor-pointer"
                   >

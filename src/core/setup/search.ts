@@ -14,6 +14,7 @@ import { SETUP_COLLECTIONS } from "./collections";
 import { resolveSetupAction } from "./resolver";
 import type { SetupAction } from "./types";
 import { useApp } from "../../lib/store";
+import { PersonalCatalog } from "../transfer/catalog";
 
 export interface UnifiedSearchResult {
   id: string;
@@ -151,6 +152,47 @@ export function searchUnified(query: string, maxResults: number = 24): UnifiedSe
           isPrimary: true,
         },
         rawItem: col,
+      });
+    }
+  }
+
+  // 6. Index Personal Catalog items (Saved software, online repos, bookmarked items)
+  for (const pItem of PersonalCatalog.getAllItems()) {
+    const name = pItem.title;
+    const desc = pItem.description || "";
+    const tags = [...(pItem.tags || []), pItem.category, pItem.type, "personal"];
+
+    const score = calculateScore(tokens, name, desc, tags);
+    if (!tokens.length || score > 0) {
+      results.push({
+        id: pItem.id,
+        name,
+        category: pItem.categoryLabel || pItem.category || "个人资产",
+        type:
+          pItem.type === "software"
+            ? "software"
+            : pItem.type === "style"
+              ? "style"
+              : "resource",
+        description: desc,
+        tags,
+        score: score + 15, // slight bonus for user-saved assets
+        setupAction: pItem.action
+          ? {
+              id: pItem.action.id,
+              type: pItem.action.type as any,
+              label: pItem.action.label,
+              payload: pItem.action.payload,
+              isPrimary: true,
+            }
+          : {
+              id: `personal-open-${pItem.id}`,
+              type: "open",
+              label: "查看详情",
+              payload: pItem.id,
+              isPrimary: true,
+            },
+        rawItem: pItem,
       });
     }
   }

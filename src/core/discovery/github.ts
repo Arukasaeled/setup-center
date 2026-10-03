@@ -270,3 +270,96 @@ export function mapRepoToDiscoveryItem(repo: GitHubApiRepo): DiscoveryItem {
     raw: repo,
   };
 }
+
+/**
+ * Extracts a canonical repository key formatted as "github:owner/repo".
+ */
+export function getCanonicalRepoKey(input: string): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (trimmed.startsWith("github:") || trimmed.startsWith("gh:")) {
+    const parts = trimmed.replace(/^(github|gh):/, "").toLowerCase();
+    return `github:${parts}`;
+  }
+  const match = trimmed.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git|\/|$)/i);
+  if (match) {
+    return `github:${match[1].toLowerCase()}/${match[2].toLowerCase()}`;
+  }
+  const pairMatch = trimmed.match(/^([\w.-]+)\/([\w.-]+)$/);
+  if (pairMatch) {
+    return `github:${pairMatch[1].toLowerCase()}/${pairMatch[2].toLowerCase()}`;
+  }
+  return null;
+}
+
+/**
+ * Merges a curated local item with live GitHub metadata:
+ * preserves curated Chinese descriptions & titles while applying live stars/license/updated.
+ */
+export function mergeRepoWithLiveMetadata(
+  curated: DiscoveryItem,
+  live: DiscoveryItem,
+): DiscoveryItem {
+  return {
+    ...curated,
+    id: curated.id,
+    origin: {
+      type: "github",
+      ...curated.origin,
+      ...live.origin,
+      url: live.origin?.url || curated.origin?.url,
+      repository: live.origin?.repository || curated.origin?.repository,
+      stars: live.origin?.stars || curated.origin?.stars,
+      lastUpdated: live.origin?.lastUpdated || curated.origin?.lastUpdated,
+      license:
+        live.origin?.license && live.origin.license !== "未知"
+          ? live.origin.license
+          : curated.origin?.license || "开源",
+      language: live.origin?.language || curated.origin?.language,
+    },
+    health: live.health || curated.health,
+    isCurated: true,
+  };
+}
+
+/**
+ * Fetches real factual metadata for a single repository from GitHub API.
+ */
+export async function fetchGitHubRepoDetails(
+  repoFullNameOrUrl: string,
+): Promise<DiscoveryItem | null> {
+  const canonical = getCanonicalRepoKey(repoFullNameOrUrl);
+  if (!canonical) return null;
+  const fullName = canonical.replace(/^github:/, "");
+
+  const cacheKey = `single-repo:${fullName}`;
+  const cache = loadCache();
+  const cached = cache[cacheKey];
+  const now = Date.now();
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return mapRepoToDiscoveryItem(cached.data as any);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`https://api.github.com/repos/${fullName}`, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "SetupCenter-Desktop/0.2.0",
+      },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const repo: GitHubApiRepo = await res.json();
+    cache[cacheKey] = {
+      timestamp: now,
+      data: repo as any,
+    };
+    saveCache(cache);
+    return mapRepoToDiscoveryItem(repo);
+  } catch {
+    return null;
+  }
+}

@@ -146,34 +146,52 @@ class VaultSyncManager {
         // network or offline, fallback to rawVaultOrigin
       }
 
-      // Immutable pinning is only an optimisation: it makes a release
-      // reproducible. It must never be able to take the whole Vault offline,
-      // and it did — a checkpoint once shipped a commitSha that did not exist
-      // on the remote, so every fetch 404'd, the error was swallowed as a
-      // console.warn, and a clean install silently received no remote Styles,
-      // Resources, Templates or Patterns at all while still reporting "cache
-      // preserved". So: try the pinned revision, and on failure fall back to
-      // the un-pinned origin and say so out loud.
-      const candidates = [targetBaseUrl, rawVaultOrigin].filter(
-        (u, i, all) => Boolean(u) && all.indexOf(u) === i,
-      );
-      let client = new VaultClient(candidates[0]);
+      const hasPin = targetBaseUrl !== rawVaultOrigin;
+      let client = new VaultClient(targetBaseUrl);
       let remoteManifest: VaultManifest | null = null;
       let pinFallbackReason: string | null = null;
-      for (let i = 0; i < candidates.length; i++) {
-        try {
-          remoteManifest = await new VaultClient(candidates[i]).fetchManifest();
-          client = new VaultClient(candidates[i]);
-          break;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (i === candidates.length - 1) throw err;
-          pinFallbackReason = msg;
+
+      try {
+        remoteManifest = await client.fetchManifest();
+      } catch (pinErr) {
+        const msg = pinErr instanceof Error ? pinErr.message : String(pinErr);
+        // If a pin was attempted and failed, check if we have a Last Known Good (LKG) cache.
+        // Stable sync must NEVER fall back to unverified raw main if we already have verified LKG.
+        const cachedLkg = loadVaultCache();
+        if (hasPin && cachedLkg) {
           console.warn(
-            `[VaultSync] Pinned revision ${candidates[i]} unavailable (${msg}); falling back to ${candidates[i + 1]}`,
+            `[VaultSync] Release pin ${targetBaseUrl} unavailable (${msg}); preserving Last Known Good (LKG) cache v${cachedLkg.manifest.contentVersion} rather than pulling unverified raw main.`,
           );
+          const lkgResult: VaultSyncResult = {
+            ok: true,
+            updated: false,
+            contentVersion: cachedLkg.manifest.contentVersion,
+            fromCache: true,
+            pinFallback: `Release pin unavailable (${msg}); preserved Last Known Good (LKG)`,
+            itemCounts: {
+              styles: Object.keys(cachedLkg.styles).length,
+              resources: cachedLkg.resources.length,
+              templates: cachedLkg.templates.length,
+              patterns: cachedLkg.patterns.length,
+            },
+          };
+          this.notify("idle", lkgResult);
+          return lkgResult;
+        }
+
+        // If no LKG exists (clean install) or not pinned, attempt raw origin
+        if (hasPin) {
+          console.warn(
+            `[VaultSync] Release pin ${targetBaseUrl} unavailable (${msg}) and no LKG cache found; falling back to ${rawVaultOrigin}`,
+          );
+          pinFallbackReason = msg;
+          client = new VaultClient(rawVaultOrigin);
+          remoteManifest = await client.fetchManifest();
+        } else {
+          throw pinErr;
         }
       }
+
       if (!remoteManifest) throw new Error("Vault manifest unavailable");
       const cached = loadVaultCache();
 

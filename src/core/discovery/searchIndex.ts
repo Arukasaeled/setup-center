@@ -475,6 +475,11 @@ class SearchIndexManager {
     return this.items;
   }
 
+  public get(id: string): DiscoveryItem | undefined {
+    this.init();
+    return this.items.find((item) => item.id === id);
+  }
+
   public search(query: string, filter?: DiscoveryFilter): DiscoveryItem[] {
     this.init();
     const q = (query || "").trim().toLowerCase();

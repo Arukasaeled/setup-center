@@ -112,9 +112,9 @@ import { LocalSearchIndex } from "../core/discovery/searchIndex";
 import { searchWingetPackages } from "../core/discovery/winget";
 import { RecentTracker } from "../core/transfer/recent";
 import type { DiscoveryItem } from "../core/discovery/types";
-import { ExecutionConsoleModal } from "../components/ExecutionConsoleModal";
 import { RepoDetailModal } from "../components/RepoDetailModal";
 import { CloneRepoModal } from "../components/CloneRepoModal";
+import { DynamicSoftwareDetailModal } from "../components/DynamicSoftwareDetailModal";
 
 // ---------------------------------------------------------------------------
 // Sections
@@ -1371,47 +1371,42 @@ function SoftwareGrid({
   selectedItemId: string | null;
   onSelect: (id: string | null) => void;
 }) {
+  const [softwareScope, setSoftwareScope] = useState<"curated" | "winget">("curated");
   const [category, setCategory] = useState("");
   const [query, setQuery] = useState("");
   const [isWingetSearching, setIsWingetSearching] = useState(false);
-  const [wingetItems, setWingetItems] = useState<{ id: string; name: string; version: string; source: string }[]>([]);
+  const [wingetItems, setWingetItems] = useState<DiscoveryItem[]>([]);
   const [wingetError, setWingetError] = useState<string | null>(null);
-  const [activeConsole, setActiveConsole] = useState<{ title: string; command: string; args: string[] } | null>(null);
+  const [selectedWingetItem, setSelectedWingetItem] = useState<DiscoveryItem | null>(null);
 
-  const handleSearchWinget = async (q: string) => {
-    if (!q.trim()) return;
-    setIsWingetSearching(true);
-    setWingetError(null);
-    try {
-      const res = await searchWingetPackages(q.trim());
-      setWingetItems(res.map((r) => ({ id: r.id, name: r.title, version: r.subtitle ?? "", source: "winget" })));
-      if (res.length === 0) {
-        setWingetError(`Winget 软件库中未找到关于「${q.trim()}」的软件包`);
-      }
-    } catch (err: any) {
-      setWingetError(err?.message || "Winget 检索失败");
-    } finally {
-      setIsWingetSearching(false);
+  // Debounced auto-search for Winget (350ms)
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setWingetItems([]);
+      setWingetError(null);
+      return;
     }
-  };
 
-  const handleInstallWinget = (pkg: { id: string; name: string }) => {
-    setActiveConsole({
-      title: `Winget 安装: ${pkg.name}`,
-      command: "winget",
-      args: ["install", "--id", pkg.id, "-e", "--accept-source-agreements", "--accept-package-agreements"],
-    });
-  };
+    const timer = setTimeout(async () => {
+      setIsWingetSearching(true);
+      setWingetError(null);
+      try {
+        const res = await searchWingetPackages(trimmed);
+        setWingetItems(res);
+        if (res.length === 0) {
+          setWingetError(`Winget 软件库中未找到关于「${trimmed}」的软件包`);
+        }
+      } catch (err: any) {
+        setWingetError(err?.message || "Winget 检索失败");
+      } finally {
+        setIsWingetSearching(false);
+      }
+    }, 350);
 
-  // Tabs are built from the *rendered* items, in the catalog's declared order.
-  //
-  // Built from the data rather than hard-coded so a renamed or added category
-  // in Rust appears here automatically. A hard-coded list would let a tab select
-  // a group that no longer exists and silently show an empty grid.
-  //
-  // `aiCreative` was added in 0.1.2 with the AIGC entries. It is listed *after*
-  // `aiTool` deliberately: a student looking for a coding assistant should reach
-  // "AI 工具" first, and the video/image tools are the second question.
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const order = ["development", "editor", "aiTool", "aiCreative", "runtime"];
   const tabs: CategoryTab[] = [
     { key: "", label: "全部", count: items.length },
@@ -1420,8 +1415,6 @@ function SoftwareGrid({
         const list = items.filter((i) => categoryOf.get(i.id)?.category === key);
         return {
           key,
-          // The display name comes from the same descriptor the row reads, so
-          // the tab and the row's own category label cannot disagree.
           label: categoryOf.get(list[0]?.id)?.categoryName ?? key,
           count: list.length,
         };
@@ -1429,18 +1422,12 @@ function SoftwareGrid({
       .filter((t) => t.count > 0),
   ];
 
-  // A rescan can empty the selected category (a program can disappear). Falling
-  // back to 全部 rather than rendering nothing is what stops the list from
-  // looking broken right after a recheck.
   const inCategory =
     category === ""
       ? items
       : items.filter((i) => categoryOf.get(i.id)?.category === category);
   const activeTab = inCategory.length > 0 ? category : "";
 
-  // Search matches the names a student would actually type: the knowledge name
-  // when there is one, the catalogue name, and the raw id. Matching only the
-  // display name would fail on "vscode" for a row titled "Visual Studio Code".
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? inCategory.filter((item) => {
@@ -1460,160 +1447,283 @@ function SoftwareGrid({
       })
     : inCategory;
 
+  const quickWingetTags = [
+    "Git",
+    "Python",
+    "Node.js",
+    "Docker",
+    "VS Code",
+    "Chrome",
+    "Firefox",
+    "7-Zip",
+    "Obsidian",
+  ];
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <CategoryTabs tabs={tabs} active={activeTab} onSelect={setCategory} />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索软件…"
-          aria-label="搜索软件"
-          data-software-search
+      {/* Dual Scope Switcher */}
+      <div className="flex items-center gap-2 border-b border-[color:var(--line-subtle)] pb-2.5">
+        <button
+          type="button"
+          onClick={() => setSoftwareScope("curated")}
           className={clsx(
-            "w-[168px] shrink-0 rounded-[9px] border px-3 py-1.5 text-[12.5px]",
-            "border-[color:var(--line-subtle)] bg-transparent",
-            "text-[color:var(--text-primary)] placeholder:text-[color:var(--text-quiet)]",
-            "focus:border-[color:var(--line-strong)] focus:outline-none",
-            "transition-colors duration-150",
+            "rounded-lg px-3.5 py-1.5 text-[12.5px] font-bold transition-all cursor-pointer",
+            softwareScope === "curated"
+              ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] shadow-sm"
+              : "bg-[color:var(--surface-sunken)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)]",
           )}
-        />
+        >
+          深度管理软件 ({items.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setSoftwareScope("winget")}
+          className={clsx(
+            "rounded-lg px-3.5 py-1.5 text-[12.5px] font-bold transition-all cursor-pointer flex items-center gap-1.5",
+            softwareScope === "winget"
+              ? "bg-[color:var(--status-accent)] text-[color:var(--accent-on)] shadow-sm"
+              : "bg-[color:var(--surface-sunken)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)]",
+          )}
+        >
+          <span>Windows 软件源 (Winget)</span>
+          {isWingetSearching && <span className="animate-spin text-[10px]">◷</span>}
+          {wingetItems.length > 0 && softwareScope !== "winget" && (
+            <span className="rounded-full bg-blue-500/20 px-1.5 py-0.2 text-[10px] font-mono text-blue-300">
+              {wingetItems.length}
+            </span>
+          )}
+        </button>
       </div>
 
-      {needle && (
-        <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 my-1 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[12.5px] font-medium text-[color:var(--text-primary)]">
-              未在内置 36 款软件中找到？
-            </div>
-            <div className="text-[11.5px] text-[color:var(--text-tertiary)]">
-              在 Windows 官方 Winget 软件库中实时检索「{query.trim()}」
-            </div>
+      {softwareScope === "curated" ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CategoryTabs tabs={tabs} active={activeTab} onSelect={setCategory} />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索内置 36 款软件…"
+              aria-label="搜索软件"
+              data-software-search
+              className={clsx(
+                "w-[200px] shrink-0 rounded-[9px] border px-3 py-1.5 text-[12.5px]",
+                "border-[color:var(--line-subtle)] bg-transparent",
+                "text-[color:var(--text-primary)] placeholder:text-[color:var(--text-quiet)]",
+                "focus:border-[color:var(--line-strong)] focus:outline-none",
+                "transition-colors duration-150",
+              )}
+            />
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void handleSearchWinget(query.trim())}
-            disabled={isWingetSearching}
-          >
-            {isWingetSearching ? "正在检索 Winget..." : "Winget 全网秒查 →"}
-          </Button>
-        </div>
-      )}
 
-      {/* Winget Search Results */}
-      {wingetItems.length > 0 && (
-        <div className="rounded-2xl border border-[color:var(--line-default)] bg-[color:var(--surface-panel)] p-4 my-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[13px] font-bold text-[color:var(--text-strong)] flex items-center gap-2">
-              <span>Winget 官方源检索结果</span>
-              <span className="rounded bg-[color:var(--surface-sunken)] px-1.5 py-0.5 text-[10.5px] font-mono text-[color:var(--text-quiet)]">
-                {wingetItems.length} 个软件包
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setWingetItems([])}
-              className="text-[11.5px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)]"
-            >
-              收起
-            </button>
-          </div>
-          <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
-            {wingetItems.map((pkg) => (
-              <div
-                key={pkg.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-3 py-2 text-[12.5px]"
+          {/* Quick bridge banner if user searches and Winget has matches */}
+          {needle && wingetItems.length > 0 && (
+            <div className="rounded-xl border border-blue-500/30 bg-blue-950/20 p-3 my-0.5 flex flex-wrap items-center justify-between gap-3 animate-fade-in">
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-bold text-blue-200 truncate">
+                  Windows Winget 官方源实时匹配到 {wingetItems.length} 款软件
+                </div>
+                <div className="text-[11.5px] text-zinc-400 truncate mt-0.5">
+                  包含: {wingetItems.slice(0, 3).map((w) => w.title).join(", ")}
+                  {wingetItems.length > 3 ? " 等" : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSoftwareScope("winget")}
+                className="rounded-lg bg-blue-600 px-3 py-1 text-[11.5px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shrink-0"
               >
-                <div className="min-w-0 pr-2">
-                  <div className="font-semibold text-[color:var(--text-primary)] truncate">
-                    {pkg.name}
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-[color:var(--text-quiet)] font-mono mt-0.5">
-                    <span>ID: {pkg.id}</span>
-                    {pkg.version && <span>· v{pkg.version}</span>}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleInstallWinget(pkg)}
-                  className="text-[11.5px] shrink-0"
+                切换至 Winget 视图查看 ({wingetItems.length}) →
+              </button>
+            </div>
+          )}
+
+          {/* The curated list */}
+          <div
+            data-software-list
+            className="stagger flex max-h-[calc(100vh-280px)] flex-col gap-0.5 overflow-y-auto pr-1"
+          >
+            {visible.length === 0 ? (
+              <div className="py-12 text-center rounded-2xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/40 p-6 space-y-2">
+                <p className="text-[color:var(--text-quiet)] text-[12.5px]">
+                  内置清单中没有匹配「{query.trim()}」的软件
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSoftwareScope("winget")}
+                  className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-blue-500 cursor-pointer"
                 >
-                  一键 Winget 安装
-                </Button>
+                  在 Windows 官方源中检索「{query.trim()}」→
+                </button>
               </div>
-            ))}
+            ) : (
+              visible.map((item) => {
+                const id = softwareKey(item.id);
+                const descriptor = categoryOf.get(item.id);
+                const knowledge = knowledgeById.get(item.id) ?? null;
+                const resolved = resolveSetupAction({
+                  type: "software",
+                  id: item.id,
+                  name: knowledge?.knowledge.name ?? item.name,
+                  installed: item.installed,
+                });
+                return (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <SoftwareRow
+                        item={item}
+                        catalogue={catalogue}
+                        knowledge={knowledge}
+                        recommendation={
+                          descriptor && !descriptor.installable
+                            ? "detectOnly"
+                            : (recommendations.get(item.id) ?? "optional")
+                        }
+                        selected={selectedItemId === id}
+                        onClick={() => onSelect(id)}
+                      />
+                    </div>
+                    <SetupActionButton
+                      action={resolved.primaryAction}
+                      secondaryActions={resolved.secondaryActions}
+                      itemMeta={{ id: item.id, name: item.name, type: "software" }}
+                      size="sm"
+                      showPmSelector={false}
+                      className="shrink-0"
+                    />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : (
+        /* WINGET UNIVERSE VIEW */
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="relative">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="全网搜索 Windows 软件源 (如 git, python, docker, chrome, obsidian)..."
+                aria-label="搜索 Winget 软件"
+                autoFocus
+                className={clsx(
+                  "w-full rounded-xl border px-4 py-2.5 text-[13px]",
+                  "border-[color:var(--line-default)] bg-[color:var(--surface-inset)]",
+                  "text-[color:var(--text-primary)] placeholder:text-[color:var(--text-quiet)]",
+                  "focus:border-[color:var(--status-accent)] focus:outline-none shadow-sm",
+                  "transition-colors duration-150",
+                )}
+              />
+              {isWingetSearching && (
+                <div className="absolute right-3.5 top-3 flex items-center gap-1.5 text-[11px] text-[color:var(--text-quiet)] font-mono">
+                  <span className="animate-spin">◷</span>
+                  <span>正在检索…</span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[11.5px]">
+              <span className="text-[color:var(--text-quiet)] font-mono">快速探索:</span>
+              {quickWingetTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setQuery(tag)}
+                  className="rounded-md border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2 py-0.5 text-[color:var(--text-secondary)] hover:border-[color:var(--line-strong)] hover:text-[color:var(--text-primary)] transition-colors cursor-pointer"
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Results display */}
+          <div className="max-h-[calc(100vh-320px)] overflow-y-auto space-y-2 pr-1">
+            {wingetItems.length > 0 ? (
+              wingetItems.map((pkg) => {
+                const cleanPkgId = pkg.origin?.packageId || (pkg.id.startsWith("winget:") ? pkg.id.replace(/^winget:/, "") : pkg.id);
+                return (
+                  <div
+                    key={pkg.id}
+                    onClick={() => setSelectedWingetItem(pkg)}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] p-3.5 hover:border-[color:var(--line-strong)] hover:shadow-md transition-all cursor-pointer group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-[14px] text-[color:var(--text-strong)] group-hover:text-[color:var(--status-accent)] transition-colors truncate">
+                          {pkg.title}
+                        </span>
+                        <span className="rounded bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.2 text-[10px] font-mono text-sky-400">
+                          Winget
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11.5px] text-[color:var(--text-quiet)] font-mono mt-1 truncate">
+                        <span>ID: {cleanPkgId}</span>
+                        {pkg.subtitle && <span>· {pkg.subtitle}</span>}
+                      </div>
+                      <p className="text-[12px] text-[color:var(--text-secondary)] mt-1.5 line-clamp-1">
+                        {pkg.description}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[color:var(--line-subtle)]">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedWingetItem(pkg);
+                        }}
+                        className="rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-primary)] hover:bg-[color:var(--surface-hover)] transition-colors cursor-pointer"
+                      >
+                        详情
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedWingetItem(pkg);
+                        }}
+                        className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shadow-sm"
+                      >
+                        一键安装
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : query.trim().length >= 2 && !isWingetSearching ? (
+              <div className="py-16 text-center rounded-2xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/30 p-6 space-y-2">
+                <div className="text-[14px] font-bold text-[color:var(--text-strong)]">
+                  未找到匹配软件
+                </div>
+                <p className="text-[12px] text-[color:var(--text-quiet)]">
+                  {wingetError || `未在 Windows 软件源中找到「${query.trim()}」，请尝试更简短的关键词`}
+                </p>
+              </div>
+            ) : (
+              <div className="py-20 text-center rounded-2xl border border-dashed border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/20 p-8 space-y-2">
+                <div className="text-[14px] font-bold text-[color:var(--text-strong)]">
+                  Windows 开放软件生态检索
+                </div>
+                <p className="text-[12.5px] text-[color:var(--text-tertiary)] max-w-md mx-auto">
+                  输入任意软件名称、包名或缩写（如 git, python, chrome, vlc），即可直接从微软官方 Windows 软件包管理器实时检索并一键安装。
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {wingetError && (
-        <p className="text-[color:var(--text-quiet)] text-[12px] px-3 py-1">
-          {wingetError}
-        </p>
-      )}
-
-      {/* The list is its own scroll container so a long catalogue does not push
-          the header off screen while the pane stays where it is. */}
-      <div
-        data-software-list
-        className="stagger flex max-h-[calc(100vh-260px)] flex-col gap-0.5 overflow-y-auto pr-1"
-      >
-        {visible.length === 0 ? (
-          <p className="text-[color:var(--text-quiet)] px-3 py-6 text-center text-[12.5px]">
-            {needle
-              ? `内置清单中没有匹配「${query.trim()}」的软件，建议点击上方按钮进行 Winget 全网秒查`
-              : "这一类暂时没有软件"}
-          </p>
-        ) : (
-          visible.map((item) => {
-            const id = softwareKey(item.id);
-            const descriptor = categoryOf.get(item.id);
-            const knowledge = knowledgeById.get(item.id) ?? null;
-            const resolved = resolveSetupAction({
-              type: "software",
-              id: item.id,
-              name: knowledge?.knowledge.name ?? item.name,
-              installed: item.installed,
-            });
-            return (
-              <div key={item.id} className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <SoftwareRow
-                    item={item}
-                    catalogue={catalogue}
-                    knowledge={knowledge}
-                    recommendation={
-                      descriptor && !descriptor.installable
-                        ? "detectOnly"
-                        : (recommendations.get(item.id) ?? "optional")
-                    }
-                    selected={selectedItemId === id}
-                    onClick={() => onSelect(id)}
-                  />
-                </div>
-                <SetupActionButton
-                  action={resolved.primaryAction}
-                  secondaryActions={resolved.secondaryActions}
-                  itemMeta={{ id: item.id, name: item.name, type: "software" }}
-                  size="sm"
-                  showPmSelector={false}
-                  className="shrink-0"
-                />
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {activeConsole && (
-        <ExecutionConsoleModal
+      {/* Dynamic Winget Detail Modal */}
+      {selectedWingetItem && (
+        <DynamicSoftwareDetailModal
           isOpen={true}
-          title={activeConsole.title}
-          command={activeConsole.command}
-          args={activeConsole.args}
-          onClose={() => setActiveConsole(null)}
+          item={selectedWingetItem}
+          onClose={() => setSelectedWingetItem(null)}
         />
       )}
     </div>

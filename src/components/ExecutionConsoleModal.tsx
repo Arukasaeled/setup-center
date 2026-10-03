@@ -9,16 +9,21 @@
  * Includes post-execution actions: Reveal in Explorer, Open in VS Code / Cursor.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import {
   executeNativeCommand,
+  executeStreamingCommand,
+  cancelNativeExecution,
+  onNativeStdout,
+  onNativeStderr,
+  onNativeExit,
   revealInExplorer,
   openInEditor,
   detectEditors,
+  isTauri,
   type DetectedEditor,
-  type CommandOutput,
 } from "../lib/ipc";
 import { TransferHistory } from "../core/transfer/history";
 
@@ -43,12 +48,23 @@ export function ExecutionConsoleModal({
   targetPath,
   onSuccess,
 }: ExecutionConsoleModalProps) {
-  const [status, setStatus] = useState<"idle" | "running" | "success" | "error">("idle");
-  const [output, setOutput] = useState<CommandOutput | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "running" | "success" | "error" | "cancelled">("idle");
+  const [stdout, setStdout] = useState("");
+  const [stderr, setStderr] = useState("");
+  const [exitCode, setExitCode] = useState<number | null>(null);
+  const [executionId, setExecutionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [editors, setEditors] = useState<DetectedEditor[]>([]);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  const consoleEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto scroll to bottom
+  useEffect(() => {
+    if (consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [stdout, stderr, status]);
 
   // Probe available editors on mount
   useEffect(() => {
@@ -59,17 +75,24 @@ export function ExecutionConsoleModal({
     }
   }, [isOpen]);
 
-  // Execute command when opened
+  // Execute streaming command when opened
   useEffect(() => {
     if (!isOpen) {
       setStatus("idle");
-      setOutput(null);
-      setErrorMsg(null);
+      setStdout("");
+      setStderr("");
+      setExitCode(null);
+      setExecutionId(null);
       setElapsed(0);
       return;
     }
 
+    const execId = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setExecutionId(execId);
     setStatus("running");
+    setStdout("");
+    setStderr("");
+    setExitCode(null);
     setElapsed(0);
 
     const timer = setInterval(() => {
@@ -77,44 +100,109 @@ export function ExecutionConsoleModal({
     }, 1000);
 
     const startTime = Date.now();
+    let unlistenStdout: (() => void) | undefined;
+    let unlistenStderr: (() => void) | undefined;
+    let unlistenExit: (() => void) | undefined;
 
-    executeNativeCommand(command, args, cwd)
-      .then((res) => {
-        clearInterval(timer);
-        setOutput(res);
-        if (res.success) {
-          setStatus("success");
-          TransferHistory.record({
-            type: "install",
-            title,
-            targetId: `${command}-${Date.now()}`,
-            targetName: `${command} ${args.join(" ")}`,
-            status: "success",
-            summary: `已完成执行: ${command} ${args.join(" ")} (耗时 ${Math.round((Date.now() - startTime) / 1000)}s)`,
-          });
-          onSuccess?.();
-        } else {
+    let mounted = true;
+
+    async function startExecution() {
+      if (isTauri()) {
+        unlistenStdout = await onNativeStdout((payload) => {
+          if (!mounted || payload.executionId !== execId) return;
+          setStdout((prev) => prev + payload.text);
+        });
+
+        unlistenStderr = await onNativeStderr((payload) => {
+          if (!mounted || payload.executionId !== execId) return;
+          setStderr((prev) => prev + payload.text);
+        });
+
+        unlistenExit = await onNativeExit((payload) => {
+          if (!mounted || payload.executionId !== execId) return;
+          clearInterval(timer);
+          setExitCode(payload.exitCode);
+
+          if (payload.success) {
+            setStatus("success");
+            TransferHistory.record({
+              type: "install",
+              title,
+              targetId: `${command}-${Date.now()}`,
+              targetName: `${command} ${args.join(" ")}`,
+              status: "success",
+              summary: `已完成执行: ${command} ${args.join(" ")} (耗时 ${Math.round((Date.now() - startTime) / 1000)}s)`,
+            });
+            onSuccess?.();
+          } else {
+            setStatus((cur) => (cur === "cancelled" ? "cancelled" : "error"));
+            TransferHistory.record({
+              type: "install",
+              title,
+              targetId: `${command}-${Date.now()}`,
+              targetName: `${command} ${args.join(" ")}`,
+              status: "error",
+              summary: `执行异常或退出: 退出码 ${payload.exitCode ?? -1}`,
+            });
+          }
+        });
+
+        try {
+          await executeStreamingCommand(execId, command, args, cwd);
+        } catch (err: any) {
+          if (!mounted) return;
+          clearInterval(timer);
           setStatus("error");
-          setErrorMsg(res.stderr || `命令退出码非 0: ${res.exitCode}`);
-          TransferHistory.record({
-            type: "install",
-            title,
-            targetId: `${command}-${Date.now()}`,
-            targetName: `${command} ${args.join(" ")}`,
-            status: "error",
-            summary: `执行失败: ${res.stderr || `退出码 ${res.exitCode}`}`,
-          });
+          setStderr(err?.message || String(err));
         }
-      })
-      .catch((err) => {
-        clearInterval(timer);
-        setStatus("error");
-        const msg = err instanceof Error ? err.message : String(err);
-        setErrorMsg(msg);
-      });
+      } else {
+        // Fallback for mock/browser
+        executeNativeCommand(command, args, cwd)
+          .then((res) => {
+            if (!mounted) return;
+            clearInterval(timer);
+            setStdout(res.stdout);
+            setStderr(res.stderr);
+            setExitCode(res.exitCode);
+            if (res.success) {
+              setStatus("success");
+              onSuccess?.();
+            } else {
+              setStatus("error");
+            }
+          })
+          .catch((err) => {
+            if (!mounted) return;
+            clearInterval(timer);
+            setStatus("error");
+            setStderr(err instanceof Error ? err.message : String(err));
+          });
+      }
+    }
 
-    return () => clearInterval(timer);
-  }, [isOpen, command, args, cwd, title, onSuccess]);
+    void startExecution();
+
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+      unlistenStdout?.();
+      unlistenStderr?.();
+      unlistenExit?.();
+    };
+  }, [isOpen, command, JSON.stringify(args), cwd, title]);
+
+  const handleCancelExecution = async () => {
+    if (!executionId || status !== "running") return;
+    setStatus("cancelled");
+    try {
+      await cancelNativeExecution(executionId);
+      setActionNotice("已向进程发送终止信号");
+      setTimeout(() => setActionNotice(null), 3000);
+    } catch {
+      setActionNotice("无法终止进程");
+      setTimeout(() => setActionNotice(null), 3000);
+    }
+  };
 
   const handleReveal = async () => {
     const p = targetPath || cwd;
@@ -210,30 +298,53 @@ export function ExecutionConsoleModal({
         {/* Console Body */}
         <div className="flex-1 overflow-y-auto bg-[#090b0e] p-4 font-mono text-[12px] leading-relaxed text-zinc-300 select-text space-y-2">
           {status === "running" && (
-            <div className="text-zinc-400 flex items-center gap-2">
-              <span className="inline-block animate-spin">◷</span>
-              <span>正在调用本机环境执行，请稍候…</span>
+            <div className="text-zinc-400 flex items-center justify-between gap-2 border-b border-zinc-900 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-block animate-spin">◷</span>
+                <span>正在调用本机环境实时执行中…</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelExecution}
+                className="rounded border border-rose-800/70 bg-rose-950/40 px-2 py-0.5 text-[11px] font-bold text-rose-300 hover:bg-rose-900/60 transition-colors cursor-pointer"
+              >
+                ✕ 终止进程
+              </button>
             </div>
           )}
 
-          {output?.stdout && (
+          {stdout && (
             <pre className="whitespace-pre-wrap font-mono text-[12px] text-zinc-200">
-              {output.stdout}
+              {stdout}
             </pre>
           )}
 
-          {errorMsg && (
-            <div className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-rose-300">
-              <div className="font-bold text-[12.5px] mb-1">执行遇到异常：</div>
-              <pre className="whitespace-pre-wrap font-mono text-[11.5px]">{errorMsg}</pre>
+          {stderr && (
+            <div className="rounded border border-amber-900/50 bg-amber-950/30 p-2.5 text-amber-300 font-mono text-[11.5px]">
+              <pre className="whitespace-pre-wrap">{stderr}</pre>
+            </div>
+          )}
+
+          {status === "cancelled" && (
+            <div className="rounded border border-rose-900/60 bg-rose-950/50 p-3 text-rose-300 font-bold text-[12px]">
+              ✕ 进程已被手动终止 (Process Cancelled)
             </div>
           )}
 
           {status === "success" && (
             <div className="mt-3 rounded border border-emerald-900/60 bg-emerald-950/30 p-3 text-emerald-300">
-              ✓ 执行完成（退出码: 0）
+              ✓ 执行完成（退出码: {exitCode ?? 0}）
             </div>
           )}
+
+          {status === "error" && !stderr && (
+            <div className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-rose-300">
+              <div className="font-bold text-[12.5px] mb-1">执行退出异常：</div>
+              <pre className="whitespace-pre-wrap font-mono text-[11.5px]">退出码: {exitCode ?? -1}</pre>
+            </div>
+          )}
+
+          <div ref={consoleEndRef} />
         </div>
 
         {/* Footer Actions */}
@@ -243,6 +354,16 @@ export function ExecutionConsoleModal({
           </div>
 
           <div className="flex items-center gap-2.5">
+            {status === "running" && (
+              <button
+                type="button"
+                onClick={handleCancelExecution}
+                className="rounded-lg border border-rose-800/80 bg-rose-950/50 px-3.5 py-1.5 text-[12px] font-bold text-rose-300 hover:bg-rose-900/60 transition-colors cursor-pointer"
+              >
+                终止执行
+              </button>
+            )}
+
             {status === "success" && (targetPath || cwd) && (
               <>
                 <button

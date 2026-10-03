@@ -38,6 +38,7 @@ import { useEffect, useState } from "react";
 import { Button, SectionLabel } from "./ui";
 import { CONTACT } from "./ProGate";
 import { useApp } from "../lib/store";
+import { ReleaseManagerInstance } from "../core/vault/release";
 
 /** Renders the stored ISO-8601 timestamp as a readable local date. */
 export function formatActivatedAt(iso: string): string {
@@ -319,9 +320,16 @@ export function UpgradePrompt(_props?: {
 export function LicenseSection() {
   const status = useApp((s) => s.status);
   const loadStatus = useApp((s) => s.loadStatus);
+  const [appVersion, setAppVersion] = useState(
+    () => ReleaseManagerInstance.getSnapshot().app.currentVersion,
+  );
 
   useEffect(() => {
     if (!status) void loadStatus();
+    void ReleaseManagerInstance.hydrateRuntimeVersion().then((v) => {
+      if (v) setAppVersion(v);
+    });
+    return ReleaseManagerInstance.subscribe((s) => setAppVersion(s.app.currentVersion));
   }, [status, loadStatus]);
 
   return (
@@ -334,7 +342,7 @@ export function LicenseSection() {
           data-testid="license-heading"
           className="text-[color:var(--text-strong)] text-[22px] font-bold tracking-[-0.02em]"
         >
-          Setup Center v0.2.0
+          Setup Center {appVersion ? `· v${appVersion}` : ""}
         </h1>
         <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed">
           免费开源 · 本地优先 · 面向开发者的 Creative & Development Bootstrap Hub。

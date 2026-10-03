@@ -5,6 +5,9 @@
  * to provide a frictionless "pick up where you left off" experience.
  */
 
+import { PersonalCatalog } from "./catalog";
+import type { DiscoveryItem } from "../discovery/types";
+
 export interface RecentItem {
   id: string;
   title: string;
@@ -66,7 +69,7 @@ class RecentManager {
     return [...this.items];
   }
 
-  public record(item: Omit<RecentItem, "visitedAt">): void {
+  public record(item: Omit<RecentItem, "visitedAt">, snapshot?: DiscoveryItem): void {
     const now = new Date().toISOString();
     // Remove if already exists
     this.items = this.items.filter((i) => i.id !== item.id);
@@ -77,6 +80,9 @@ class RecentManager {
     });
     if (this.items.length > MAX_RECENT_ITEMS) {
       this.items = this.items.slice(0, MAX_RECENT_ITEMS);
+    }
+    if (snapshot) {
+      PersonalCatalog.saveItem(snapshot);
     }
     this.save();
     this.notify();

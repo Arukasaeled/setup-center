@@ -7,7 +7,11 @@
 
 import { useState, useEffect, useTransition } from "react";
 import clsx from "clsx";
-import { searchGitHubRepos } from "../core/discovery/github";
+import {
+  searchGitHubRepos,
+  getCanonicalRepoKey,
+  mergeRepoWithLiveMetadata,
+} from "../core/discovery/github";
 import { LocalSearchIndex } from "../core/discovery/searchIndex";
 import type { DiscoveryItem } from "../core/discovery/types";
 import { Bookmarks } from "../core/transfer/bookmarks";
@@ -105,18 +109,33 @@ export function RepoFinderScreen() {
     setTimeout(() => setNotice(null), 2000);
   };
 
-  // Combine results without duplicates
-  const seenIds = new Set<string>();
+  // Combine results with canonical key de-duplication & live metadata merging
+  const localMap = new Map<string, DiscoveryItem>();
   const combined: DiscoveryItem[] = [];
+  const processedKeys = new Set<string>();
 
   for (const it of localResults) {
-    seenIds.add(it.id);
-    combined.push(it);
+    const key =
+      getCanonicalRepoKey(it.origin?.repository || it.origin?.url || it.title) || it.id;
+    localMap.set(key, it);
   }
-  for (const it of onlineResults) {
-    if (!seenIds.has(it.id)) {
-      seenIds.add(it.id);
-      combined.push(it);
+
+  for (const online of onlineResults) {
+    const key =
+      getCanonicalRepoKey(online.origin?.repository || online.origin?.url || online.title) ||
+      online.id;
+    processedKeys.add(key);
+    const local = localMap.get(key);
+    if (local) {
+      combined.push(mergeRepoWithLiveMetadata(local, online));
+    } else {
+      combined.push(online);
+    }
+  }
+
+  for (const [key, local] of localMap.entries()) {
+    if (!processedKeys.has(key)) {
+      combined.push(local);
     }
   }
 

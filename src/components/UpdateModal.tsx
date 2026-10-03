@@ -17,6 +17,7 @@ export function UpdateModal({
   const [isSyncingVault, setIsSyncingVault] = useState(false);
 
   useEffect(() => {
+    void ReleaseManagerInstance.hydrateRuntimeVersion();
     return ReleaseManagerInstance.subscribe((s) => setSnapshot(s));
   }, []);
 
@@ -49,8 +50,8 @@ export function UpdateModal({
     <DetailShell
       isOpen={isOpen}
       onClose={onClose}
-      title="版本与更新控制台 (Release Console)"
-      subtitle="Release-Gated Update: 双通道版本发布与稳定批次内容门禁"
+      title="版本与更新控制台 (Version Inspector)"
+      subtitle="Runtime Truth & Release Gate: 读取真实运行版本、比对上游正式发布与 Vault 稳定批次"
       width="lg"
       badge={
         snapshot.app.hasUpdate || snapshot.vault.hasUpdate ? (
@@ -59,7 +60,7 @@ export function UpdateModal({
           </span>
         ) : (
           <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
-            已是最新发布批次
+            当前运行版本与最新正式 Release 一致
           </span>
         )
       }
@@ -91,31 +92,45 @@ export function UpdateModal({
         <div className="rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[14px] font-bold text-[color:var(--text-strong)]">
-                  应用程序本体通道 (App Release)
+                  应用程序本体 (App Release)
                 </span>
-                <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
-                  v{snapshot.app.currentVersion}
+                <span className="rounded bg-[color:var(--surface-hover)] px-2 py-0.5 text-[11px] font-mono text-[color:var(--text-primary)] border border-[color:var(--line-subtle)] font-bold">
+                  当前运行：v{snapshot.app.currentVersion}
                 </span>
+                {snapshot.app.runtimeSource && (
+                  <span className="text-[11px] text-[color:var(--text-quiet)]">
+                    ({snapshot.app.runtimeSource})
+                  </span>
+                )}
               </div>
-              <p className="text-[12px] text-[color:var(--text-secondary)] mt-1 leading-relaxed">
-                包含 Tauri 桌面运行容器、Rust 底层环境检测、软件安装调度器与核心 UI 框架。
+              <p className="text-[12px] text-[color:var(--text-secondary)] mt-1.5 leading-relaxed">
+                包含 Tauri 桌面运行容器、Rust 底层环境检测、Native 执行控制台与起步中心核心交互。
               </p>
             </div>
 
             <div className="shrink-0 text-right">
               {snapshot.app.hasUpdate ? (
-                <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-400 border border-amber-500/30">
-                  新版 {snapshot.app.latestVersion}
+                <span className="rounded bg-amber-500/15 px-2.5 py-0.5 text-[11.5px] font-bold text-amber-400 border border-amber-500/30">
+                  发现新版本 {snapshot.app.latestVersion}
                 </span>
               ) : (
-                <span className="text-[11.5px] text-emerald-400 font-medium">
-                  当前已是最新
+                <span className="text-[12px] text-emerald-400 font-medium">
+                  ✓ 当前运行版本已是最新
                 </span>
               )}
             </div>
           </div>
+
+          {snapshot.app.notes && (
+            <div className="mt-3 rounded-lg bg-[color:var(--surface-inset)] px-3 py-2 text-[12px] text-[color:var(--text-tertiary)] border border-[color:var(--line-subtle)]">
+              <div className="font-semibold text-[color:var(--text-secondary)] mb-1">
+                上游发布说明 ({snapshot.app.latestVersion})：
+              </div>
+              <p className="line-clamp-3 whitespace-pre-wrap">{snapshot.app.notes}</p>
+            </div>
+          )}
 
           <div className="mt-3 pt-3 border-t border-[color:var(--line-subtle)] flex items-center justify-between">
             <span className="text-[11.5px] text-[color:var(--text-quiet)]">

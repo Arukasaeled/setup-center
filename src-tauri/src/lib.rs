@@ -110,7 +110,11 @@ pub fn run() {
             commands::run_plugin,
             // Native system ops & discovery
             commands::execute_native_command,
+            commands::execute_streaming_command,
+            commands::cancel_native_execution,
+            commands::native_download,
             commands::winget_search,
+            commands::winget_show,
             commands::reveal_in_explorer,
             commands::detect_editors,
             commands::open_in_editor,

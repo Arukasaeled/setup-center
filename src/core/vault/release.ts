@@ -7,8 +7,11 @@
  *    gated by formal release checkpoints rather than raw commits to main.
  */
 
+import { appCanonicalVersion, isTauri } from "../../lib/ipc";
+
 export interface AppReleaseInfo {
   currentVersion: string;
+  runtimeSource?: string;
   latestVersion?: string;
   releaseUrl?: string;
   publishedAt?: string;
@@ -34,12 +37,12 @@ export interface ReleaseStatusSnapshot {
 }
 
 const STORAGE_KEY = "setup-center.release-status.v1";
-const CURRENT_APP_VERSION = "0.2.0";
 
 class ReleaseManager {
   private status: ReleaseStatusSnapshot = {
     app: {
-      currentVersion: CURRENT_APP_VERSION,
+      currentVersion: "0.2.0",
+      runtimeSource: isTauri() ? "Tauri Desktop Runtime" : "Browser Preview",
       hasUpdate: false,
       releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
     },
@@ -75,19 +78,43 @@ class ReleaseManager {
     }
   }
 
+  public async hydrateRuntimeVersion(): Promise<string> {
+    try {
+      if (isTauri()) {
+        const ver = await appCanonicalVersion();
+        if (ver && ver.trim()) {
+          const clean = ver.trim();
+          this.status.app.currentVersion = clean;
+          this.status.app.runtimeSource = "Tauri 桌面运行时 (Cargo manifest)";
+          if (this.status.app.latestVersion) {
+            const cleanLatest = this.status.app.latestVersion.replace(/^v/, "");
+            this.status.app.hasUpdate = this.compareVersions(cleanLatest, clean) > 0;
+          }
+          this.notify();
+          this.saveToStorage();
+          return clean;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return this.status.app.currentVersion;
+  }
+
   private hydrateFromStorage(): void {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const cur = this.status.app.currentVersion;
         this.status = {
           ...this.status,
           ...parsed,
           app: {
             ...this.status.app,
-            currentVersion: CURRENT_APP_VERSION,
+            currentVersion: cur,
             latestVersion: parsed.app?.latestVersion,
-            hasUpdate: parsed.app?.latestVersion && parsed.app.latestVersion !== `v${CURRENT_APP_VERSION}` && parsed.app.latestVersion !== CURRENT_APP_VERSION,
+            hasUpdate: parsed.app?.latestVersion && parsed.app.latestVersion !== `v${cur}` && parsed.app.latestVersion !== cur,
           },
           isChecking: false,
         };
@@ -143,6 +170,7 @@ class ReleaseManager {
    * Check GitHub Releases for the Setup Center App
    */
   public async checkAppRelease(): Promise<AppReleaseInfo> {
+    const cur = this.status.app.currentVersion;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
@@ -155,9 +183,10 @@ class ReleaseManager {
       if (res.ok) {
         const data = await res.json();
         const tag = (data.tag_name || "").replace(/^v/, "");
-        const hasUpdate = this.compareVersions(tag, CURRENT_APP_VERSION) > 0;
+        const hasUpdate = this.compareVersions(tag, cur) > 0;
         this.status.app = {
-          currentVersion: CURRENT_APP_VERSION,
+          ...this.status.app,
+          currentVersion: cur,
           latestVersion: data.tag_name || `v${tag}`,
           releaseUrl: data.html_url || "https://github.com/arukas0623-ai/setup-center/releases",
           publishedAt: data.published_at,
@@ -167,8 +196,9 @@ class ReleaseManager {
       } else {
         // Fallback info if API rate limited
         this.status.app = {
-          currentVersion: CURRENT_APP_VERSION,
-          latestVersion: `v${CURRENT_APP_VERSION}`,
+          ...this.status.app,
+          currentVersion: cur,
+          latestVersion: `v${cur}`,
           hasUpdate: false,
           releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
         };
@@ -176,8 +206,9 @@ class ReleaseManager {
     } catch {
       // Safe fallback
       this.status.app = {
-        currentVersion: CURRENT_APP_VERSION,
-        latestVersion: `v${CURRENT_APP_VERSION}`,
+        ...this.status.app,
+        currentVersion: cur,
+        latestVersion: `v${cur}`,
         hasUpdate: false,
         releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
       };

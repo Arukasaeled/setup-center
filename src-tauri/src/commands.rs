@@ -1860,6 +1860,34 @@ pub async fn execute_native_command(
     .map_err(|e| format!("命令执行异常: {e}"))?
 }
 
+/// Starts streaming command execution emitting stdout/stderr/exit events over Tauri channel.
+#[tauri::command]
+pub fn execute_streaming_command(
+    window: tauri::Window,
+    execution_id: String,
+    program: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+) -> Result<(), String> {
+    system_ops::spawn_streaming_command(window, execution_id, program, args, cwd)
+}
+
+/// Cancels a running streaming execution.
+#[tauri::command]
+pub fn cancel_native_execution(execution_id: String) -> Result<bool, String> {
+    system_ops::cancel_process(&execution_id)
+}
+
+/// Downloads a remote file to a destination path using native curl streaming.
+#[tauri::command]
+pub async fn native_download(url: String, destination_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        system_ops::download_file(&url, &destination_path)
+    })
+    .await
+    .map_err(|e| format!("下载异常: {e}"))?
+}
+
 /// Searches winget for packages matching query.
 #[tauri::command]
 pub async fn winget_search(query: String) -> Result<Vec<system_ops::WingetSearchResultItem>, String> {
@@ -1868,6 +1896,16 @@ pub async fn winget_search(query: String) -> Result<Vec<system_ops::WingetSearch
     })
     .await
     .map_err(|e| format!("winget 检索异常: {e}"))?
+}
+
+/// Fetches rich details for a specific winget package id.
+#[tauri::command]
+pub async fn winget_show(package_id: String) -> Result<system_ops::WingetPackageDetails, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        system_ops::show_winget(&package_id)
+    })
+    .await
+    .map_err(|e| format!("winget 详情获取异常: {e}"))?
 }
 
 /// Reveals a file or directory in Windows Explorer.
@@ -1882,10 +1920,10 @@ pub fn detect_editors() -> Vec<system_ops::DetectedEditor> {
     system_ops::probe_editors()
 }
 
-/// Opens a path in the specified editor.
+/// Opens a path in the specified editor, optionally using the detected executable path directly.
 #[tauri::command]
-pub fn open_in_editor(editor: String, path: String) -> Result<(), String> {
-    system_ops::launch_in_editor(&editor, &path)
+pub fn open_in_editor(editor: String, path: String, executable_path: Option<String>) -> Result<(), String> {
+    system_ops::launch_in_editor(&editor, &path, executable_path.as_deref())
 }
 
 /// Returns the canonical app version from Cargo manifest.
