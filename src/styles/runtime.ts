@@ -176,27 +176,64 @@ export const COMPOSITION_LABEL: Record<CompositionGrammar, string> = {
 // Legacy migration
 // ---------------------------------------------------------------------------
 
-/** Split a finished CSS box-shadow string back into its parts. */
+/**
+ * Split a finished CSS box-shadow string back into its parts.
+ *
+ * The bare `0` case is not pedantry: `0 2px 10px rgba(...)` is what every
+ * conventional shadow writes, and a regex that insists on a unit misses it,
+ * which shifts every following slot by one and pushes the leftover `0` into the
+ * colour string. The composed value then reads `2px 10px 0px 0px 0 rgba(...)`,
+ * which the browser discards in full, so `box-shadow: var(--shadow-hard)`
+ * silently painted nothing.
+ *
+ * Lengths are read as the leading run, which is the idiomatic CSS form
+ * (`[inset] <offset-x> <offset-y> [blur] [spread] [colour]`); the remainder is
+ * taken verbatim as the colour so `rgba(0,0,0,.6)` survives intact.
+ */
 export function parseShadow(raw: string | undefined): Partial<ShadowTokens> | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed || trimmed === "none") {
     return { offsetX: "0px", offsetY: "0px", blur: "0px", spread: "0px", color: "transparent" };
   }
-  // The lengths appear first (2 or 3 of them), then the colour, in any order.
-  const lengthRe = /(-?\d*\.?\d+(?:px|rem|em))/g;
-  const lengths = trimmed.match(lengthRe) ?? [];
-  const colour = trimmed.replace(lengthRe, " ").replace(/\s+/g, " ").trim();
+
+  // `inset` is a keyword, not a length or a colour, and it may sit at either
+  // end. It cannot occur inside a colour literal, so a word-boundary strip is
+  // safe.
+  const inset = /\binset\b/i.test(trimmed);
+  let rest = trimmed.replace(/\binset\b/gi, " ").trim();
+
+  const lengths: string[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    const match = rest.match(/^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|vh|vw|ch|ex)(?![a-z%])/i) ?? rest.match(/^0(?![\d.])/);
+    if (!match) break;
+    // Normalise a bare `0` to `0px` so the zero-collapse check below — and any
+    // consumer comparing against the literal `"0px"` — stays true.
+    lengths.push(match[0] === "0" ? "0px" : match[0]);
+    rest = rest.slice(match[0].length).trim();
+  }
+
   const [offsetX = "0px", offsetY = "0px", blur = "0px", spread = "0px"] = lengths;
-  return { offsetX, offsetY, blur, spread, color: colour || "rgba(0,0,0,0.5)" };
+  const parsed: Partial<ShadowTokens> = {
+    offsetX,
+    offsetY,
+    blur,
+    spread,
+    color: rest || "rgba(0,0,0,0.5)",
+  };
+  if (inset) parsed.inset = true;
+  return parsed;
 }
 
 /** Compose the parts back into a CSS box-shadow value. */
 export function composeShadow(s: ShadowTokens): string {
-  if (s.offsetX === "0px" && s.offsetY === "0px" && s.blur === "0px" && s.spread === "0px") {
-    return "none";
-  }
-  return `${s.offsetX} ${s.offsetY} ${s.blur} ${s.spread} ${s.color}`;
+  const lengths = [s.offsetX, s.offsetY, s.blur, s.spread];
+  const allZero = lengths.every((value) => value === "0px" || value === "0");
+  // An inset shadow with no offset, blur or spread still paints nothing, but
+  // collapsing it to `none` would drop the declaration the manifest declared;
+  // only the non-inset case is safe to elide.
+  if (allZero && !s.inset) return "none";
+  return `${s.inset ? "inset " : ""}${lengths.join(" ")} ${s.color}`;
 }
 
 /**

@@ -211,6 +211,13 @@ export interface ShadowTokens {
   spread: string;
   /** e.g. `"#000000"` */
   color: string;
+  /**
+   * The `inset` keyword. Optional because almost no experience uses it, but it
+   * has to be carried: `inset 0 1px 3px rgba(0,0,0,0.6)` and
+   * `0 1px 3px rgba(0,0,0,0.6)` are the same five numbers and two different
+   * shadows — a recessed well versus a floating panel.
+   */
+  inset?: boolean;
 }
 
 export type ShadowPreset = "none" | "soft" | "hard" | "custom";
