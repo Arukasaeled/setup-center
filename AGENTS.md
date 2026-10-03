@@ -11,7 +11,7 @@ Setup Center 不再只是一个 Windows 开发软件安装器，而是面向开�
 - `src/core/`          → 核心业务领域能力（环境检测、安装器状态、内容分发边界），与 UI 解耦。
 - `src/app/`           → 应用级组织、生命周期、全局状态机与屏流转。
 - `src/ui/`            → 通用、跨风格复用的 UI 原语与基础控件（Button、TitleBar、SoftwareRow 等）。
-- `src/styles/`        → Style System 视觉语言契约、设计令牌、风格注册表及具体风格实现（20套风格）。
+- `src/styles/`        → Experience System：令牌契约 + 版式语法（shell/nav/detail/card/composition）+ 运行时 + 注册表（20套体验）。
 - `src/content/`       → Content Registry 统一内容元数据目录（Software、Style、Resource、Template 等）。
 
 ## Dependency Direction
@@ -35,7 +35,9 @@ styles/     ──x core/installer/ (视觉层绝不直接侵入安装器底层�
 | **远程 Vault 架构与内容同步** | [`src/core/vault/types.ts`](src/core/vault/types.ts) |
 | **版本控制与双通道更新门禁** | [`src/core/vault/release.ts`](src/core/vault/release.ts) |
 | **统一跨品类详情弹层（DetailShell）** | [`src/components/DetailShell.tsx`](src/components/DetailShell.tsx) |
-| **增加 / 修改视觉风格（Style）** | [`src/styles/README.md`](src/styles/README.md) |
+| **增加 / 修改视觉体验（Experience）** | [`src/styles/README.md`](src/styles/README.md) |
+| **修改令牌覆盖层 / 体验运行时** | [`src/styles/runtime.ts`](src/styles/runtime.ts) |
+| **修改版式语法（Shell / Nav / Detail / Card / Composition）** | [`src/styles/shell.css`](src/styles/shell.css) |
 | **增加 / 浏览开发资源（Resource）** | [`src/content/resources/README.md`](src/content/resources/README.md) |
 | **增加 / 收录新软件** | [`src/content/software/README.md`](src/content/software/README.md) |
 | **修改环境检测与硬件侦测** | [`src/core/environment/README.md`](src/core/environment/README.md) |
@@ -45,15 +47,18 @@ styles/     ──x core/installer/ (视觉层绝不直接侵入安装器底层�
 
 ## Golden Rules
 1. **不要为了理解局部任务读取整个仓库**：优先阅读上述路由表中对应模块的 `README.md`。
-2. **Style 层绝不允许包含业务逻辑**：风格只管配色、轮廓、字阶、几何硬阴影与装饰；安装与检测逻辑必须留在 `core/` 或后端 Rust。
-3. **内容扩展优先通过 Registry 与数据驱动**：风格通过目录契约自动发现，资源通过 `content/resources/` 数据条目注册。
-4. **禁止在业务页面中散落 `if (style === "...")`**：页面只渲染语义化类与无障碍属性（如 `data-software-row`, `data-resource-card`, `role="tab"`），由 Style CSS 声明式应用规则。
-5. **严守已验证契约**：保持所有验证套件与构建 100% 绿色。
+2. **Style 层绝不允许包含业务逻辑**：体验只管令牌、版式语法、轮廓、字阶与装饰；安装与检测逻辑必须留在 `core/` 或后端 Rust。
+3. **内容扩展优先通过 Registry 与数据驱动**：体验通过目录契约自动发现，资源通过 `content/resources/` 数据条目注册。
+4. **禁止在业务页面中散落 `if (style === "...")`**：页面只渲染语义化类与无障碍属性（如 `data-software-row`, `data-resource-card`, `role="tab"`），由版式语法与体验样式表声明式应用规则。
+5. **令牌覆盖层是唯一的权威**：Style CSS 不得以 `!important #xxxxxx` / `!important 18px` 绕过用户覆盖；基础几何、基础颜色、基础阴影必须读取 `var(--...)`。
+6. **版式语法只能改变呈现，不能移除入口**：任何 shell / nav / detail 语法都必须保留全部九个分区入口与无障碍可达性。
+7. **严守已验证契约**：保持所有验证套件与构建 100% 绿色。
 
 ## Common Extension Recipes
-- **新增 Style（零修改已有文件）**：
-  1. 在 `src/styles/<style-id>/` 创建 `manifest.ts`（实现 `SetupStyle` 接口）及 `<style-id>.css`。
+- **新增 Style / Experience（零修改已有文件）**：
+  1. 在 `src/styles/<style-id>/` 创建 `manifest.ts`（实现 `SetupStyle`，并声明 `experience` 版式语法）及 `<style-id>.css`。
   2. 完成！Vite `import.meta.glob` 自动发现并引入样式与清单，无需修改 `styles.css`，无需修改 `registry.ts`，无需修改任何已有业务页面。
+  3. 若 `experience` 的语法枚举已经表达出你想要的形态，则**完全不需要写 CSS**；只有在需要该体验专有的装饰时才添加样式表，并让基础几何/颜色/阴影读取 `var(--...)`。
 - **新增 Resource（仅修改数据）**：
   1. 在 `src/content/resources/categories/<category>.ts` 中新增一个 `ResourceItem` 元素（支持 actionType: github / external / download）。
   2. 完成！Resource Center 自动渲染、支持分类标签检索，并由 ContentRegistry 统一纳管。

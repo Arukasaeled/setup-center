@@ -14,17 +14,19 @@ Setup Center
 │   │
 │   ├── ui/             # 跨风格共享的基础通用 UI 原语与无障碍组件
 │   │
-│   ├── styles/         # 视觉风格系统：统一契约、自动发现与 12 套真实风格实现
-│   │   ├── types.ts     # SetupStyle 统一契约
-│   │   ├── registry.ts  # 风格注册中心（Vite import.meta.glob 自动发现）
+│   ├── styles/         # Experience System：令牌契约 + 版式语法 + 自动发现（20 套实现）
+│   │   ├── types.ts     # SetupStyle 令牌契约 + ExperienceProfile 版式语法契约
+│   │   ├── runtime.ts   # 运行时：解析令牌 → 应用覆盖 → 计算变量与语法属性
+│   │   ├── shell.css    # 所有版式语法的实现（shell/nav/detail/card/composition…）
+│   │   ├── registry.ts  # 风格注册中心（Vite import.meta.glob 自动发现 + Vault 动态注册）
 │   │   ├── default/     # 默认工业级中性风格
-│   │   ├── phantom-comic/# 旗舰参考实现：P5 × 美漫彩漫高风格化视觉
-│   │   └── [10+ styles]/# 瑞士排版、包豪斯、粗野主义、空间毛玻璃、终端CRT、蓝图等
+│   │   ├── phantom-comic/# 旗舰参考实现：海报式构图 + 硬阴影语言
+│   │   └── [其余 18 套]/ # 瑞士排版、包豪斯、粗野主义、空间层级、终端CRT、蓝图、DOS、Retro Mac 等
 │   │
 │   └── content/        # 统一内容目录（软件、风格、资源、模板、技能、路径）
 │       ├── types.ts     # ContentItem 契约
 │       ├── registry.ts  # ContentRegistry 查询中心（多适配器统一入口）
-│       └── resources/   # 10 分类高质量开发与设计资源库（80+ 真实条目，glob 自动发现）
+│       └── resources/   # 10 分类高质量开发与设计资源库（386 条真实条目，glob 自动发现）
 │
 └── src-tauri/          # 跨平台宿主与高性能核心引擎（Rust）
     ├── src/             # Tauri 命令派发、本地授权加密与执行沙箱
@@ -46,16 +48,23 @@ UI Screens & Primitives (ui/)
 Active Style Dressing (styles/)
 ```
 
-### 2. Style Resolution & Token Customization Flow
+### 2. Experience Resolution & Token Override Flow
 ```
-User Selection / Token Tweaker
+Style Manifest Default (styles/<id>/manifest.ts)
        ↓
-StyleRegistry (styles/registry.ts) + CSS Variables Overrides (:root)
+Resolved Style Tokens          （manifest 默认值 + 语法派生值）
        ↓
-document.documentElement[data-style]
+Custom Token Overrides         （用户覆盖，按 style id 分别持久化）
        ↓
-CSS Design Tokens & Component Overrides (styles/phantom-comic/...)
+Computed Runtime Variables     （--radius-panel / --shadow-hard / --status-accent …）
+       ↓
+document.documentElement 上的 data-style / data-shell / data-nav /
+data-detail / data-card / data-composition / data-density / data-motion
+       ↓
+Declarative Grammar Rules (styles/shell.css) + Per-style Stylesheets
 ```
+
+用户覆盖永远优先。Style CSS 不得以 `!important #xxxxxx` / `!important 18px` 绕过这一层。
 
 ### 3. Transfer & Vault Update Flow
 ```
