@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UI Parts Prototype Lab</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #060709;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+    #root { width: 100%; max-width: 960px; }
+  </style>
+  <link rel="stylesheet" href="../clip-launch-grid/clip-launch-grid.css">
+  <link rel="stylesheet" href="../safe-triangle/safe-triangle.css">
+  <link rel="stylesheet" href="../persistent-statusline/statusline.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    const params = new URLSearchParams(window.location.search);
+    const part = params.get('part') || 'clip-grid';
+    const demo = params.get('demo') || 'agent';
+    const root = document.getElementById('root');
+
+    if (part === 'clip-grid') {
+      renderClipGrid(demo);
+    } else if (part === 'safe-triangle') {
+      renderSafeTriangle(demo);
+    } else if (part === 'statusline') {
+      renderStatusline(demo);
+    }
+
+    function renderClipGrid(type) {
+      const titles = {
+        agent: { t: 'AI Agent Task Orchestrator', s: '列 = 独立专业 Agent（同列任务互斥） │ 行 = 研发流水线同步阶段（整行触发批量就位）' },
+        preset: { t: 'Visual System Dimension Mixer', s: '列 = 视觉设计维度（单维度单选互斥） │ 行 = 场景预设（整行触发形成完整风格姿态）' },
+        presentation: { t: 'Presentation Scene Director', s: '列 = 舞台图层（同图层内容互斥） │ 行 = 演说幕次（整行触发转场）' }
+      }[type];
+
+      const datasets = {
+        agent: {
+          tracks: [{n:'Architect',b:'Planner'}, {n:'Coder',b:'Dev'}, {n:'Reviewer',b:'QA'}, {n:'DevOps',b:'Infra'}],
+          scenes: ['01. Architecture & Scaffold', '02. Core Implementation', '03. Quality Verification', '04. Release & Delivery'],
+          slots: {
+            '0:0': 'Schema Design', '1:0': 'Init Template', '2:0': 'Lint Rules',
+            '0:1': 'API Boundary',  '1:1': 'Business Logic', '2:1': 'Unit Test Gen', '3:1': 'Docker Env',
+            '1:2': 'Refactor Patch','2:2': 'E2E Integration','3:2': 'CI Pipeline Run',
+            '0:3': 'Changelog Gen',                          '3:3': 'Prod Deployment'
+          },
+          active: { '0': '0:1', '1': '1:1', '2': '2:1', '3': '3:1' } // Stage 2 active
+        },
+        preset: {
+          tracks: [{n:'Typography',b:'Font'}, {n:'Color Palette',b:'Tokens'}, {n:'Motion & Physics',b:'Dynamics'}, {n:'Geometry & Border',b:'Surface'}],
+          scenes: ['01. Swiss Monospace', '02. Cyber Terminal', '03. Warm Editorial', '04. Tactical HUD'],
+          slots: {
+            '0:0': 'Geist Mono',       '1:0': 'Onyx & Charcoal', '2:0': 'Instant Cut',    '3:0': '0px Sharp Rect',
+            '0:1': 'Orbitron Display', '1:1': 'Neon Cyan/Pink',  '2:1': 'Glitch Scanline','3:1': 'Angled Chamfer',
+            '0:2': 'Newsreader Serif', '1:2': 'Warm Cream/Ink',  '2:2': 'Gentle Fade',    '3:2': 'Soft 6px Radius',
+            '0:3': 'Condensed Gothic', '1:3': 'Amber CRT Glow',  '2:3': 'Spring Pop',     '3:3': 'Bracket Border'
+          },
+          active: { '0': '0:0', '1': '1:0', '2': '2:0', '3': '3:0' } // Swiss Monospace active
+        },
+        presentation: {
+          tracks: [{n:'Backdrop Layer',b:'Layer 0'}, {n:'Content Canvas',b:'Layer 1'}, {n:'Presenter Cam',b:'Layer 2'}, {n:'Live Sandbox',b:'Layer 3'}],
+          scenes: ['Scene A: Opening & Hook', 'Scene B: Technical Deep Dive', 'Scene C: Live Benchmark Run', 'Scene D: Summary & Closing'],
+          slots: {
+            '0:0': 'Dark Gradient',     '1:0': 'Vision Slide',      '2:0': 'PiP Circle Cam',
+            '0:1': 'Blueprint Matrix',  '1:1': 'Architecture Flow',                          '3:1': 'Code Specimen',
+            '1:2': 'Benchmark Dash',    '2:2': 'Full Speaker',      '3:2': 'Live Terminal',
+            '0:3': 'Sunset Monochrome', '1:3': 'Next Milestones'
+          },
+          active: { '0': '0:1', '1': '1:1', '3': '3:1' } // Scene B active
+        }
+      }[type];
+
+      let html = `
+        <div class="clg-container">
+          <div class="clg-header">
+            <div>
+              <div class="clg-title">${titles.t}</div>
+              <div class="clg-subtitle">${titles.s}</div>
+            </div>
+            <div class="clg-dataset-tabs">
+              <span class="clg-tab-button ${type==='agent'?'active':''}">Agent Task</span>
+              <span class="clg-tab-button ${type==='preset'?'active':''}">Visual Preset</span>
+              <span class="clg-tab-button ${type==='presentation'?'active':''}">Presentation</span>
+            </div>
+          </div>
+          <div class="clg-matrix" style="grid-template-columns: 140px repeat(4, 1fr);">
+            <div class="clg-row-header-cell"><span style="font-size:11px;color:#64748b;font-weight:600;">SCENE TRIGGER</span></div>
+            ${datasets.tracks.map(t => `<div class="clg-col-header-cell"><span class="clg-col-title">${t.n}</span><span class="clg-col-badge">${t.b}</span></div>`).join('')}
+      `;
+
+      datasets.scenes.forEach((s, r) => {
+        html += `<div class="clg-row-header-cell"><button class="clg-scene-btn"><span class="clg-scene-icon">▶</span><span>${s}</span></button></div>`;
+        datasets.tracks.forEach((_, c) => {
+          const key = `${c}:${r}`;
+          const label = datasets.slots[key];
+          if (!label) {
+            html += `<div class="clg-slot-cell clg-slot-empty"></div>`;
+          } else {
+            const isActive = datasets.active[c] === key;
+            html += `
+              <div class="clg-slot-cell ${isActive ? 'clg-slot-active' : ''}">
+                <div class="clg-slot-top-row">
+                  <span class="clg-slot-label">${label}</span>
+                  <div class="clg-slot-controls">
+                    ${isActive ? `<span class="clg-stop-btn">■</span>` : ''}
+                    <span class="clg-trigger-btn">${isActive ? '●' : '▶'}</span>
+                  </div>
+                </div>
+              </div>`;
+          }
+        });
+      });
+
+      html += `
+            <div class="clg-row-header-cell"><span style="font-size:11px;color:#64748b;font-weight:600;">STATUS</span></div>
+            ${datasets.tracks.map((_, c) => {
+              const activeKey = datasets.active[c];
+              const activeLabel = activeKey ? datasets.slots[activeKey] : null;
+              return `<div class="clg-status-cell">
+                ${activeLabel ? `<span class="clg-status-active"><span class="clg-pulse-dot"></span><span class="clg-status-text">${activeLabel}</span></span><span class="clg-stop-btn">■</span>` : `<span class="clg-status-text">idle</span>`}
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="clg-footer-toolbar">
+            <span>键盘导航：[↑ ↓ ← →] 移动光标 │ [Enter / Space] 触发 │ [0 / Esc] 停止通道</span>
+            <button class="clg-stop-all-btn">■ 停止全部通道 (Stop All)</button>
+          </div>
+        </div>`;
+      root.innerHTML = html;
+    }
+
+    function renderSafeTriangle(mode) {
+      const isDebug = mode === 'debug';
+      root.innerHTML = `
+        <div class="stm-container">
+          <div class="stm-toolbar">
+            <div class="stm-title-group">
+              <h2>Linear Safe-Triangle Submenu Prototype</h2>
+              <p>对角线几何安全区：光标斜向划入子菜单时绝不意外关闭 │ 当前方向：右侧展开</p>
+            </div>
+            <div class="stm-controls">
+              <span class="stm-toggle-btn active">右侧展开 (Right)</span>
+              <span class="stm-toggle-btn">左侧展开 (Left)</span>
+              <span class="stm-toggle-btn active">高度防遮挡: 开启 (Cap 90px)</span>
+              <span class="stm-toggle-btn ${isDebug ? 'debug-active' : ''}">${isDebug ? '● 隐藏三角区' : '○ 调试模式 (透视三角区)'}</span>
+            </div>
+          </div>
+          <div class="stm-stage">
+            <div class="stm-menu-wrapper" style="position:relative;">
+              <div class="stm-menu-card">
+                <div class="stm-menu-header">Developer Tools</div>
+                <div class="stm-menu-item"><span>Git Workflow</span></div>
+                <div class="stm-menu-item active" id="parent-item">
+                  <span>Development Engines</span>
+                  <span class="stm-menu-arrow">›</span>
+                </div>
+                <div class="stm-menu-item"><span>Environment Shells</span><span class="stm-menu-arrow">›</span></div>
+                <div class="stm-menu-item"><span>Package Managers</span></div>
+                <div class="stm-menu-item"><span>Preferences & Tokens</span></div>
+              </div>
+              <div class="stm-submenu-card on-right" id="sub-card">
+                <div class="stm-menu-header">Development Engines</div>
+                <div class="stm-submenu-item"><span>Node.js 22 LTS</span><span class="stm-badge">Runtime</span></div>
+                <div class="stm-submenu-item"><span>Rust & Cargo</span><span class="stm-badge">Toolchain</span></div>
+                <div class="stm-submenu-item"><span>Python 3.12 (uv)</span><span class="stm-badge">Env</span></div>
+                <div class="stm-submenu-item"><span>Go 1.23</span><span class="stm-badge">Compiler</span></div>
+                <div class="stm-submenu-item" style="background:#2563eb;color:#fff;"><span>Docker Desktop</span><span class="stm-badge">Container</span></div>
+              </div>
+
+              <!-- Safe Triangle polygon simulation -->
+              <div class="stm-safe-area-overlay ${isDebug ? 'debug-mode' : ''}" style="position:absolute;left:210px;top:40px;width:140px;height:120px;clip-path:polygon(0px 30px, 140px 0px, 140px 120px);display:block;"></div>
+              ${isDebug ? `
+                <div class="stm-debug-marker point-p" style="left:calc(50% - 90px);top:130px;" title="P (Cursor)"></div>
+                <div class="stm-debug-marker point-a" style="left:calc(50% + 50px);top:100px;" title="A (Top Corner)"></div>
+                <div class="stm-debug-marker point-b" style="left:calc(50% + 50px);top:220px;" title="B (Bottom Corner)"></div>
+              ` : ''}
+            </div>
+          </div>
+          <div class="stm-explainer">
+            <div><strong>交互测试说明：</strong> ${isDebug ? '已开启几何透视！红色半透明三角区域为 DOM 动态计算出的命中捕获区。' : '正常模式：多边形完全隐形（opacity: 0）。光标斜向切入 Docker Desktop 时，子菜单稳固驻留。'}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderStatusline(type) {
+      if (type === 'compact') {
+        root.innerHTML = `
+          <div class="psl-wrapper">
+            <div class="psl-controls-bar">
+              <div class="psl-title-label">Persistent Status Belt Prototype</div>
+              <div class="psl-mode-buttons">
+                <span class="psl-btn">展开模式 (Expanded)</span>
+                <span class="psl-btn active">单行紧凑 (Compact)</span>
+              </div>
+            </div>
+            <div class="psl-belt">
+              <div class="psl-compact-line">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span class="psl-badge cyan">[DeepSeek-V3]</span>
+                  <div class="psl-meter-container">
+                    <span class="psl-meter-label">Context</span>
+                    <div class="psl-meter-bar"><div class="psl-meter-fill normal" style="width:68%;"></div></div>
+                    <span class="psl-meter-value normal">68%</span>
+                  </div>
+                  <span class="psl-divider">│</span>
+                  <div class="psl-compact-tools">
+                    <span><span class="psl-icon-ok">✓</span> Read ×4</span>
+                    <span><span class="psl-icon-ok">✓</span> Grep ×2</span>
+                    <span><span class="psl-icon-spin">◐</span> Edit: types.ts</span>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:11px;color:#94a3b8;">▸ 2/3</span>
+                  <div class="psl-expiry-badge">expires <span class="psl-expiry-time">21:45</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;line-height:1.5;">
+              💡 <strong>Compact Mode 实证：</strong> 即使压缩在单行高度内，彩色锚点、进度条与绝对时间「expires 21:45」依然保持高保真。
+            </div>
+          </div>`;
+      } else if (type === 'agent') {
+        root.innerHTML = `
+          <div class="psl-wrapper">
+            <div class="psl-controls-bar">
+              <div class="psl-title-label">Persistent Status Belt Prototype</div>
+              <div class="psl-dataset-buttons">
+                <span class="psl-btn active">AI Agent Runtime</span>
+                <span class="psl-btn">Generic Build Runtime</span>
+              </div>
+              <div class="psl-mode-buttons">
+                <span class="psl-btn active">展开模式 (Expanded)</span>
+                <span class="psl-btn">单行紧凑 (Compact)</span>
+              </div>
+            </div>
+            <div class="psl-belt">
+              <div class="psl-anchor-line">
+                <div class="psl-anchor-left">
+                  <span class="psl-badge cyan">[DeepSeek-V3]</span>
+                  <div class="psl-meter-container">
+                    <span class="psl-meter-label">Context</span>
+                    <div class="psl-meter-bar"><div class="psl-meter-fill normal" style="width:68%;"></div></div>
+                    <span class="psl-meter-value normal">68%</span>
+                  </div>
+                  <span class="psl-divider">│</span>
+                  <div class="psl-meta-items">
+                    <span>8 rules</span><span class="psl-divider">│</span>
+                    <span>4 MCPs</span><span class="psl-divider">│</span>
+                    <span>git:(feature/ui-parts*)</span><span class="psl-divider">│</span>
+                    <span>tokens: 136k / 200k</span>
+                  </div>
+                </div>
+                <div class="psl-expiry-badge" title="绝对时间原则">
+                  expires <span class="psl-expiry-time">21:45</span>
+                </div>
+              </div>
+              <div class="psl-activity-rows">
+                <div class="psl-row">
+                  <span><span class="psl-icon-ok">✓</span> Read <span class="psl-collapsed-tag">×4</span></span>
+                  <span class="psl-divider">│</span>
+                  <span><span class="psl-icon-ok">✓</span> Grep <span class="psl-collapsed-tag">×2</span></span>
+                  <span class="psl-divider">│</span>
+                  <span><span class="psl-icon-spin">◐</span> Edit: types.ts</span>
+                </div>
+                <div class="psl-row">
+                  <span style="display:inline-flex;align-items:center;gap:6px;">
+                    <span class="psl-icon-spin">◐</span>
+                    <span class="psl-agent-name">Research Subagent</span>
+                    <span style="color:#94a3b8;">: Scanning design tokens in AST</span>
+                    <span class="psl-agent-time">(14s)</span>
+                  </span>
+                </div>
+                <div class="psl-row">
+                  <span class="psl-icon-todo">▸</span>
+                  <span style="color:#f8fafc;">Implement persistent statusline prototype</span>
+                  <span style="color:#64748b;">(2/3)</span>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;line-height:1.5;">
+              💡 <strong>AI Agent Runtime 实证：</strong> 彩色锚点 + 绿色上下文槽，搭载折叠工具日志「Read ×4」与绝对时间「expires 21:45」。
+            </div>
+          </div>`;
+      } else if (type === 'build') {
+        root.innerHTML = `
+          <div class="psl-wrapper">
+            <div class="psl-controls-bar">
+              <div class="psl-title-label">Persistent Status Belt Prototype</div>
+              <div class="psl-dataset-buttons">
+                <span class="psl-btn">AI Agent Runtime</span>
+                <span class="psl-btn active">Generic Build Runtime</span>
+              </div>
+              <div class="psl-mode-buttons">
+                <span class="psl-btn active">展开模式 (Expanded)</span>
+                <span class="psl-btn">单行紧凑 (Compact)</span>
+              </div>
+            </div>
+            <div class="psl-belt">
+              <div class="psl-anchor-line">
+                <div class="psl-anchor-left">
+                  <span class="psl-badge purple">[Vite + Cargo x64]</span>
+                  <div class="psl-meter-container">
+                    <span class="psl-meter-label">Memory RAM</span>
+                    <div class="psl-meter-bar"><div class="psl-meter-fill crit" style="width:88%;"></div></div>
+                    <span class="psl-meter-value crit">88% (CRIT)</span>
+                  </div>
+                  <span class="psl-divider">│</span>
+                  <div class="psl-meta-items">
+                    <span>14 crates</span><span class="psl-divider">│</span>
+                    <span>320 modules</span><span class="psl-divider">│</span>
+                    <span>arch: x86_64-pc-windows</span><span class="psl-divider">│</span>
+                    <span>threads: 16</span>
+                  </div>
+                </div>
+                <div class="psl-expiry-badge" title="绝对时间原则">
+                  expires <span class="psl-expiry-time">23:59</span>
+                </div>
+              </div>
+              <div class="psl-activity-rows">
+                <div class="psl-row">
+                  <span><span class="psl-icon-ok">✓</span> rustc <span class="psl-collapsed-tag">×8</span></span>
+                  <span class="psl-divider">│</span>
+                  <span><span class="psl-icon-ok">✓</span> tsc --noEmit</span>
+                  <span class="psl-divider">│</span>
+                  <span><span class="psl-icon-spin">◐</span> cargo-tauri bundle</span>
+                </div>
+                <div class="psl-row">
+                  <span style="display:inline-flex;align-items:center;gap:6px;">
+                    <span class="psl-icon-ok">✓</span>
+                    <span class="psl-agent-name">Lib Unit Test Suite</span>
+                    <span style="color:#94a3b8;">: 679 tests passed, 0 failed</span>
+                    <span class="psl-agent-time">(58s)</span>
+                  </span>
+                </div>
+                <div class="psl-row">
+                  <span class="psl-icon-todo">▸</span>
+                  <span style="color:#f8fafc;">Compiling release binary and NSIS bundle</span>
+                  <span style="color:#64748b;">(4/5)</span>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;line-height:1.5;">
+              💡 <strong>Generic Build Pipeline 实证：</strong> 内存达到 88% 临界阈值自动呈现红光警告，脱离 Claude 品牌仍完全成立。
+            </div>
+          </div>`;
+      }
+    }
+  </script>
+</body>
+</html>

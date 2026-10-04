@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "ui-parts:smoke": "node tools/ui-parts-smoke.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

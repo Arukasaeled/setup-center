@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clip Launch Grid — Concept Demonstration</title>
+  <style>
+    body {
+      background: #08090c;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 30px;
+      display: flex;
+      justify-content: center;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 140px repeat(4, 150px);
+      gap: 6px;
+      background: #0f131a;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #1e2636;
+    }
+    .header { font-size: 12px; font-weight: bold; color: #94a3b8; padding: 6px; }
+    .scene-btn {
+      background: #192233;
+      color: #60a5fa;
+      border: 1px solid #28374d;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+    }
+    .scene-btn:hover { background: #222f47; color: #fff; }
+    .cell {
+      background: #131924;
+      border: 1px solid #1f293d;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.1s ease;
+    }
+    .cell:hover { border-color: #3b82f6; }
+    .cell.active {
+      background: #153354;
+      border-color: #0284c7;
+      color: #38bdf8;
+      box-shadow: 0 0 8px rgba(14,165,233,0.3);
+      font-weight: bold;
+    }
+    .empty { border: 1px dashed #242c3d; background: transparent; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="grid" id="grid"></div>
+  <script>
+    const tracks = ['Architect', 'Coder', 'Reviewer', 'DevOps'];
+    const scenes = ['01. Scaffolding', '02. Development', '03. Verification', '04. Deployment'];
+    const slots = {
+      '0:0': 'Schema Design', '1:0': 'Init Template', '2:0': 'Lint Rules',
+      '0:1': 'API Spec',      '1:1': 'Business Logic', '2:1': 'Unit Tests', '3:1': 'Docker Env',
+      '1:2': 'Refactor Patch','2:2': 'E2E Testing',    '3:2': 'CI Build',
+      '0:3': 'Release Notes',                          '3:3': 'Production'
+    };
+    const active = {};
+    const root = document.getElementById('grid');
+
+    function render() {
+      root.innerHTML = '<div class="header">SCENE</div>' +
+        tracks.map(t => `<div class="header">${t}</div>`).join('');
+
+      scenes.forEach((s, r) => {
+        root.innerHTML += `<button class="scene-btn" onclick="launchRow(${r})">▶ ${s}</button>`;
+        tracks.forEach((_, c) => {
+          const key = `${c}:${r}`;
+          const label = slots[key];
+          if (!label) {
+            root.innerHTML += '<div class="cell empty"></div>';
+          } else {
+            const isActive = active[c] === key;
+            root.innerHTML += `<div class="cell ${isActive ? 'active' : ''}" onclick="toggleCell(${c}, '${key}')">
+              <span>${label}</span>
+              <span>${isActive ? '●' : '▶'}</span>
+            </div>`;
+          }
+        });
+      });
+    }
+
+    window.toggleCell = (c, key) => {
+      active[c] = active[c] === key ? null : key;
+      render();
+    };
+
+    window.launchRow = (r) => {
+      tracks.forEach((_, c) => {
+        const key = `${c}:${r}`;
+        if (slots[key]) active[c] = key;
+        else active[c] = null;
+      });
+      render();
+    };
+
+    render();
+  </script>
+</body>
+</html>

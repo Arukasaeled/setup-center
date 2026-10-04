@@ -841,6 +841,31 @@ fn reports_dir() -> AppResult<std::path::PathBuf> {
     Ok(dir)
 }
 
+fn uiparts_storage_path() -> AppResult<std::path::PathBuf> {
+    let base = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(std::path::PathBuf::from)
+        .map_err(|_| AppError::Internal("无法定位用户目录".into()))?;
+    let dir = base.join("AppData").join("Local").join("Setup Center");
+    let _ = std::fs::create_dir_all(&dir);
+    Ok(dir.join("uiparts.json"))
+}
+
+#[tauri::command]
+pub fn load_user_uiparts() -> AppResult<String> {
+    let path = uiparts_storage_path()?;
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[tauri::command]
+pub fn save_user_uiparts(content: String) -> AppResult<()> {
+    let path = uiparts_storage_path()?;
+    std::fs::write(&path, content).map_err(|e| AppError::Internal(e.to_string()))
+}
+
 /// Diagnostics for the settings/advanced panel: proves which modules loaded
 /// from disk and which fell back to builtins.
 #[tauri::command]

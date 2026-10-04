@@ -672,3 +672,26 @@ export async function onNativeExit(
   }
 }
 
+/** Loads the user's persisted UI Parts JSON from local AppData workspace. */
+export async function loadUserUIParts(): Promise<string> {
+  if (!isTauri()) return "";
+  try {
+    return await invoke<string>("load_user_uiparts");
+  } catch (err) {
+    console.warn("Failed to load user UI parts via Tauri IPC:", err);
+    return "";
+  }
+}
+
+/** Saves the user's persisted UI Parts JSON to local AppData workspace. */
+export async function saveUserUIParts(content: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    await invoke<void>("save_user_uiparts", { content });
+    return true;
+  } catch (err) {
+    console.warn("Failed to save user UI parts via Tauri IPC:", err);
+    return false;
+  }
+}
+

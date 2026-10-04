@@ -122,6 +122,8 @@ pub fn run() {
             commands::app_canonical_version,
             commands::get_downloads_dir,
             commands::verify_file_sha256,
+            commands::load_user_uiparts,
+            commands::save_user_uiparts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");
