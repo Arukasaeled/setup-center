@@ -1914,6 +1914,12 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     system_ops::reveal_path(&path)
 }
 
+/// Opens a URL in the user's default system browser.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    system_ops::open_url(&url)
+}
+
 /// Detects available code editors on the system.
 #[tauri::command]
 pub fn detect_editors() -> Vec<system_ops::DetectedEditor> {

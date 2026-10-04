@@ -18,3 +18,6 @@ declare module "*.png" {
   const url: string;
   export default url;
 }
+
+declare const __APP_COMMIT_SHA__: string;
+declare const __APP_BUILD_TIME__: string;

@@ -21,7 +21,7 @@ import { chromium } from "playwright";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5199";
 const VAULT_ORIGIN =
-  process.env.VAULT_ORIGIN || "https://raw.githubusercontent.com/arukas0623-ai/setup-center-vault/main";
+  process.env.VAULT_ORIGIN || "https://raw.githubusercontent.com/Arukasaeled/setup-center-vault/main";
 
 const results = [];
 function check(name, ok, detail) {
@@ -105,7 +105,7 @@ check(
 const badPin = await page.evaluate(async () => {
   const mod = await import("/src/core/vault/sync.ts");
   const VaultSync = mod.VaultSync ?? mod.default;
-  const res = await VaultSync.sync({ force: true, remoteUrl: "https://raw.githubusercontent.com/arukas0623-ai/setup-center-vault/main/releases/latest.json" });
+  const res = await VaultSync.sync({ force: true, remoteUrl: "https://raw.githubusercontent.com/Arukasaeled/setup-center-vault/main/releases/latest.json" });
   return { ok: res?.ok, error: res?.error, pinFallback: res?.pinFallback };
 });
 console.log("      malformed-origin result: " + JSON.stringify(badPin));

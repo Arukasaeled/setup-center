@@ -2897,8 +2897,9 @@ const STYLE_PAGE_SIZE = 6;
 function StyleSection() {
   const activeStyle = useApp((s) => s.activeStyle);
   const inventory = useApp((s) => s.inventory);
-  // Subscribed rather than read once: forking a style registers a new entry in
-  // STYLE_REGISTRY from outside React, so the grid has to be told to re-render.
+  // Subscribed to StyleRegistry version: whenever built-in hydrations, Vault sync,
+  // or custom style fork/remove occurs, the entire gallery re-evaluates.
+  const registryVersion = useApp((s) => s.styleRegistryVersion);
   const customVersion = useApp((s) => s.customExperiencesVersion);
   const [styleBookmarks, setStyleBookmarks] = useState<string[]>(() => Bookmarks.getAll());
   const [previewWorkspaceStyle, setPreviewWorkspaceStyle] = useState<SetupStyle | null>(null);
@@ -2945,9 +2946,7 @@ function StyleSection() {
       }
       return true;
     });
-    // `customVersion` is a dependency on purpose: it is how a newly forked
-    // experience reaches this list without a reload.
-  }, [filter, familyFilter, styleBookmarks, searchQuery, customVersion]);
+  }, [filter, familyFilter, styleBookmarks, searchQuery, registryVersion, customVersion]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStyles.length / STYLE_PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -2989,7 +2988,7 @@ function StyleSection() {
       counts[tier] = (counts[tier] ?? 0) + 1;
     }
     return counts;
-  }, [customVersion]);
+  }, [registryVersion, customVersion]);
 
   const isActiveStyle = (id: string) =>
     activeStyle === id || (activeStyle === "p5-comic" && id === "phantom-comic");
@@ -3734,23 +3733,23 @@ function AboutSection() {
           <div className="flex items-center justify-between">
             <span className="text-[color:var(--text-secondary)]">主仓库 (GitHub)</span>
             <a
-              href="https://github.com/arukas0623-ai/setup-center"
+              href="https://github.com/Arukasaeled/setup-center"
               target="_blank"
               rel="noreferrer"
               className="text-[color:var(--status-accent)] hover:underline font-mono"
             >
-              github.com/arukas0623-ai/setup-center ↗
+              github.com/Arukasaeled/setup-center ↗
             </a>
           </div>
           <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
             <span className="text-[color:var(--text-secondary)]">Setup Vault 远程内容仓库</span>
             <a
-              href="https://github.com/arukas0623-ai/setup-center-vault"
+              href="https://github.com/Arukasaeled/setup-center-vault"
               target="_blank"
               rel="noreferrer"
               className="text-[color:var(--status-accent)] hover:underline font-mono"
             >
-              github.com/arukas0623-ai/setup-center-vault ↗
+              github.com/Arukasaeled/setup-center-vault ↗
             </a>
           </div>
           <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">

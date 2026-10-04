@@ -116,6 +116,7 @@ pub fn run() {
             commands::winget_search,
             commands::winget_show,
             commands::reveal_in_explorer,
+            commands::open_url,
             commands::detect_editors,
             commands::open_in_editor,
             commands::app_canonical_version,

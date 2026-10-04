@@ -130,7 +130,7 @@ const GOAL_TRACKS: GoalTrack[] = [
     ],
     repos: [
       { title: "tauri-apps/tauri", repoUrl: "https://github.com/tauri-apps/tauri", desc: "构建极小尺寸、安全、跨平台桌面与移动应用框架", stars: "85k", tech: "Rust / TypeScript" },
-      { title: "arukas0623-ai/setup-center", repoUrl: "https://github.com/arukas0623-ai/setup-center", desc: "Setup Center 桌面客户端开源源码与体验系统", stars: "Local", tech: "Rust / React" },
+      { title: "Arukasaeled/setup-center", repoUrl: "https://github.com/Arukasaeled/setup-center", desc: "Setup Center 桌面客户端开源源码与体验系统", stars: "Local", tech: "Rust / React" },
     ],
     resources: [
       { id: "tauri-docs", title: "Tauri v2 官方文档", desc: "窗口生命周期、IPC 通信与打包发布指南", url: "https://v2.tauri.app" },

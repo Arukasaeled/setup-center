@@ -110,13 +110,14 @@ class VaultSyncManager {
     this.notify("checking");
 
     try {
-      let targetBaseUrl = rawVaultOrigin;
       let releaseCheckpoint: {
         releaseVersion?: string;
         commitSha?: string;
         snapshotTag?: string;
         summary?: string;
       } | null = null;
+      let pin: string | null = null;
+      let checkpointError: string | null = null;
 
       try {
         const controller = new AbortController();
@@ -128,24 +129,60 @@ class VaultSyncManager {
         clearTimeout(timer);
         if (checkpointRes.ok) {
           releaseCheckpoint = await checkpointRes.json();
-          // A pin is a git revision. Anything else is a typo that would 404
-          // every asset in the release, so validate the shape before trusting
-          // it rather than discovering it as 404s later.
+          // A pin is a git revision. Validate format before trusting it
           const rawPin = releaseCheckpoint?.commitSha || releaseCheckpoint?.snapshotTag;
-          const pin = typeof rawPin === "string" && /^[0-9a-f]{7,40}$|^v?[\w.-]+$/.test(rawPin.trim())
-            ? rawPin.trim()
-            : null;
-          if (!pin && rawPin) {
-            console.warn(`[VaultSync] Ignoring malformed release pin: ${JSON.stringify(rawPin)}`);
+          if (typeof rawPin === "string" && /^[0-9a-f]{7,40}$|^v?[\w.-]+$/.test(rawPin.trim())) {
+            pin = rawPin.trim();
+          } else {
+            checkpointError = `Malformed release pin: ${JSON.stringify(rawPin)}`;
+            console.warn(`[VaultSync] ${checkpointError}`);
           }
-          if (pin) {
-            targetBaseUrl = `${rawVaultOrigin.replace(/\/main\/?$/, "")}/${pin}`;
-          }
+        } else {
+          checkpointError = `HTTP ${checkpointRes.status} fetching release checkpoint`;
         }
-      } catch {
-        // network or offline, fallback to rawVaultOrigin
+      } catch (e) {
+        checkpointError = e instanceof Error ? e.message : String(e);
       }
 
+      // Checkpoint failure gate: NEVER silently fallback to raw main in stable mode!
+      if (!pin) {
+        const reason = checkpointError || "No valid release pin found in checkpoint";
+        const cachedLkg = loadVaultCache();
+        if (cachedLkg) {
+          console.warn(
+            `[VaultSync] Release checkpoint unavailable (${reason}); preserving Last Known Good (LKG) cache v${cachedLkg.manifest.contentVersion} rather than consuming unverified raw main.`
+          );
+          const lkgResult: VaultSyncResult = {
+            ok: true,
+            updated: false,
+            contentVersion: cachedLkg.manifest.contentVersion,
+            fromCache: true,
+            pinFallback: `Release checkpoint unavailable (${reason}); preserved Last Known Good (LKG)`,
+            itemCounts: {
+              styles: Object.keys(cachedLkg.styles).length,
+              resources: cachedLkg.resources.length,
+              templates: cachedLkg.templates.length,
+              patterns: cachedLkg.patterns.length,
+            },
+          };
+          this.notify("idle", lkgResult);
+          return lkgResult;
+        }
+
+        console.warn(
+          `[VaultSync] Release checkpoint unavailable (${reason}) and no LKG cache found; stable remote unavailable. Using built-in content.`
+        );
+        const errResult: VaultSyncResult = {
+          ok: false,
+          updated: false,
+          contentVersion: "builtin",
+          error: `Release checkpoint unavailable (${reason}) and clean install has no LKG; using built-in content`,
+        };
+        this.notify("idle", errResult);
+        return errResult;
+      }
+
+      const targetBaseUrl = `${rawVaultOrigin.replace(/\/main\/?$/, "")}/${pin}`;
       let client = new VaultClient(targetBaseUrl);
       let remoteManifest: VaultManifest | null = null;
       let pinFallbackReason: string | null = null;

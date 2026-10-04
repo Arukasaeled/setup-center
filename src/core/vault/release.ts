@@ -57,7 +57,7 @@ class ReleaseManager {
         : "Browser Preview (无原生环境)",
       status: "unchecked",
       hasUpdate: false,
-      releaseUrl: "https://github.com/arukas0623-ai/setup-center/releases",
+      releaseUrl: "https://github.com/Arukasaeled/setup-center/releases",
     },
     vault: {
       currentVersion: getCachedContentVersion() || "builtin",
@@ -205,7 +205,7 @@ class ReleaseManager {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch("https://api.github.com/repos/arukas0623-ai/setup-center/releases/latest", {
+      const res = await fetch("https://api.github.com/repos/Arukasaeled/setup-center/releases/latest", {
         signal: controller.signal,
         headers: { Accept: "application/vnd.github.v3+json" },
       });
@@ -219,7 +219,7 @@ class ReleaseManager {
           ...this.status.app,
           currentVersion: cur,
           latestVersion: data.tag_name || `v${tag}`,
-          releaseUrl: data.html_url || "https://github.com/arukas0623-ai/setup-center/releases",
+          releaseUrl: data.html_url || "https://github.com/Arukasaeled/setup-center/releases",
           publishedAt: data.published_at,
           notes: data.body,
           status: hasUpdate ? "update-available" : "up-to-date",
@@ -254,7 +254,7 @@ class ReleaseManager {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch("https://raw.githubusercontent.com/arukas0623-ai/setup-center-vault/main/releases/latest.json", {
+      const res = await fetch("https://raw.githubusercontent.com/Arukasaeled/setup-center-vault/main/releases/latest.json", {
         signal: controller.signal,
         headers: { Accept: "application/json" },
       });

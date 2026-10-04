@@ -15,7 +15,7 @@ Setup Center 将应用运行时与内容解耦，核心围绕 **Transfer（流�
 
 ```
 Setup Center (App)                  Setup Center Vault (Remote Content)
-├── src/core/vault/      <───────── https://github.com/arukas0623-ai/setup-center-vault
+├── src/core/vault/      <───────── https://github.com/Arukasaeled/setup-center-vault
 │   └── 运行时增量更新与离线缓存       ├── schemas/   (JSON Schema 契约)
 ├── src/core/transfer/              ├── styles/    (视觉风格与 CSS)
 │   ├── 收集箱 (Inbox)               ├── resources/ (精选开发资源)

@@ -19,17 +19,27 @@ export interface VaultConfig {
 }
 
 export const DEFAULT_VAULT_CONFIG: VaultConfig = {
-  remoteUrl: "https://raw.githubusercontent.com/arukas0623-ai/setup-center-vault/main",
+  remoteUrl: "https://raw.githubusercontent.com/Arukasaeled/setup-center-vault/main",
   autoSyncOnLaunch: true,
 };
 
-/** Load active vault configuration */
+/** Load active vault configuration with canonical URL migration */
 export function loadVaultConfig(): VaultConfig {
   try {
     const raw = localStorage.getItem(VAULT_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_VAULT_CONFIG, ...parsed };
+      const config: VaultConfig = { ...DEFAULT_VAULT_CONFIG, ...parsed };
+      // Auto-migrate legacy repository owner to canonical Arukasaeled
+      if (config.remoteUrl && config.remoteUrl.includes("arukas0623-ai")) {
+        config.remoteUrl = config.remoteUrl.replace("arukas0623-ai", "Arukasaeled");
+        try {
+          localStorage.setItem(VAULT_CONFIG_KEY, JSON.stringify(config));
+        } catch {
+          // ignore quota error
+        }
+      }
+      return config;
     }
   } catch {
     // fallback

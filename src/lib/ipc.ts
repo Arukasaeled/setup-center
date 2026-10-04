@@ -569,6 +569,10 @@ export const wingetShow = (packageId: string) =>
 export const revealInExplorer = (path: string) =>
   call<void>("reveal_in_explorer", { path });
 
+/** Opens a URL in the user's default system browser via native OS handler */
+export const openUrl = (url: string) =>
+  call<void>("open_url", { url });
+
 /** Probes which editors (VS Code, Cursor, Windsurf, Zed) are installed on this machine */
 export const detectEditors = () => call<DetectedEditor[]>("detect_editors");
 

@@ -499,6 +499,30 @@ pub fn reveal_path(path: &str) -> Result<(), String> {
     }
 }
 
+pub fn open_url(url: &str) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("mailto:") {
+        return Err(format!("不支持的 URL 协议: {url}"));
+    }
+
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("rundll32");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.args(["url.dll,FileProtocolHandler", url]);
+        cmd.spawn()
+            .map_err(|e| format!("打开系统默认浏览器失败: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("打开系统默认浏览器失败: {e}"))?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectedEditor {

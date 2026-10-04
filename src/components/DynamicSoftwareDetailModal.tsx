@@ -27,6 +27,7 @@ import {
   type WingetPackageDetails,
 } from "../lib/ipc";
 import { ExecutionConsoleModal } from "./ExecutionConsoleModal";
+import { openExternalUrl } from "../core/setup/executor";
 
 export interface DynamicSoftwareDetailModalProps {
   isOpen: boolean;
@@ -232,7 +233,7 @@ export function DynamicSoftwareDetailModal({
       return;
     }
     if (!isTauri()) {
-      window.open(details.installerUrl, "_blank");
+      openExternalUrl(details.installerUrl);
       return;
     }
 
@@ -482,6 +483,10 @@ export function DynamicSoftwareDetailModal({
                   href={details.homepage}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (details.homepage) openExternalUrl(details.homepage);
+                  }}
                   className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[12px] font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
                 >
                   官方主页 ↗

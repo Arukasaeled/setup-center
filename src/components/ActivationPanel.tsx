@@ -404,23 +404,23 @@ export function LicenseSection() {
           <div className="flex items-center justify-between">
             <span className="text-[color:var(--text-secondary)]">项目开源仓库</span>
             <a
-              href="https://github.com/arukas0623-ai/setup-center"
+              href="https://github.com/Arukasaeled/setup-center"
               target="_blank"
               rel="noreferrer"
               className="text-[color:var(--status-accent)] hover:underline font-mono"
             >
-              github.com/arukas0623-ai/setup-center ↗
+              github.com/Arukasaeled/setup-center ↗
             </a>
           </div>
           <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
             <span className="text-[color:var(--text-secondary)]">远程 Setup Vault</span>
             <a
-              href="https://github.com/arukas0623-ai/setup-center-vault"
+              href="https://github.com/Arukasaeled/setup-center-vault"
               target="_blank"
               rel="noreferrer"
               className="text-[color:var(--status-accent)] hover:underline font-mono"
             >
-              github.com/arukas0623-ai/setup-center-vault ↗
+              github.com/Arukasaeled/setup-center-vault ↗
             </a>
           </div>
           <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">

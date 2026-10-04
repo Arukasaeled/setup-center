@@ -48,7 +48,13 @@ import {
   saveOverrides,
   clearOverrides,
 } from "../styles/runtime";
-import { loadSavedStyle, saveStylePreference, type StyleId, type TokenOverrides } from "./styles";
+import {
+  StyleRegistry,
+  loadSavedStyle,
+  saveStylePreference,
+  type StyleId,
+  type TokenOverrides,
+} from "./styles";
 import { TransferHistory } from "../core/transfer";
 
 export type Screen =
@@ -269,6 +275,11 @@ interface AppStore {
    */
   customExperiencesVersion: number;
   refreshCustomExperiences: () => void;
+  /**
+   * Version of the unified StyleRegistry, bumped whenever built-in styles hydrate,
+   * Vault sync completes/registers styles, or custom variants are added/removed.
+   */
+  styleRegistryVersion: number;
 
   // --- Capability layer (stage 5) -------------------------------------------
   capabilities: CapabilityStatus[];
@@ -816,10 +827,14 @@ export const useApp = create<AppStore>((set, get) => ({
     // silently not reach this user.
     clearOverrides(useApp.getState().activeStyle);
   },
+  styleRegistryVersion: StyleRegistry.getVersion(),
   customExperiencesVersion: 0,
   refreshCustomExperiences: () => {
     hydrateCustomExperiences();
-    set((s) => ({ customExperiencesVersion: s.customExperiencesVersion + 1 }));
+    set((s) => ({
+      customExperiencesVersion: s.customExperiencesVersion + 1,
+      styleRegistryVersion: StyleRegistry.getVersion(),
+    }));
   },
 
   // -------------------------------------------------------------------------
@@ -1558,6 +1573,12 @@ export const useApp = create<AppStore>((set, get) => ({
   notice: null,
   dismissNotice: () => set({ notice: null }),
 }));
+
+// Subscribe the App Store to StyleRegistry version changes so Vault sync
+// and custom variants immediately propagate to all components
+StyleRegistry.subscribe((version) => {
+  useApp.setState({ styleRegistryVersion: version, customExperiencesVersion: version });
+});
 
 /** Convenience selector: the currently chosen profile object, if any. */
 export function selectedProfile(state: AppStore): Profile | null {

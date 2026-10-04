@@ -3,6 +3,9 @@ import { Button } from "./ui";
 import { DetailShell } from "./DetailShell";
 import { ReleaseManagerInstance, type ReleaseStatusSnapshot } from "../core/vault/release";
 import { VaultSync } from "../core/vault";
+import { loadVaultCache } from "../core/vault/cache";
+import { openExternalUrl } from "../core/setup/executor";
+import { getBuildIdentity } from "../lib/buildIdentity";
 
 export function UpdateModal({
   isOpen,
@@ -15,6 +18,8 @@ export function UpdateModal({
     ReleaseManagerInstance.getSnapshot(),
   );
   const [isSyncingVault, setIsSyncingVault] = useState(false);
+  const identity = getBuildIdentity();
+  const cachedLkg = loadVaultCache();
 
   useEffect(() => {
     void ReleaseManagerInstance.hydrateRuntimeVersion();
@@ -34,15 +39,6 @@ export function UpdateModal({
       }
     } finally {
       setIsSyncingVault(false);
-    }
-  };
-
-  const openUrl = (url?: string) => {
-    if (!url) return;
-    try {
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore
     }
   };
 
@@ -100,6 +96,30 @@ export function UpdateModal({
       }
     >
       <div className="space-y-4">
+        {/* Build Truth Inspector */}
+        <div className="rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] p-3.5 flex flex-wrap items-center justify-between gap-2.5 text-[11.5px]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-[color:var(--text-strong)]">运行环境基线：</span>
+            <span className="rounded bg-[color:var(--surface-raised)] px-2 py-0.5 font-mono text-[color:var(--text-primary)] border border-[color:var(--line-subtle)] font-bold">
+              {identity.runtime}
+            </span>
+            <span className="text-[color:var(--text-quiet)] font-mono">
+              commit: {identity.commitSha}
+            </span>
+            {identity.buildTime && (
+              <span className="text-[color:var(--text-quiet)]">
+                build: {new Date(identity.buildTime).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[color:var(--text-quiet)]">资产状态:</span>
+            <span className="rounded bg-[color:var(--surface-raised)] px-2 py-0.5 font-mono text-[color:var(--text-secondary)] border border-[color:var(--line-subtle)] font-semibold">
+              {cachedLkg ? `LKG 缓存 (v${cachedLkg.manifest.contentVersion})` : "Built-in 内置"}
+            </span>
+          </div>
+        </div>
+
         {/* Channel 1: App Release */}
         <div className="rounded-xl border border-[color:var(--line-default)] bg-[color:var(--surface-sunken)] p-4">
           <div className="flex items-start justify-between gap-3">
@@ -164,7 +184,7 @@ export function UpdateModal({
               size="sm"
               variant="ghost"
               className="text-[11.5px] px-2.5 py-0.5"
-              onClick={() => openUrl(snapshot.app.releaseUrl)}
+              onClick={() => openExternalUrl(snapshot.app.releaseUrl || "https://github.com/Arukasaeled/setup-center/releases")}
             >
               查看 GitHub Releases ↗
             </Button>

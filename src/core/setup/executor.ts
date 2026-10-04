@@ -22,6 +22,7 @@ import {
   loadOverrides,
   saveCustomExperience,
 } from "../../styles/runtime";
+import { isTauri, openUrl } from "../../lib/ipc";
 import type { SetupAction } from "./types";
 
 export interface ExecutionFeedback {
@@ -69,6 +70,15 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 export function openExternalUrl(url: string): void {
   if (!url) return;
   try {
+    if (isTauri()) {
+      openUrl(url).catch((err) => {
+        console.warn("[SetupExecutor] Native openUrl failed, falling back to window.open:", err);
+        if (typeof window !== "undefined") {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+      });
+      return;
+    }
     if (typeof window !== "undefined") {
       window.open(url, "_blank", "noopener,noreferrer");
     }
