@@ -32,6 +32,7 @@ windows-sys = { version = "0.60", features = [
     # provides a stronger primitive than a machine-derived key we would have to
     # ship inside the binary.
     "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
 ] }
 
 [profile.release]

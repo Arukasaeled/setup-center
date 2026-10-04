@@ -6,11 +6,14 @@
  * Architecture & Authority Rules:
  * 1. Tauri disk file (<AppLocalData>/uiparts/index.json) is the SINGLE AUTHORITATIVE PERSISTENT STATE.
  * 2. localStorage is STARTUP CACHE ONLY (for zero-latency instant rendering on cold boot).
- * 3. Atomic writes (write tmp -> flush -> replace) protect against partial write interruptions.
- * 4. Corrupted disk files are automatically preserved as uiparts.corrupt.<timestamp>.json,
- *    and recovered seamlessly via startup cache or reference seeds without white-screens.
- * 5. Media assets are stored as separate files under <AppLocalData>/uiparts/assets/<part-id>/,
- *    keeping index.json lean and performant while supporting full export/import re-inlining.
+ * 3. Disk-first commit semantics: Mutations are validated, serialized, and written to disk FIRST.
+ *    Only after disk write succeeds are in-memory state and localStorage cache committed.
+ *    If disk write fails, in-memory state and cache are NOT mutated (untainted rollback).
+ * 4. Atomic writes (write tmp -> flush -> atomic replace) protect against partial write interruptions.
+ * 5. Corrupted disk files are automatically preserved as uiparts.corrupt.<timestamp>.json,
+ *    and recovered seamlessly via startup cache (if valid) or standard reference seeds.
+ * 6. Media assets are strictly contained within <AppLocalData>/uiparts/assets/<part-id>/<filename>,
+ *    keeping index.json lean while supporting safe containment and full export/import re-inlining.
  */
 
 import { SEED_UI_PARTS } from "./seedData";
@@ -25,44 +28,35 @@ import type {
   UIPartsStorageInfo,
 } from "./types";
 import {
+  deleteUIPartAssets,
   getUIPartsInfo,
   loadUserUIParts,
   readUIPartAsset,
   saveUIPartAsset,
   saveUserUIParts,
 } from "../../lib/ipc";
+import {
+  VALID_KINDS,
+  VALID_LIFECYCLES,
+  detectImportCollision,
+  inspectStartupCache,
+  mergeWithSeeds,
+  reconcileStorageState,
+  validateAssetRelativePath,
+  validateContract,
+} from "./persistenceLogic";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
+
+export { VALID_KINDS, VALID_LIFECYCLES, validateContract };
+export type { UIPartKind, UIPartLifecycle };
 
 const CACHE_KEY = "setup-center.ui-parts.cache.v1";
 const LEGACY_CACHE_KEY = "setup-center.ui-parts.v1";
 const SCHEMA_VERSION = 1;
 
-const VALID_KINDS: UIPartKind[] = [
-  "component",
-  "layout",
-  "composition",
-  "navigation",
-  "interaction",
-  "typography",
-  "status",
-  "search",
-  "card",
-  "data-viz",
-  "motion",
-  "visual-rule",
-  "other",
-];
-
-const VALID_LIFECYCLES: UIPartLifecycle[] = [
-  "raw",
-  "enriched",
-  "prototyped",
-  "validated",
-];
-
 type Listener = () => void;
 
-class UIPartRepositoryClass {
+export class UIPartRepositoryClass {
   private parts: UIPart[] = [];
   private revision: number = 1;
   private schemaVersion: number = SCHEMA_VERSION;
@@ -70,6 +64,9 @@ class UIPartRepositoryClass {
   private initialized: boolean = false;
   private listeners: Set<Listener> = new Set();
   private assetUrlCache: Map<string, string> = new Map();
+
+  private cacheHydrationState: "valid" | "missing" | "invalid" = "missing";
+  private hydratedFrom: "cache" | "legacy-cache" | "seed" = "seed";
 
   private storageInfo: UIPartsStorageInfo = {
     mode: isTauri() ? "tauri-disk" : "browser-fallback",
@@ -90,57 +87,47 @@ class UIPartRepositoryClass {
   /**
    * 1. Synchronous startup hydration from cache.
    * Ensures instant paint without awaiting Tauri IPC.
+   *
+   * Crucial safety rule: If cache is corrupted or malformed, we DO NOT immediately
+   * overwrite localStorage with seeds in constructor. This preserves the invalid state
+   * so authoritative reconciliation in init() knows cache was corrupted and can choose
+   * recovery source accurately.
    */
   private hydrateFromStartupCacheSync(): void {
     if (typeof localStorage === "undefined") {
       this.parts = [...SEED_UI_PARTS];
+      this.cacheHydrationState = "missing";
+      this.hydratedFrom = "seed";
       return;
     }
 
-    try {
-      // Try modern document cache first
-      const rawDoc = localStorage.getItem(CACHE_KEY);
-      if (rawDoc) {
-        const parsed = JSON.parse(rawDoc);
-        if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0) {
-          this.parts = parsed.parts;
-          this.revision = typeof parsed.revision === "number" ? parsed.revision : 1;
-          this.schemaVersion = parsed.schemaVersion || SCHEMA_VERSION;
-          this.updatedAt = parsed.updatedAt || new Date().toISOString();
-          return;
-        }
-      }
+    const rawDoc = localStorage.getItem(CACHE_KEY);
+    const rawLegacy = localStorage.getItem(LEGACY_CACHE_KEY);
 
-      // Try legacy array cache
-      const rawLegacy = localStorage.getItem(LEGACY_CACHE_KEY);
-      if (rawLegacy) {
-        const parsedLegacy = JSON.parse(rawLegacy);
-        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
-          this.parts = this.mergeWithSeeds(parsedLegacy);
-          this.saveToStartupCacheOnly();
-          return;
-        }
+    const inspection = inspectStartupCache(rawDoc, rawLegacy);
+    this.cacheHydrationState = inspection.state;
+    this.hydratedFrom = inspection.hydratedFrom;
+
+    if (inspection.state === "valid" && inspection.parts) {
+      if (inspection.hydratedFrom === "legacy-cache") {
+        this.parts = this.mergeWithSeeds(inspection.parts);
+        this.saveToStartupCacheOnly();
+      } else {
+        this.parts = inspection.parts;
+        this.revision = inspection.revision || 1;
+        this.schemaVersion = inspection.schemaVersion || SCHEMA_VERSION;
+        this.updatedAt = inspection.updatedAt || new Date().toISOString();
       }
-    } catch {
-      // ignore JSON parse error on cold boot
+      return;
     }
 
-    // Default to seeds
+    // Default in-memory state to starter seeds for zero-latency instant render
     this.parts = [...SEED_UI_PARTS];
-    this.saveToStartupCacheOnly();
   }
 
   /** Merges user parts with seed parts so starter parts are never lost */
-  private mergeWithSeeds(existing: UIPart[]): UIPart[] {
-    const existingMap = new Map(existing.map((p) => [p.id, p]));
-    const result: UIPart[] = [...existing];
-
-    for (const seed of SEED_UI_PARTS) {
-      if (!existingMap.has(seed.id)) {
-        result.push(seed);
-      }
-    }
-    return result;
+  public mergeWithSeeds(existing: UIPart[]): UIPart[] {
+    return mergeWithSeeds(existing, SEED_UI_PARTS);
   }
 
   /** Writes the current snapshot strictly to localStorage cache */
@@ -161,7 +148,7 @@ class UIPartRepositoryClass {
 
   /**
    * 2. Authoritative Disk Reconciliation on App Launch.
-   * Reads the disk index and reconciles according to authoritative rules.
+   * Reads the disk index and reconciles according to authoritative disk-first rules.
    */
   public async init(): Promise<void> {
     if (this.initialized) return;
@@ -195,116 +182,122 @@ class UIPartRepositoryClass {
         return;
       }
 
-      // Case A: Disk was corrupted!
-      if (loadRes.is_corrupted) {
-        console.warn(
-          `[UIParts] Disk index was corrupted! Preserved backup at: ${loadRes.corrupted_backup}`,
-        );
+      let diskDoc: UIPartsStorageDocument | null = null;
+      let isCorrupted = loadRes.is_corrupted;
 
-        // Check if startup cache was valid
-        if (this.parts.length > 0) {
-          this.recoveryState = {
-            recovered: true,
-            source: "cache",
-            corruptedBackup: loadRes.corrupted_backup || undefined,
-            message: `磁盘索引已损坏，已从本地高速缓存安全恢复（备份路径: ${loadRes.corrupted_backup || "已备份"}）`,
-          };
-        } else {
-          this.parts = [...SEED_UI_PARTS];
-          this.recoveryState = {
-            recovered: true,
-            source: "seed",
-            corruptedBackup: loadRes.corrupted_backup || undefined,
-            message: `磁盘索引与缓存均损坏，已安全恢复至参考标准零件集`,
-          };
+      if (!isCorrupted && loadRes.content && loadRes.content.trim().length > 0) {
+        try {
+          const parsed = JSON.parse(loadRes.content);
+          if (parsed && Array.isArray(parsed.parts)) {
+            diskDoc = parsed;
+          } else if (Array.isArray(parsed)) {
+            diskDoc = {
+              schemaVersion: 1,
+              revision: 1,
+              updatedAt: new Date().toISOString(),
+              parts: parsed,
+            };
+          } else {
+            isCorrupted = true;
+          }
+        } catch {
+          isCorrupted = true;
         }
+      }
 
-        // Heal disk with the recovered snapshot
-        await this.persistToDiskAndCache();
+      let cacheDoc: UIPartsStorageDocument | null = null;
+      if (this.cacheHydrationState === "valid" && typeof localStorage !== "undefined") {
+        try {
+          const raw = localStorage.getItem(CACHE_KEY);
+          if (raw) cacheDoc = JSON.parse(raw);
+        } catch {
+          // ignore cache parse error
+        }
+      }
+
+      const outcome = reconcileStorageState({
+        diskDoc,
+        cacheDoc,
+        seedParts: SEED_UI_PARTS,
+        isDiskCorrupted: isCorrupted,
+        cacheHydrationState: this.cacheHydrationState,
+        corruptBackupPath: loadRes.corrupted_backup,
+      });
+
+      this.recoveryState = outcome.recoveryState;
+
+      if (outcome.action === "use-disk") {
+        const mergedParts = this.mergeWithSeeds(outcome.activeDoc.parts);
+        this.parts = mergedParts;
+        this.revision = outcome.activeDoc.revision;
+        this.schemaVersion = outcome.activeDoc.schemaVersion;
+        this.updatedAt = outcome.activeDoc.updatedAt;
+        this.storageInfo.revision = this.revision;
+        this.storageInfo.updatedAt = this.updatedAt;
+
+        // Synchronize startup cache to match disk truth
+        this.saveToStartupCacheOnly();
+        void this.migrateLegacyDataUrls();
         this.notify();
         return;
       }
 
-      // Case B: Disk has valid content -> DISK IS THE AUTHORITATIVE TRUTH!
-      if (loadRes.content && loadRes.content.trim().length > 0) {
-        try {
-          const parsed = JSON.parse(loadRes.content);
-          let diskParts: UIPart[] = [];
-          let diskRevision = 1;
-
-          if (parsed && Array.isArray(parsed.parts)) {
-            // Modern document format
-            diskParts = parsed.parts;
-            diskRevision = typeof parsed.revision === "number" ? parsed.revision : 1;
-            this.schemaVersion = parsed.schemaVersion || SCHEMA_VERSION;
-            this.updatedAt = parsed.updatedAt || new Date().toISOString();
-          } else if (Array.isArray(parsed)) {
-            // Legacy bare array format
-            diskParts = parsed;
-            diskRevision = 1;
-          }
-
-          if (diskParts.length > 0) {
-            this.parts = this.mergeWithSeeds(diskParts);
-            this.revision = diskRevision;
-
-            // Update startup cache with authoritative disk state
-            this.saveToStartupCacheOnly();
-
-            // Lazy migrate any legacy inline Data URLs in background
-            void this.migrateLegacyDataUrls();
-
-            this.notify();
-            return;
-          }
-        } catch (parseErr) {
-          console.warn("Failed to parse disk content despite check:", parseErr);
-        }
+      if (outcome.shouldWriteDisk) {
+        await this.commitToStorage(outcome.activeDoc.parts);
       }
-
-      // Case C: Disk is empty (First run in Tauri) -> write initial seeds
-      if (this.parts.length === 0) {
-        this.parts = [...SEED_UI_PARTS];
-      }
-      await this.persistToDiskAndCache();
-      this.notify();
     } catch (err) {
       console.warn("Failed to load user uiparts from Tauri disk:", err);
     }
   }
 
   /**
-   * Saves authoritative state to disk (atomic write via Tauri) and startup cache.
+   * 3. Disk-First Transactional Commit Semantics:
+   *
+   * Writes next candidate document to authoritative disk FIRST.
+   * If disk write fails:
+   *   - Throws error
+   *   - In-memory parts, revision, updatedAt REMAIN UNCHANGED
+   *   - Startup cache is NOT overwritten
+   *   - Listeners are NOT notified
+   * Only upon disk write success:
+   *   - Updates in-memory state
+   *   - Syncs startup cache
+   *   - Notifies listeners
    */
-  private async persistToDiskAndCache(): Promise<boolean> {
-    this.revision += 1;
-    this.updatedAt = new Date().toISOString();
+  public async commitToStorage(candidateParts: UIPart[]): Promise<boolean> {
+    const candidateRevision = this.revision + 1;
+    const candidateUpdatedAt = new Date().toISOString();
 
-    const doc: UIPartsStorageDocument = {
+    const candidateDoc: UIPartsStorageDocument = {
       schemaVersion: this.schemaVersion,
-      revision: this.revision,
-      updatedAt: this.updatedAt,
-      parts: this.parts,
+      revision: candidateRevision,
+      updatedAt: candidateUpdatedAt,
+      parts: candidateParts,
     };
 
-    // Update startup cache
-    this.saveToStartupCacheOnly();
-
-    // Write to authoritative disk
+    // 1. Authoritative disk write FIRST in Tauri
     if (isTauri()) {
-      try {
-        const json = JSON.stringify(doc, null, 2);
-        const res = await saveUserUIParts(json);
-        if (res && res.success) {
-          this.storageInfo.revision = this.revision;
-          this.storageInfo.updatedAt = this.updatedAt;
-          return true;
-        }
-      } catch (err) {
-        console.error("Failed to write uiparts to disk atomically:", err);
-        return false;
+      const json = JSON.stringify(candidateDoc, null, 2);
+      const res = await saveUserUIParts(json);
+      if (!res || !res.success) {
+        const err = new Error("Failed to write UI parts to disk atomically via Tauri IPC");
+        console.error("[UIParts] Disk write failed. In-memory state preserved without taint:", err);
+        throw err;
       }
     }
+
+    // 2. Commit in-memory authoritative state ONLY after disk succeeds
+    this.parts = candidateParts;
+    this.revision = candidateRevision;
+    this.updatedAt = candidateUpdatedAt;
+    this.storageInfo.revision = candidateRevision;
+    this.storageInfo.updatedAt = candidateUpdatedAt;
+
+    // 3. Update fast startup cache
+    this.saveToStartupCacheOnly();
+
+    // 4. Notify reactive UI listeners
+    this.notify();
     return true;
   }
 
@@ -316,13 +309,14 @@ class UIPartRepositoryClass {
     if (!isTauri()) return;
 
     let modified = false;
-    for (const part of this.parts) {
+    const nextParts: UIPart[] = JSON.parse(JSON.stringify(this.parts));
+
+    for (const part of nextParts) {
       if (part.preview?.thumbnail?.startsWith("data:image/")) {
         try {
           const ext = part.preview.thumbnail.includes("png") ? "png" : "jpg";
           const res = await saveUIPartAsset(part.id, `preview.${ext}`, part.preview.thumbnail);
           if (res) {
-            // Cache data url for instant view
             this.assetUrlCache.set(res.relative_path, part.preview.thumbnail);
             part.preview.thumbnail = res.relative_path;
             modified = true;
@@ -334,8 +328,7 @@ class UIPartRepositoryClass {
     }
 
     if (modified) {
-      await this.persistToDiskAndCache();
-      this.notify();
+      await this.commitToStorage(nextParts);
     }
   }
 
@@ -343,35 +336,16 @@ class UIPartRepositoryClass {
    * Validates that an object satisfies minimum contract safety.
    */
   public static validateContract(data: any): { valid: boolean; error?: string } {
-    if (!data || typeof data !== "object") {
-      return { valid: false, error: "零件规范必须为 JSON 对象" };
-    }
-    if (!data.id || typeof data.id !== "string" || !data.id.trim()) {
-      return { valid: false, error: "缺少必填字段: id (必须为非空字符串)" };
-    }
-    if (!data.title || typeof data.title !== "string" || !data.title.trim()) {
-      return { valid: false, error: "缺少必填字段: title (必须为非空字符串)" };
-    }
-    if (!data.kind || !VALID_KINDS.includes(data.kind)) {
-      return {
-        valid: false,
-        error: `非法分类 kind: "${data.kind}"。合法值包括: ${VALID_KINDS.join(", ")}`,
-      };
-    }
-    if (!data.lifecycle || !VALID_LIFECYCLES.includes(data.lifecycle)) {
-      return {
-        valid: false,
-        error: `非法生命周期 lifecycle: "${data.lifecycle}"。合法值包括: ${VALID_LIFECYCLES.join(", ")}`,
-      };
-    }
-    return { valid: true };
+    return validateContract(data);
   }
 
   public validateContract(data: any): { valid: boolean; error?: string } {
     return UIPartRepositoryClass.validateContract(data);
   }
 
-  /** Resolves relative asset path to a browser-renderable URL */
+  /**
+   * Resolves relative asset path to a browser-renderable URL with strict path containment.
+   */
   public getResolvedAssetUrl(relativePathOrUrl?: string): string {
     if (!relativePathOrUrl) return "";
     if (
@@ -381,6 +355,12 @@ class UIPartRepositoryClass {
       relativePathOrUrl.startsWith("https://")
     ) {
       return relativePathOrUrl;
+    }
+
+    // Path containment check: Reject traversals, absolute paths, illegal chars
+    if (!validateAssetRelativePath(relativePathOrUrl)) {
+      console.warn("[UIParts] Blocked invalid or traversing asset path:", relativePathOrUrl);
+      return "";
     }
 
     const cached = this.assetUrlCache.get(relativePathOrUrl);
@@ -429,6 +409,16 @@ class UIPartRepositoryClass {
     return this.recoveryState;
   }
 
+  public getCacheHydrationState(): {
+    state: "valid" | "missing" | "invalid";
+    hydratedFrom: "cache" | "legacy-cache" | "seed";
+  } {
+    return {
+      state: this.cacheHydrationState,
+      hydratedFrom: this.hydratedFrom,
+    };
+  }
+
   public getStorageInfo(): UIPartsStorageInfo {
     return this.storageInfo;
   }
@@ -458,7 +448,7 @@ class UIPartRepositoryClass {
         (p) =>
           p.title.toLowerCase().includes(q) ||
           p.summary?.toLowerCase().includes(q) ||
-          p.tags.some((t) => t.toLowerCase().includes(q)) ||
+          p.tags.some((t) => t.toLowerCase() === tagLower(q)) ||
           p.notes?.toLowerCase().includes(q) ||
           (p.design?.portablePrinciple &&
             (p.design.portablePrinciple.zh?.toLowerCase().includes(q) ||
@@ -481,7 +471,7 @@ class UIPartRepositoryClass {
     return this.parts.find((p) => p.id === id) || null;
   }
 
-  /** Create a new part (defaults to lifecycle: "raw") */
+  /** Create a new part */
   public async create(
     input: Partial<UIPart> & { title: string },
   ): Promise<UIPart> {
@@ -534,10 +524,13 @@ class UIPartRepositoryClass {
       updatedAt: now,
     };
 
-    // Insert at beginning
-    this.parts.unshift(newPart);
-    await this.persistToDiskAndCache();
-    this.notify();
+    const validation = UIPartRepositoryClass.validateContract(newPart);
+    if (!validation.valid) {
+      throw new Error(`创建失败: ${validation.error}`);
+    }
+
+    const nextParts = [newPart, ...this.parts];
+    await this.commitToStorage(nextParts);
     return newPart;
   }
 
@@ -552,7 +545,6 @@ class UIPartRepositoryClass {
 
     const current = this.parts[index];
 
-    // If thumbnail is updated with Data URL in native mode, write to asset storage
     let thumbnail = patch.preview?.thumbnail ?? current.preview?.thumbnail;
     if (thumbnail?.startsWith("data:image/") && isTauri()) {
       try {
@@ -580,15 +572,15 @@ class UIPartRepositoryClass {
       updatedAt: new Date().toISOString(),
     };
 
-    // Safety contract check
     const validation = UIPartRepositoryClass.validateContract(updated);
     if (!validation.valid) {
       throw new Error(`更新失败: ${validation.error}`);
     }
 
-    this.parts[index] = updated;
-    await this.persistToDiskAndCache();
-    this.notify();
+    const nextParts = [...this.parts];
+    nextParts[index] = updated;
+
+    await this.commitToStorage(nextParts);
     return updated;
   }
 
@@ -597,17 +589,27 @@ class UIPartRepositoryClass {
     await this.init();
 
     const prevLength = this.parts.length;
-    this.parts = this.parts.filter((p) => p.id !== id);
-    if (this.parts.length !== prevLength) {
-      await this.persistToDiskAndCache();
-      this.notify();
-      return true;
+    const nextParts = this.parts.filter((p) => p.id !== id);
+    if (nextParts.length === prevLength) {
+      return false;
     }
-    return false;
+
+    // 1. Commit metadata removal to disk first
+    await this.commitToStorage(nextParts);
+
+    // 2. Remove associated asset files on disk
+    if (isTauri()) {
+      try {
+        await deleteUIPartAssets(id);
+      } catch (err) {
+        console.warn(`[UIParts] Metadata deleted, but failed to clean up assets for part ${id}:`, err);
+      }
+    }
+
+    return true;
   }
 
   /**
-   * 10. Package Round Trip:
    * Exports part as Portable UIPart Package object with re-inlined media assets.
    */
   public async exportPackage(id: string): Promise<UIPartPackage> {
@@ -621,13 +623,15 @@ class UIPartRepositoryClass {
 
     // If thumbnail references a native disk asset, re-inline it as Data URL for true portability!
     if (exportPart.preview?.thumbnail?.startsWith("assets/") && isTauri()) {
-      try {
-        const dataUrl = await readUIPartAsset(exportPart.preview.thumbnail);
-        if (dataUrl) {
-          exportPart.preview.thumbnail = dataUrl;
+      if (validateAssetRelativePath(exportPart.preview.thumbnail)) {
+        try {
+          const dataUrl = await readUIPartAsset(exportPart.preview.thumbnail);
+          if (dataUrl) {
+            exportPart.preview.thumbnail = dataUrl;
+          }
+        } catch (err) {
+          console.warn(`Failed to re-inline thumbnail for export (${id}):`, err);
         }
-      } catch (err) {
-        console.warn(`Failed to re-inline thumbnail for export (${id}):`, err);
       }
     }
 
@@ -639,7 +643,6 @@ class UIPartRepositoryClass {
   }
 
   /**
-   * 5. Import Collision & Asset Extraction:
    * Handles collision without silent overwrites, extracts inlined assets to local storage.
    */
   public async importPackage(pkg: UIPartPackage): Promise<UIPart> {
@@ -655,70 +658,47 @@ class UIPartRepositoryClass {
     }
 
     const incoming: UIPart = JSON.parse(JSON.stringify(pkg.part));
-    const existingIndex = this.parts.findIndex((p) => p.id === incoming.id);
+    let partToInsert: UIPart = incoming;
 
-    if (existingIndex >= 0) {
-      const existing = this.parts[existingIndex];
-
-      // Check if identical content
-      const isIdentical =
-        existing.title === incoming.title &&
-        existing.kind === incoming.kind &&
-        existing.lifecycle === incoming.lifecycle &&
-        existing.summary === incoming.summary &&
-        JSON.stringify(existing.design) === JSON.stringify(incoming.design) &&
-        JSON.stringify(existing.assets) === JSON.stringify(incoming.assets) &&
-        JSON.stringify(existing.tags.sort()) === JSON.stringify(incoming.tags.sort());
-
-      if (isIdentical) {
+    const existing = this.parts.find((p) => p.id === incoming.id);
+    if (existing) {
+      const collision = detectImportCollision(existing, incoming);
+      if (collision.action === "ignore") {
         console.log(`[UIParts] 导入发现完全一致的现有零件 (${incoming.id})，忽略重复导入。`);
-        return existing;
+        return collision.part;
       }
-
-      // Different content -> Collision! Generate unique new local ID and preserve lineage
-      const dateStamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15);
-      const rand = Math.random().toString(36).substring(2, 6);
-      const newId = `${incoming.id}~import-${dateStamp}-${rand}`;
-      const originalId = incoming.id;
-
-      incoming.id = newId;
-      incoming.title = `${incoming.title} (导入副本)`;
-      incoming.relationships = {
-        ...(incoming.relationships || {}),
-        derivedFrom: [originalId],
-      };
-      incoming.notes = (incoming.notes ? incoming.notes + "\n" : "") +
-        `[导入冲突保护: 原 ID "${originalId}" 本地已存在且内容不同，已自动重命名为 "${newId}"]`;
+      partToInsert = collision.part;
     }
 
-    // If incoming thumbnail has inlined Data URL, write to local asset file in Tauri
-    if (incoming.preview?.thumbnail?.startsWith("data:image/") && isTauri()) {
+    // If thumbnail has inlined Data URL, write to local asset file in Tauri
+    if (partToInsert.preview?.thumbnail?.startsWith("data:image/") && isTauri()) {
       try {
-        const ext = incoming.preview.thumbnail.includes("png") ? "png" : "jpg";
-        const assetRes = await saveUIPartAsset(incoming.id, `preview.${ext}`, incoming.preview.thumbnail);
+        const ext = partToInsert.preview.thumbnail.includes("png") ? "png" : "jpg";
+        const assetRes = await saveUIPartAsset(partToInsert.id, `preview.${ext}`, partToInsert.preview.thumbnail);
         if (assetRes) {
-          this.assetUrlCache.set(assetRes.relative_path, incoming.preview.thumbnail);
-          incoming.preview.thumbnail = assetRes.relative_path;
+          this.assetUrlCache.set(assetRes.relative_path, partToInsert.preview.thumbnail);
+          partToInsert.preview.thumbnail = assetRes.relative_path;
         }
       } catch (err) {
-        console.warn(`Failed to extract imported asset to disk for ${incoming.id}:`, err);
+        console.warn(`Failed to extract imported asset to disk for ${partToInsert.id}:`, err);
       }
     }
 
-    incoming.updatedAt = new Date().toISOString();
-    this.parts.unshift(incoming);
+    partToInsert.updatedAt = new Date().toISOString();
+    const nextParts = [partToInsert, ...this.parts];
 
-    await this.persistToDiskAndCache();
-    this.notify();
-    return incoming;
+    await this.commitToStorage(nextParts);
+    return partToInsert;
   }
 
   /** Reset library to initial seeds (for testing or recovery) */
   public async resetToSeeds(): Promise<void> {
-    this.parts = [...SEED_UI_PARTS];
-    await this.persistToDiskAndCache();
-    this.notify();
+    await this.commitToStorage([...SEED_UI_PARTS]);
   }
+}
+
+function tagLower(q: string): string {
+  return q.toLowerCase();
 }
 
 export const UIPartRepository = new UIPartRepositoryClass();

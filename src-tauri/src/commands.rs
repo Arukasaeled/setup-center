@@ -1016,6 +1016,129 @@ pub fn load_user_uiparts(app: tauri::AppHandle) -> AppResult<UIPartsLoadResult> 
     }
 }
 
+#[cfg(windows)]
+fn atomic_replace_file(tmp: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let tmp_wide: Vec<u16> = tmp.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+
+    if target.exists() {
+        // Attempt ReplaceFileW first (atomic in-place replace, old file untouched on error)
+        let success = unsafe {
+            ReplaceFileW(
+                target_wide.as_ptr(),
+                tmp_wide.as_ptr(),
+                std::ptr::null(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if success != 0 {
+            return Ok(());
+        }
+
+        // Secondary attempt: MoveFileExW with REPLACE_EXISTING
+        let move_res = unsafe {
+            MoveFileExW(
+                tmp_wide.as_ptr(),
+                target_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if move_res != 0 {
+            return Ok(());
+        }
+        return Err(std::io::Error::last_os_error());
+    }
+
+    // Target does not exist yet
+    let move_res = unsafe {
+        MoveFileExW(
+            tmp_wide.as_ptr(),
+            target_wide.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if move_res != 0 {
+        Ok(())
+    } else {
+        std::fs::rename(tmp, target)
+    }
+}
+
+#[cfg(not(windows))]
+fn atomic_replace_file(tmp: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    std::fs::rename(tmp, target)
+}
+
+/// Validates a single path component (part_id or file_name).
+/// Rejects empty, '.', '..', path separators ('/' and '\\'), drive colons,
+/// control characters, and URL-encoded traversals.
+pub fn validate_safe_component(comp: &str) -> Result<&str, String> {
+    let trimmed = comp.trim();
+    if trimmed.is_empty() {
+        return Err("路径段不能为空".into());
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err("不允许父目录或当前目录指示符 ('.' 或 '..')".into());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains(':') || trimmed.contains('\0') {
+        return Err("路径段包含非法字符 (分隔符、冒号或空字符)".into());
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") {
+        return Err("路径段包含 URL 编码的保留字符".into());
+    }
+    Ok(trimmed)
+}
+
+/// Resolves a relative asset path and strictly ensures containment within <AppLocalData>/uiparts/assets/.
+pub fn resolve_uipart_asset_path(base_dir: &std::path::Path, rel_path: &str) -> Result<std::path::PathBuf, String> {
+    let assets_root = base_dir.join("assets");
+    let trimmed = rel_path.trim();
+
+    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        return Err("不允许绝对路径".into());
+    }
+    if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' {
+        return Err("不允许包含驱动器号的绝对路径".into());
+    }
+
+    let normalized = trimmed.replace('\\', "/");
+    let segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+
+    let (part_id, file_name) = match segments.as_slice() {
+        ["assets", p, f] => (*p, *f),
+        [p, f] => (*p, *f),
+        _ => return Err("资源相对路径格式必须为 'assets/<part-id>/<file-name>'".into()),
+    };
+
+    validate_safe_component(part_id)?;
+    validate_safe_component(file_name)?;
+
+    let target = assets_root.join(part_id).join(file_name);
+    if !target.starts_with(&assets_root) {
+        return Err("目标路径越界，不在 assets 目录内".into());
+    }
+    Ok(target)
+}
+
+/// Resolves a part directory inside assets/, ensuring containment.
+pub fn resolve_uipart_asset_dir(base_dir: &std::path::Path, part_id: &str) -> Result<std::path::PathBuf, String> {
+    let assets_root = base_dir.join("assets");
+    validate_safe_component(part_id)?;
+    let target = assets_root.join(part_id);
+    if !target.starts_with(&assets_root) {
+        return Err("目标零件目录越界，不在 assets 目录内".into());
+    }
+    Ok(target)
+}
+
 #[tauri::command]
 pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UIPartsSaveResult> {
     let dir = get_uiparts_base_dir(&app)?;
@@ -1032,11 +1155,8 @@ pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UI
             .map_err(|e| AppError::Internal(format!("同步临时文件失败: {e}")))?;
     }
 
-    if let Err(_) = std::fs::rename(&tmp, &target) {
-        let _ = std::fs::remove_file(&target);
-        std::fs::rename(&tmp, &target)
-            .map_err(|e| AppError::Internal(format!("原子重命名失败: {e}")))?;
-    }
+    atomic_replace_file(&tmp, &target)
+        .map_err(|e| AppError::Internal(format!("安全原子替换 index.json 失败: {e}")))?;
 
     Ok(UIPartsSaveResult {
         success: true,
@@ -1052,20 +1172,51 @@ pub fn save_uipart_asset(
     base64_data: String,
 ) -> AppResult<UIPartAssetSaveResult> {
     let dir = get_uiparts_base_dir(&app)?;
-    let part_assets_dir = dir.join("assets").join(&part_id);
-    std::fs::create_dir_all(&part_assets_dir)
+
+    validate_safe_component(&part_id).map_err(AppError::Internal)?;
+    validate_safe_component(&file_name).map_err(AppError::Internal)?;
+
+    let target_file = resolve_uipart_asset_path(&dir, &format!("assets/{part_id}/{file_name}"))
+        .map_err(AppError::Internal)?;
+    let parent_dir = target_file.parent().ok_or_else(|| AppError::Internal("无效的资源父目录".into()))?;
+    std::fs::create_dir_all(parent_dir)
         .map_err(|e| AppError::Internal(format!("创建零件资源目录失败: {e}")))?;
 
-    let target_file = part_assets_dir.join(&file_name);
-    let tmp_file = part_assets_dir.join(format!("{file_name}.tmp"));
+    let tmp_file = parent_dir.join(format!("{file_name}.tmp"));
 
-    let raw_b64 = if let Some(comma_pos) = base64_data.find(',') {
-        &base64_data[comma_pos + 1..]
+    let (raw_b64, detected_ext) = if let Some(comma_pos) = base64_data.find(',') {
+        let prefix = &base64_data[..comma_pos];
+        let ext = if prefix.contains("image/png") {
+            "png"
+        } else if prefix.contains("image/jpeg") || prefix.contains("image/jpg") {
+            "jpg"
+        } else if prefix.contains("image/webp") {
+            "webp"
+        } else if prefix.contains("image/gif") {
+            "gif"
+        } else {
+            return Err(AppError::Internal("不支持的图片格式，仅支持 PNG, JPEG, WebP, GIF".into()));
+        };
+        (&base64_data[comma_pos + 1..], ext)
     } else {
-        &base64_data
+        (base64_data.as_str(), "png")
     };
 
+    // Verify file_name extension matches detected mime
+    let req_ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !req_ext.is_empty() && req_ext != detected_ext && !(req_ext == "jpeg" && detected_ext == "jpg") {
+        return Err(AppError::Internal(format!("文件扩展名 (.{req_ext}) 与数据类型 (.{detected_ext}) 不一致")));
+    }
+
     let bytes = b64_decode(raw_b64).map_err(|e| AppError::Internal(format!("Base64 解码失败: {e}")))?;
+
+    if bytes.len() > 15 * 1024 * 1024 {
+        return Err(AppError::Internal("媒体资源大小超出最大限制 (15MB)".into()));
+    }
 
     {
         use std::io::Write;
@@ -1077,11 +1228,8 @@ pub fn save_uipart_asset(
             .map_err(|e| AppError::Internal(format!("同步资源临时文件失败: {e}")))?;
     }
 
-    if let Err(_) = std::fs::rename(&tmp_file, &target_file) {
-        let _ = std::fs::remove_file(&target_file);
-        std::fs::rename(&tmp_file, &target_file)
-            .map_err(|e| AppError::Internal(format!("资源原子替换失败: {e}")))?;
-    }
+    atomic_replace_file(&tmp_file, &target_file)
+        .map_err(|e| AppError::Internal(format!("安全原子保存资源文件失败: {e}")))?;
 
     let rel = format!("assets/{part_id}/{file_name}");
     Ok(UIPartAssetSaveResult {
@@ -1093,18 +1241,16 @@ pub fn save_uipart_asset(
 #[tauri::command]
 pub fn read_uipart_asset(app: tauri::AppHandle, relative_path: String) -> AppResult<String> {
     let dir = get_uiparts_base_dir(&app)?;
-    let cleaned = relative_path.replace('\\', "/");
-    let trimmed = cleaned.trim_start_matches('/');
-    let full_path = dir.join(trimmed);
+    let target = resolve_uipart_asset_path(&dir, &relative_path).map_err(AppError::Internal)?;
 
-    if !full_path.is_file() {
-        return Err(AppError::Internal(format!("资源文件不存在: {trimmed}")));
+    if !target.is_file() {
+        return Err(AppError::Internal(format!("资源文件不存在: {relative_path}")));
     }
 
-    let bytes = std::fs::read(&full_path)
+    let bytes = std::fs::read(&target)
         .map_err(|e| AppError::Internal(format!("读取资源文件失败: {e}")))?;
 
-    let ext = full_path
+    let ext = target
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("png")
@@ -1112,14 +1258,28 @@ pub fn read_uipart_asset(app: tauri::AppHandle, relative_path: String) -> AppRes
     let mime = match ext.as_str() {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
-        "svg" => "image/svg+xml",
         "webp" => "image/webp",
         "gif" => "image/gif",
+        "svg" => "image/svg+xml",
         _ => "application/octet-stream",
     };
 
     let b64 = b64_encode(&bytes);
     Ok(format!("data:{mime};base64,{b64}"))
+}
+
+#[tauri::command]
+pub fn delete_uipart_assets(app: tauri::AppHandle, part_id: String) -> AppResult<bool> {
+    let dir = get_uiparts_base_dir(&app)?;
+    let part_dir = resolve_uipart_asset_dir(&dir, &part_id).map_err(AppError::Internal)?;
+
+    if part_dir.is_dir() {
+        std::fs::remove_dir_all(&part_dir)
+            .map_err(|e| AppError::Internal(format!("删除零件资源目录失败: {e}")))?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 /// Diagnostics for the settings/advanced panel: proves which modules loaded
@@ -2811,5 +2971,34 @@ mod tests {
                 .map(ConceptView::from)
                 .collect(),
         }
+    }
+
+    #[test]
+    fn asset_path_containment_rejects_traversals_and_absolutes() {
+        let base = std::path::PathBuf::from(r"C:\AppData\Local\SetupCenter\uiparts");
+
+        // Allowed
+        assert!(resolve_uipart_asset_path(&base, "assets/clip-launch-grid/preview.png").is_ok());
+        assert!(resolve_uipart_asset_path(&base, "clip-launch-grid/preview.png").is_ok());
+        assert!(resolve_uipart_asset_path(&base, "safe-triangle/custom.webp").is_ok());
+
+        // Rejections (Section 1)
+        assert!(resolve_uipart_asset_path(&base, "../outside.txt").is_err());
+        assert!(resolve_uipart_asset_path(&base, "assets/../../outside.txt").is_err());
+        assert!(resolve_uipart_asset_path(&base, r"C:\Windows\System32\cmd.exe").is_err());
+        assert!(resolve_uipart_asset_path(&base, "/absolute/path/preview.png").is_err());
+        assert!(resolve_uipart_asset_path(&base, r"\absolute\path\preview.png").is_err());
+        assert!(resolve_uipart_asset_path(&base, "assets/part%2e%2e/evil.png").is_err());
+        assert!(resolve_uipart_asset_path(&base, "assets/part/sub/deep.png").is_err());
+    }
+
+    #[test]
+    fn asset_dir_containment_rejects_parent_dir() {
+        let base = std::path::PathBuf::from(r"C:\AppData\Local\SetupCenter\uiparts");
+        assert!(resolve_uipart_asset_dir(&base, "valid-part-id").is_ok());
+        assert!(resolve_uipart_asset_dir(&base, "..").is_err());
+        assert!(resolve_uipart_asset_dir(&base, "../evil").is_err());
+        assert!(resolve_uipart_asset_dir(&base, "/evil").is_err());
+        assert!(resolve_uipart_asset_dir(&base, "evil/sub").is_err());
     }
 }

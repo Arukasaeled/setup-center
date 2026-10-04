@@ -758,3 +758,14 @@ export async function readUIPartAsset(relativePath: string): Promise<string | nu
   }
 }
 
+/** Deletes a part's assets directory from local AppData workspace. */
+export async function deleteUIPartAssets(partId: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("delete_uipart_assets", { partId });
+  } catch (err) {
+    console.warn("Failed to delete UI part assets via Tauri IPC:", err);
+    return false;
+  }
+}
+

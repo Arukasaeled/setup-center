@@ -127,6 +127,7 @@ pub fn run() {
             commands::get_uiparts_info,
             commands::save_uipart_asset,
             commands::read_uipart_asset,
+            commands::delete_uipart_assets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");
