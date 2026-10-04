@@ -1,0 +1,65 @@
+{
+  "id": "clip-launch-grid",
+  "name": "Clip Launch Grid",
+  "kind": "layout",
+  "summary": "行列式双向触发矩阵：列建模为互斥执行通道，行建模为可批量同步触发的场景，布局与执行顺序完全解耦。",
+  "source": {
+    "title": "Ableton Reference Manual v12, Chapter 7: Session View",
+    "url": "https://www.ableton.com/en/live-manual/12/session-view/",
+    "type": "official-manual"
+  },
+  "portablePrinciple": {
+    "rule": "When orchestrating independent parallel channels with cross-channel synchronization points, use a column-exclusive grid with row-level scene launchers because it provides random-access triggers without imposing a rigid timeline sequence.",
+    "zh": "当需要协调多条独立并行的通道并在通道间定义同步触发点时，使用列互斥矩阵配合行级场景触发器，因为它既能提供任意单元格的随机访问，又无需绑定僵化的线性时间轴。"
+  },
+  "essentialMechanisms": [
+    "列互斥性：同一列通道在任何时刻最多只有一个单元格处于激活播放态",
+    "行级场景触发：整行发射器（Scene Launch）同时批量触发该行涉及的各通道单元格",
+    "停止保护机制：支持标记 hasStop=false，使空位在整行批量触发时不打断该通道已有活动",
+    "单元格自给自足：每个 Slot 具备独立触发状态与停止控制",
+    "解耦布局与时序：空间网格仅表达可用选项与组合维度，不代表自上而下的线性强制播放流"
+  ],
+  "optionalCharacteristics": [
+    "音乐领域属性：BPM、拍号、量化周期、循环段落长度",
+    "三角形与正方形的原版具体图标字符",
+    "Ableton 专有色彩体系与灰色工业风宿主界面",
+    "Follow Actions、MIDI 硬件映射与 Arrangement 线性走带录制"
+  ],
+  "useCases": [
+    {
+      "scenario": "AI Multi-Agent Task Orchestration (Agent 任务阶段矩阵)",
+      "fit": "high",
+      "notes": "列为各专业 Agent，行为阶段同步触发，验证多智能体编排"
+    },
+    {
+      "scenario": "Visual Preset Live Mixer (设计系统场景混音台)",
+      "fit": "high",
+      "notes": "列为字阶/色彩/动效/布局家族，行为预设场景，支持跨维度即时混合"
+    },
+    {
+      "scenario": "Interactive Presentation Director (幻灯与演示导播台)",
+      "fit": "high",
+      "notes": "列为背景/正文/演示者视窗/交互画板图层，行为演讲幕次"
+    },
+    {
+      "scenario": "General Dashboard",
+      "fit": "medium"
+    },
+    {
+      "scenario": "Form Wizard",
+      "fit": "low"
+    }
+  ],
+  "implementation": {
+    "difficulty": "low",
+    "preferredTech": "CSS Grid + React State + Roving Tabindex Keyboard Navigation"
+  },
+  "evidence": {
+    "structure": "verified",
+    "behavior": "verified",
+    "visual": "derived",
+    "sourceCode": "unread"
+  },
+  "implementationBasis": "官方手册完整定义了 Session View、Track、Scene、Slot、Stop Button 语义。视觉层面采用中性高对比度原型风格，不依赖 Ableton 专有色板与音频引擎。",
+  "exportable": true
+}

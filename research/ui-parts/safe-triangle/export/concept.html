@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Safe-Triangle Submenu — Concept Demonstration</title>
+  <style>
+    body {
+      background: #090b0f;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+    }
+    .controls { margin-bottom: 24px; display: flex; gap: 8px; }
+    button {
+      background: #181d28;
+      border: 1px solid #283347;
+      color: #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button.active { background: #2563eb; color: #fff; font-weight: bold; }
+    .menu-container { position: relative; }
+    .menu {
+      width: 200px;
+      background: #141822;
+      border: 1px solid #242c3d;
+      border-radius: 8px;
+      padding: 6px;
+    }
+    .item {
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+    }
+    .item:hover, .item.active { background: #1e2536; color: #fff; }
+    .submenu {
+      position: absolute;
+      top: 0;
+      left: calc(100% + 8px);
+      width: 180px;
+      background: #161c28;
+      border: 1px solid #28354c;
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .submenu.on-left { left: auto; right: calc(100% + 8px); }
+    .safe-triangle {
+      position: fixed;
+      pointer-events: auto;
+      z-index: 999;
+      background: transparent;
+    }
+    .safe-triangle.debug {
+      background: rgba(239, 68, 68, 0.25);
+      border: 1px dashed #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button id="btn-side" onclick="toggleSide()">Toggle Side (Right)</button>
+    <button id="btn-debug" onclick="toggleDebug()">Debug Polygon: OFF</button>
+  </div>
+
+  <div class="menu-container" id="container">
+    <div class="menu">
+      <div class="item" onmouseenter="setSubmenu(null)">Git Workflow</div>
+      <div class="item active" id="trigger-item" onmouseenter="setSubmenu('engines')">
+        <span>Dev Engines</span><span>›</span>
+      </div>
+      <div class="item" onmouseenter="setSubmenu(null)">Environment Tools</div>
+      <div class="item" onmouseenter="setSubmenu(null)">Package Managers</div>
+      <div class="item" onmouseenter="setSubmenu(null)">Preferences</div>
+    </div>
+
+    <div class="submenu" id="submenu">
+      <div class="item">Node.js 22 LTS</div>
+      <div class="item">Rust & Cargo</div>
+      <div class="item">Python 3.12 (uv)</div>
+      <div class="item">Docker Engine</div>
+    </div>
+  </div>
+
+  <div id="safe-area" class="safe-triangle"></div>
+
+  <script>
+    let side = 'right';
+    let debug = false;
+    let activeSubmenu = 'engines';
+
+    const submenuEl = document.getElementById('submenu');
+    const safeAreaEl = document.getElementById('safe-area');
+    const btnSide = document.getElementById('btn-side');
+    const btnDebug = document.getElementById('btn-debug');
+
+    window.toggleSide = () => {
+      side = side === 'right' ? 'left' : 'right';
+      submenuEl.className = 'submenu ' + (side === 'left' ? 'on-left' : '');
+      btnSide.innerText = `Toggle Side (${side === 'right' ? 'Right' : 'Left'})`;
+    };
+
+    window.toggleDebug = () => {
+      debug = !debug;
+      btnDebug.innerText = `Debug Polygon: ${debug ? 'ON' : 'OFF'}`;
+      btnDebug.className = debug ? 'active' : '';
+      safeAreaEl.className = 'safe-triangle ' + (debug ? 'debug' : '');
+    };
+
+    window.setSubmenu = (id) => {
+      activeSubmenu = id;
+      submenuEl.style.display = id ? 'block' : 'none';
+      if (!id) safeAreaEl.style.display = 'none';
+    };
+
+    window.addEventListener('pointermove', (e) => {
+      if (!activeSubmenu) return;
+      const rect = submenuEl.getBoundingClientRect();
+      const nearX = side === 'right' ? rect.left : rect.right;
+
+      const cursorX = e.clientX;
+      const cursorY = e.clientY;
+
+      if ((side === 'right' && cursorX >= rect.left) || (side === 'left' && cursorX <= rect.right)) {
+        safeAreaEl.style.display = 'none';
+        return;
+      }
+
+      const spread = 90; // Height cap
+      const topY = Math.max(rect.top, cursorY - spread);
+      const bottomY = Math.min(rect.bottom, cursorY + spread);
+
+      const minX = Math.min(cursorX, nearX);
+      const maxX = Math.max(cursorX, nearX);
+      const minY = Math.min(cursorY, topY);
+      const maxY = Math.max(cursorY, bottomY);
+
+      safeAreaEl.style.left = minX + 'px';
+      safeAreaEl.style.top = minY + 'px';
+      safeAreaEl.style.width = (maxX - minX) + 'px';
+      safeAreaEl.style.height = (maxY - minY) + 'px';
+
+      const pX = cursorX - minX, pY = cursorY - minY;
+      const aX = nearX - minX, aY = topY - minY;
+      const bX = nearX - minX, bY = bottomY - minY;
+
+      safeAreaEl.style.clipPath = `polygon(${pX}px ${pY}px, ${aX}px ${aY}px, ${bX}px ${bY}px)`;
+      safeAreaEl.style.display = 'block';
+    });
+  </script>
+</body>
+</html>

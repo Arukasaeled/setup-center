@@ -1,0 +1,61 @@
+{
+  "id": "safe-triangle",
+  "name": "Safe-Triangle Submenu",
+  "kind": "interaction",
+  "summary": "基于光标动量与几何安全区的无缝二级子菜单交互模式。在光标与子菜单近边之间建立动态三角形命中区域，允许斜向对角线直达，彻底消除倒 L 型路径痛点与误关现象。",
+  "source": {
+    "title": "Andreas Eldh (Linear Engineering) — Invisible Details",
+    "url": "https://medium.com/linear-app/invisible-details-2ca718b41a44",
+    "type": "engineering-blog"
+  },
+  "portablePrinciple": {
+    "rule": "When a pointer must cross intervening non-target elements to reach a lateral sub-surface, render an ephemeral safe triangle polygon between the cursor and the target's near edge because Euclidean diagonal movement is faster and more natural than Manhattan orthogonal paths.",
+    "zh": "当鼠标指针必须跨越非目标干扰区域以进入侧向展开的子面板时，在光标与目标近侧边之间生成不可见的动态安全三角形多边形，因为欧几里得对角线直达路径比沿正交网格走的曼哈顿路径更短、更自然且不易误触关闭。"
+  },
+  "essentialMechanisms": [
+    "动态三角形安全区：以光标当前坐标为顶点 P，子菜单近侧边的两端点为底边 A 与 B",
+    "DOM 元素与 clip-path: polygon() 实现命中捕获，由浏览器硬件加速处理命中判定",
+    "双向侧展开支持：自适应支持右侧弹出（近边为左边缘）与左侧弹出（近边为右边缘）",
+    "高度溢出保护（Height Capping）：子菜单过高时，对底边 A 与 B 相对光标垂直距离做约束，避免安全区阻碍相邻父项的正常悬停切换",
+    "调试透视模式（Debug Visualization）：可在开启时高亮渲染不可见的几何三角区，用于交互调校"
+  ],
+  "optionalCharacteristics": [
+    "Linear 的深色圆角设计风格与按键图标",
+    "通过 40 行极简 React Hook 封装还是独立 Web Component",
+    "关闭延迟防抖计时器（若安全区命中健全，无需额外增加延时）"
+  ],
+  "useCases": [
+    {
+      "scenario": "Nested Command Palette / Context Menu (层级右键与上下文菜单)",
+      "fit": "high",
+      "notes": "最经典场景，彻底解决右键菜单二级展开常被划掉的交互缺陷"
+    },
+    {
+      "scenario": "Mega Dropdown Navigation (复合分类悬浮导航面板)",
+      "fit": "high",
+      "notes": "电商或大型开发者门户多级下拉导航"
+    },
+    {
+      "scenario": "Hover Card Preview Inspector (悬浮卡片深入检视)",
+      "fit": "medium",
+      "notes": "光标由触发标签移入浮动详情面板"
+    },
+    {
+      "scenario": "Mobile Touch Interface",
+      "fit": "low",
+      "notes": "触屏无 hover 状态，该交互机制专属于精准指针设备"
+    }
+  ],
+  "implementation": {
+    "difficulty": "medium",
+    "preferredTech": "React Hook (useSafeTriangle) + Absolute SVG/Div with clip-path: polygon"
+  },
+  "evidence": {
+    "structure": "verified",
+    "behavior": "verified",
+    "visual": "verified",
+    "sourceCode": "observed"
+  },
+  "implementationBasis": "Linear 官方工程师博客清晰讲解了欧几里得距离原理、clip-path: polygon 实现方式与 DOM 结构。本原型额外补充了左侧弹出与高度溢出保护（Height Cap）。",
+  "exportable": true
+}

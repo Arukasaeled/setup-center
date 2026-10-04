@@ -60,6 +60,7 @@ const SECTION_TITLES: Record<Section, string> = {
   software: "软件清单",
   repos: "GitHub 项目",
   resources: "开发资源",
+  uiparts: "UI 零部件库",
   library: "我的库",
   style: "视觉风格",
   config: "环境配置",

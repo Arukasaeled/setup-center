@@ -72,6 +72,7 @@ import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
 import type { PageLayoutContract, SetupStyle } from "../styles/types";
 import { ResourceSection } from "./ResourceSection";
+import { UIPartsSection } from "./UIPartsSection";
 import { DetailShell } from "../components/DetailShell";
 import { ExperiencePreviewWorkspace } from "../components/ExperiencePreviewWorkspace";
 import { SetupActionButton } from "../components/SetupActionButton";
@@ -130,6 +131,7 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "software", label: "软件清单", hint: "这台电脑装了什么 & Winget 检索" },
   { id: "repos", label: "GitHub 项目", hint: "开源优质仓库、对比与克隆" },
   { id: "resources", label: "开发资源", hint: "开源项目、模板与灵感" },
+  { id: "uiparts", label: "UI 零部件库", hint: "视觉零件 · 归档、拆解、提取与原型" },
   { id: "library", label: "我的库", hint: "个人收藏、最近与自定义包" },
   { id: "style", label: "视觉实验室", hint: "Design Lab · 体验矩阵、标杆与交互原型" },
   { id: "config", label: "环境配置", hint: "身份、路径、代理" },
@@ -148,6 +150,7 @@ const PAGE_LAYOUTS: Record<Section, PageLayoutContract> = {
   software: { mode: "master-detail", selectable: true },
   repos: { mode: "explorer", selectable: false },
   resources: { mode: "explorer", selectable: false },
+  uiparts: { mode: "gallery", selectable: false },
   library: { mode: "explorer", selectable: false },
   style: { mode: "gallery", selectable: false },
   config: { mode: "master-detail", selectable: true },
@@ -264,6 +267,7 @@ export function Dashboard() {
           {section === "software" && <SoftwareSection />}
           {section === "repos" && <RepoFinderScreen />}
           {section === "resources" && <ResourceSection />}
+          {section === "uiparts" && <UIPartsSection />}
           {section === "library" && <LibraryScreen />}
           {section === "style" && <StyleSection />}
           {section === "config" && <ConfigSection />}

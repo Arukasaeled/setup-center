@@ -84,6 +84,7 @@ export type Section =
   | "resources"
   | "library"
   | "style"
+  | "uiparts"
   | "config"
   | "history"
   | "plugins"
