@@ -128,13 +128,25 @@ export interface UIPartCodeAsset {
   description?: string;
 }
 
+export interface UIPartMediaAsset {
+  id: string;
+  name: string;
+  mime: string;
+  relativePath: string;
+  dataUrl?: string;
+  width?: number;
+  height?: number;
+  capturedAt?: string;
+}
+
 export interface UIPartAssets {
   codeAssets?: UIPartCodeAsset[];
   svgAssets?: Array<{ id: string; name: string; content: string }>;
+  mediaAssets?: UIPartMediaAsset[];
 }
 
 export interface UIPartPreview {
-  thumbnail?: string; // Data URI, SVG data URI or asset URI
+  thumbnail?: string; // Relative asset path (e.g. assets/<id>/preview.png), Data URI, or SVG URI
   screenshots?: string[];
   sourceImages?: string[];
   prototypeUrl?: string;
@@ -188,4 +200,28 @@ export interface UIPartFilterQuery {
   lifecycle?: UIPartLifecycle | "all";
   tag?: string;
   onlyFavorites?: boolean;
+}
+
+export interface UIPartsStorageDocument {
+  schemaVersion: number;
+  revision: number;
+  updatedAt: string;
+  parts: UIPart[];
+}
+
+export interface UIPartsRecoveryState {
+  recovered: boolean;
+  source: "disk" | "cache" | "seed";
+  corruptedBackup?: string;
+  message?: string;
+}
+
+export interface UIPartsStorageInfo {
+  mode: "tauri-disk" | "browser-fallback";
+  storageDir?: string;
+  indexFile?: string;
+  assetsDir?: string;
+  revision: number;
+  schemaVersion: number;
+  updatedAt: string;
 }

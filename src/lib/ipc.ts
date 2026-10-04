@@ -672,26 +672,89 @@ export async function onNativeExit(
   }
 }
 
-/** Loads the user's persisted UI Parts JSON from local AppData workspace. */
-export async function loadUserUIParts(): Promise<string> {
-  if (!isTauri()) return "";
+export interface UIPartsLoadResult {
+  content: string | null;
+  storage_path: string;
+  is_corrupted: boolean;
+  corrupted_backup: string | null;
+}
+
+export interface UIPartsSaveResult {
+  success: boolean;
+  storage_path: string;
+}
+
+export interface UIPartAssetSaveResult {
+  relative_path: string;
+  absolute_path: string;
+}
+
+export interface UIPartsInfo {
+  storage_dir: string;
+  index_file: string;
+  assets_dir: string;
+}
+
+/** Retrieves native storage path information for UI Parts. */
+export async function getUIPartsInfo(): Promise<UIPartsInfo | null> {
+  if (!isTauri()) return null;
   try {
-    return await invoke<string>("load_user_uiparts");
+    return await invoke<UIPartsInfo>("get_uiparts_info");
+  } catch (err) {
+    console.warn("Failed to get UI parts storage info via Tauri IPC:", err);
+    return null;
+  }
+}
+
+/** Loads the user's persisted UI Parts JSON from local AppData workspace. */
+export async function loadUserUIParts(): Promise<UIPartsLoadResult | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<UIPartsLoadResult>("load_user_uiparts");
   } catch (err) {
     console.warn("Failed to load user UI parts via Tauri IPC:", err);
-    return "";
+    return null;
   }
 }
 
 /** Saves the user's persisted UI Parts JSON to local AppData workspace. */
-export async function saveUserUIParts(content: string): Promise<boolean> {
-  if (!isTauri()) return false;
+export async function saveUserUIParts(content: string): Promise<UIPartsSaveResult | null> {
+  if (!isTauri()) return null;
   try {
-    await invoke<void>("save_user_uiparts", { content });
-    return true;
+    return await invoke<UIPartsSaveResult>("save_user_uiparts", { content });
   } catch (err) {
     console.warn("Failed to save user UI parts via Tauri IPC:", err);
-    return false;
+    return null;
+  }
+}
+
+/** Saves a media asset to the native assets/<part-id>/ directory. */
+export async function saveUIPartAsset(
+  partId: string,
+  fileName: string,
+  base64Data: string,
+): Promise<UIPartAssetSaveResult | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<UIPartAssetSaveResult>("save_uipart_asset", {
+      partId,
+      fileName,
+      base64Data,
+    });
+  } catch (err) {
+    console.warn("Failed to save UI part asset via Tauri IPC:", err);
+    return null;
+  }
+}
+
+/** Reads a media asset from disk as a Data URL (for package export or fallback). */
+export async function readUIPartAsset(relativePath: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<string>("read_uipart_asset", { relativePath });
+  } catch (err) {
+    console.warn("Failed to read UI part asset via Tauri IPC:", err);
+    return null;
   }
 }
 

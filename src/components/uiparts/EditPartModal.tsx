@@ -122,9 +122,24 @@ export function EditPartModal({
       setIsSaving(true);
       setError(null);
 
-      const parsed = JSON.parse(jsonText);
-      if (!parsed.title) {
-        throw new Error("JSON 格式错误：缺少 title 字段");
+      let parsed: any;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (jsonErr: any) {
+        throw new Error(`JSON 语法解析失败: ${jsonErr.message}`);
+      }
+
+      if (parsed.id && parsed.id !== part.id) {
+        throw new Error(`不可更改零件 ID: 必须保持为 "${part.id}"`);
+      }
+
+      const validation = UIPartRepository.validateContract({
+        ...parsed,
+        id: part.id,
+      });
+
+      if (!validation.valid) {
+        throw new Error(`零件契约校验失败: ${validation.error}`);
       }
 
       const updated = await UIPartRepository.update(part.id, parsed);

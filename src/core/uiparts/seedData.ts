@@ -1,5 +1,13 @@
 import type { UIPart } from "./types";
 
+/**
+ * UI Parts Reference & Starter Dataset.
+ *
+ * NOTE (Seed Boundary):
+ * seedData.ts serves ONLY as built-in reference / starter parts for cold-start.
+ * Future published or reference part collections should come from generated content snapshots
+ * or external vault/content sources, NOT hand-maintained giant TypeScript seed files.
+ */
 export const SEED_UI_PARTS: UIPart[] = [
   {
     "id": "clip-launch-grid",

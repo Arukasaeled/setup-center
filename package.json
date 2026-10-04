@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "ui-parts:smoke": "node tools/ui-parts-smoke.mjs"
+    "ui-parts:smoke": "node tools/ui-parts-smoke.mjs",
+    "ui-parts:test": "node tools/ui-parts-storage-test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

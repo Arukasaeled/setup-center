@@ -3,6 +3,7 @@ import { ClipLaunchGrid } from "../../../research/ui-parts/clip-launch-grid/Clip
 import { SafeTriangleMenu } from "../../../research/ui-parts/safe-triangle/SafeTriangleMenu";
 import { PersistentStatusline } from "../../../research/ui-parts/persistent-statusline/PersistentStatusline";
 import type { UIPart } from "../../core/uiparts/types";
+import { UIPartRepository } from "../../core/uiparts/repository";
 
 interface UIPartPrototypeViewerProps {
   part: UIPart;
@@ -146,7 +147,7 @@ export function UIPartPrototypeViewer({ part }: UIPartPrototypeViewerProps) {
     <div className="rounded-lg border border-white/10 bg-[#090d16] p-4 flex flex-col items-center justify-center">
       {part.preview.thumbnail ? (
         <img
-          src={part.preview.thumbnail}
+          src={UIPartRepository.getResolvedAssetUrl(part.preview.thumbnail)}
           alt={part.title}
           className="max-h-[360px] w-auto rounded object-contain"
         />

@@ -1,4 +1,5 @@
 import type { UIPart, UIPartLifecycle } from "../../core/uiparts/types";
+import { UIPartRepository } from "../../core/uiparts/repository";
 
 interface UIPartCardProps {
   part: UIPart;
@@ -55,7 +56,7 @@ export function UIPartCard({ part, onClick }: UIPartCardProps) {
       <div className="relative aspect-[16/10] w-full bg-[#07090e] border-b border-white/5 overflow-hidden flex items-center justify-center p-2">
         {part.preview?.thumbnail ? (
           <img
-            src={part.preview.thumbnail}
+            src={UIPartRepository.getResolvedAssetUrl(part.preview.thumbnail)}
             alt={part.title}
             className="h-full w-full object-contain rounded transition duration-300 group-hover:scale-[1.02]"
             loading="lazy"

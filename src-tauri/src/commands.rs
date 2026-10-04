@@ -19,7 +19,7 @@ use crate::state::AppState;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// Refuses an action that the current tier does not permit.
 ///
@@ -841,29 +841,285 @@ fn reports_dir() -> AppResult<std::path::PathBuf> {
     Ok(dir)
 }
 
-fn uiparts_storage_path() -> AppResult<std::path::PathBuf> {
-    let base = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .map(std::path::PathBuf::from)
-        .map_err(|_| AppError::Internal("无法定位用户目录".into()))?;
-    let dir = base.join("AppData").join("Local").join("Setup Center");
-    let _ = std::fs::create_dir_all(&dir);
-    Ok(dir.join("uiparts.json"))
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UIPartsLoadResult {
+    pub content: Option<String>,
+    pub storage_path: String,
+    pub is_corrupted: bool,
+    pub corrupted_backup: Option<String>,
 }
 
-#[tauri::command]
-pub fn load_user_uiparts() -> AppResult<String> {
-    let path = uiparts_storage_path()?;
-    if !path.exists() {
-        return Ok(String::new());
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UIPartsSaveResult {
+    pub success: bool,
+    pub storage_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UIPartAssetSaveResult {
+    pub relative_path: String,
+    pub absolute_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UIPartsInfo {
+    pub storage_dir: String,
+    pub index_file: String,
+    pub assets_dir: String,
+}
+
+fn get_uiparts_base_dir(app: &tauri::AppHandle) -> AppResult<std::path::PathBuf> {
+    let local_data = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| AppError::Internal(format!("无法解析应用本地数据目录: {e}")))?;
+    let dir = local_data.join("uiparts");
+    std::fs::create_dir_all(&dir.join("assets"))
+        .map_err(|e| AppError::Internal(format!("无法创建 uiparts 目录: {e}")))?;
+    Ok(dir)
+}
+
+fn b64_decode(input: &str) -> Result<Vec<u8>, String> {
+    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut table = [255u8; 256];
+    for (i, &c) in B64_CHARS.iter().enumerate() {
+        table[c as usize] = i as u8;
     }
-    std::fs::read_to_string(&path).map_err(|e| AppError::Internal(e.to_string()))
+    let s = input.trim().trim_end_matches('=');
+    let mut out = Vec::with_capacity((s.len() * 3) / 4);
+    let bytes = s.as_bytes();
+    let mut buf = 0u32;
+    let mut bits = 0;
+    for &b in bytes {
+        if b.is_ascii_whitespace() {
+            continue;
+        }
+        let val = table[b as usize];
+        if val == 255 {
+            return Err("Invalid base64 character".into());
+        }
+        buf = (buf << 6) | (val as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    Ok(out)
+}
+
+fn b64_encode(data: &[u8]) -> String {
+    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(((data.len() + 2) / 3) * 4);
+    let mut i = 0;
+    while i < data.len() {
+        let b0 = data[i];
+        let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
+        let b2 = if i + 2 < data.len() { data[i + 2] } else { 0 };
+
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        out.push(B64_CHARS[((triple >> 18) & 63) as usize] as char);
+        out.push(B64_CHARS[((triple >> 12) & 63) as usize] as char);
+        if i + 1 < data.len() {
+            out.push(B64_CHARS[((triple >> 6) & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if i + 2 < data.len() {
+            out.push(B64_CHARS[(triple & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        i += 3;
+    }
+    out
 }
 
 #[tauri::command]
-pub fn save_user_uiparts(content: String) -> AppResult<()> {
-    let path = uiparts_storage_path()?;
-    std::fs::write(&path, content).map_err(|e| AppError::Internal(e.to_string()))
+pub fn get_uiparts_info(app: tauri::AppHandle) -> AppResult<UIPartsInfo> {
+    let dir = get_uiparts_base_dir(&app)?;
+    Ok(UIPartsInfo {
+        storage_dir: dir.to_string_lossy().to_string(),
+        index_file: dir.join("index.json").to_string_lossy().to_string(),
+        assets_dir: dir.join("assets").to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn load_user_uiparts(app: tauri::AppHandle) -> AppResult<UIPartsLoadResult> {
+    let dir = get_uiparts_base_dir(&app)?;
+    let index_path = dir.join("index.json");
+
+    // Check legacy migration if index.json doesn't exist yet
+    if !index_path.exists() {
+        let old_in_dir = dir.join("uiparts.json");
+        if old_in_dir.is_file() {
+            let _ = std::fs::copy(&old_in_dir, &index_path);
+        } else if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let legacy_path = std::path::PathBuf::from(local_app_data)
+                .join("Setup Center")
+                .join("uiparts.json");
+            if legacy_path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&legacy_path) {
+                    let _ = std::fs::write(&index_path, content);
+                }
+            }
+        }
+    }
+
+    if !index_path.exists() {
+        return Ok(UIPartsLoadResult {
+            content: None,
+            storage_path: index_path.to_string_lossy().to_string(),
+            is_corrupted: false,
+            corrupted_backup: None,
+        });
+    }
+
+    let raw = std::fs::read_to_string(&index_path)
+        .map_err(|e| AppError::Internal(format!("读取 uiparts 索引文件失败: {e}")))?;
+
+    if raw.trim().is_empty() {
+        return Ok(UIPartsLoadResult {
+            content: None,
+            storage_path: index_path.to_string_lossy().to_string(),
+            is_corrupted: false,
+            corrupted_backup: None,
+        });
+    }
+
+    // Validate JSON parsing
+    match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(_) => Ok(UIPartsLoadResult {
+            content: Some(raw),
+            storage_path: index_path.to_string_lossy().to_string(),
+            is_corrupted: false,
+            corrupted_backup: None,
+        }),
+        Err(_) => {
+            // Corruption detected! Preserve corrupted file
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup_name = format!("uiparts.corrupt.{}.json", timestamp);
+            let backup_path = dir.join(&backup_name);
+            let _ = std::fs::copy(&index_path, &backup_path);
+
+            Ok(UIPartsLoadResult {
+                content: None,
+                storage_path: index_path.to_string_lossy().to_string(),
+                is_corrupted: true,
+                corrupted_backup: Some(backup_path.to_string_lossy().to_string()),
+            })
+        }
+    }
+}
+
+#[tauri::command]
+pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UIPartsSaveResult> {
+    let dir = get_uiparts_base_dir(&app)?;
+    let target = dir.join("index.json");
+    let tmp = dir.join("index.json.tmp");
+
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)
+            .map_err(|e| AppError::Internal(format!("创建临时文件失败: {e}")))?;
+        f.write_all(content.as_bytes())
+            .map_err(|e| AppError::Internal(format!("写入临时文件失败: {e}")))?;
+        f.sync_all()
+            .map_err(|e| AppError::Internal(format!("同步临时文件失败: {e}")))?;
+    }
+
+    if let Err(_) = std::fs::rename(&tmp, &target) {
+        let _ = std::fs::remove_file(&target);
+        std::fs::rename(&tmp, &target)
+            .map_err(|e| AppError::Internal(format!("原子重命名失败: {e}")))?;
+    }
+
+    Ok(UIPartsSaveResult {
+        success: true,
+        storage_path: target.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn save_uipart_asset(
+    app: tauri::AppHandle,
+    part_id: String,
+    file_name: String,
+    base64_data: String,
+) -> AppResult<UIPartAssetSaveResult> {
+    let dir = get_uiparts_base_dir(&app)?;
+    let part_assets_dir = dir.join("assets").join(&part_id);
+    std::fs::create_dir_all(&part_assets_dir)
+        .map_err(|e| AppError::Internal(format!("创建零件资源目录失败: {e}")))?;
+
+    let target_file = part_assets_dir.join(&file_name);
+    let tmp_file = part_assets_dir.join(format!("{file_name}.tmp"));
+
+    let raw_b64 = if let Some(comma_pos) = base64_data.find(',') {
+        &base64_data[comma_pos + 1..]
+    } else {
+        &base64_data
+    };
+
+    let bytes = b64_decode(raw_b64).map_err(|e| AppError::Internal(format!("Base64 解码失败: {e}")))?;
+
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp_file)
+            .map_err(|e| AppError::Internal(format!("创建资源临时文件失败: {e}")))?;
+        f.write_all(&bytes)
+            .map_err(|e| AppError::Internal(format!("写入资源临时文件失败: {e}")))?;
+        f.sync_all()
+            .map_err(|e| AppError::Internal(format!("同步资源临时文件失败: {e}")))?;
+    }
+
+    if let Err(_) = std::fs::rename(&tmp_file, &target_file) {
+        let _ = std::fs::remove_file(&target_file);
+        std::fs::rename(&tmp_file, &target_file)
+            .map_err(|e| AppError::Internal(format!("资源原子替换失败: {e}")))?;
+    }
+
+    let rel = format!("assets/{part_id}/{file_name}");
+    Ok(UIPartAssetSaveResult {
+        relative_path: rel,
+        absolute_path: target_file.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn read_uipart_asset(app: tauri::AppHandle, relative_path: String) -> AppResult<String> {
+    let dir = get_uiparts_base_dir(&app)?;
+    let cleaned = relative_path.replace('\\', "/");
+    let trimmed = cleaned.trim_start_matches('/');
+    let full_path = dir.join(trimmed);
+
+    if !full_path.is_file() {
+        return Err(AppError::Internal(format!("资源文件不存在: {trimmed}")));
+    }
+
+    let bytes = std::fs::read(&full_path)
+        .map_err(|e| AppError::Internal(format!("读取资源文件失败: {e}")))?;
+
+    let ext = full_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+
+    let b64 = b64_encode(&bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
 }
 
 /// Diagnostics for the settings/advanced panel: proves which modules loaded

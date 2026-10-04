@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { UIPart, UIPartKind, UIPartLifecycle } from "../../core/uiparts/types";
 import { UIPartRepository } from "../../core/uiparts/repository";
 import { UIPartCard } from "./UIPartCard";
@@ -8,6 +8,7 @@ import { EditPartModal } from "./EditPartModal";
 
 export function UIPartsGallery() {
   const [parts, setParts] = useState<UIPart[]>(() => UIPartRepository.listSync());
+  const [recoveryState, setRecoveryState] = useState(() => UIPartRepository.getRecoveryState());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedKind, setSelectedKind] = useState<UIPartKind | "all">("all");
   const [selectedLifecycle, setSelectedLifecycle] = useState<UIPartLifecycle | "all">("all");
@@ -25,6 +26,7 @@ export function UIPartsGallery() {
     void UIPartRepository.init();
     const unsubscribe = UIPartRepository.subscribe(() => {
       setParts(UIPartRepository.listSync());
+      setRecoveryState(UIPartRepository.getRecoveryState());
     });
     return unsubscribe;
   }, []);
@@ -116,6 +118,20 @@ export function UIPartsGallery() {
             </button>
           </div>
         </div>
+
+        {recoveryState.recovered && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>{recoveryState.message}</span>
+            </div>
+            {recoveryState.corruptedBackup && (
+              <span className="font-mono text-[11px] text-amber-400/80 max-w-sm truncate" title={recoveryState.corruptedBackup}>
+                备份文件: {recoveryState.corruptedBackup}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Filter Controls Row */}
         <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap items-center gap-3">
