@@ -41,6 +41,7 @@ import {
   detectImportCollision,
   inspectStartupCache,
   mergeWithSeeds,
+  parseSupportedImageDataUrl,
   reconcileStorageState,
   validateAssetRelativePath,
   validateContract,
@@ -64,6 +65,7 @@ export class UIPartRepositoryClass {
   private initialized: boolean = false;
   private listeners: Set<Listener> = new Set();
   private assetUrlCache: Map<string, string> = new Map();
+  private commitMutex: Promise<any> = Promise.resolve();
 
   private cacheHydrationState: "valid" | "missing" | "invalid" = "missing";
   private hydratedFrom: "cache" | "legacy-cache" | "seed" = "seed";
@@ -302,34 +304,49 @@ export class UIPartRepositoryClass {
   }
 
   /**
+   * Executes a mutating task exclusively within a serialized promise queue.
+   * Guarantees that concurrent operations (create, update, delete, import, reset, migration)
+   * are strictly serialized, preventing race conditions or concurrent writes to index.json.
+   */
+  public runExclusive<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.commitMutex.then(task, task);
+    this.commitMutex = next.catch(() => {});
+    return next;
+  }
+
+  /**
    * 4. Legacy Media Migration:
    * Migrates legacy inline Data URLs to native asset files on disk.
    */
   private async migrateLegacyDataUrls(): Promise<void> {
     if (!isTauri()) return;
 
-    let modified = false;
-    const nextParts: UIPart[] = JSON.parse(JSON.stringify(this.parts));
+    return this.runExclusive(async () => {
+      let modified = false;
+      const nextParts: UIPart[] = JSON.parse(JSON.stringify(this.parts));
 
-    for (const part of nextParts) {
-      if (part.preview?.thumbnail?.startsWith("data:image/")) {
-        try {
-          const ext = part.preview.thumbnail.includes("png") ? "png" : "jpg";
-          const res = await saveUIPartAsset(part.id, `preview.${ext}`, part.preview.thumbnail);
-          if (res) {
-            this.assetUrlCache.set(res.relative_path, part.preview.thumbnail);
-            part.preview.thumbnail = res.relative_path;
-            modified = true;
+      for (const part of nextParts) {
+        if (part.preview?.thumbnail?.startsWith("data:image/")) {
+          const parsedImage = parseSupportedImageDataUrl(part.preview.thumbnail);
+          if (parsedImage) {
+            try {
+              const res = await saveUIPartAsset(part.id, `preview.${parsedImage.ext}`, part.preview.thumbnail);
+              if (res && res.relative_path) {
+                this.assetUrlCache.set(res.relative_path, part.preview.thumbnail);
+                part.preview.thumbnail = res.relative_path;
+                modified = true;
+              }
+            } catch (err) {
+              console.warn(`Failed to migrate legacy asset for part ${part.id}:`, err);
+            }
           }
-        } catch (err) {
-          console.warn(`Failed to migrate legacy asset for part ${part.id}:`, err);
         }
       }
-    }
 
-    if (modified) {
-      await this.commitToStorage(nextParts);
-    }
+      if (modified) {
+        await this.commitToStorage(nextParts);
+      }
+    });
   }
 
   /**
@@ -477,136 +494,150 @@ export class UIPartRepositoryClass {
   ): Promise<UIPart> {
     await this.init();
 
-    const now = new Date().toISOString();
-    const slug =
-      input.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") || "custom-part";
-    const id = input.id || `part-${slug}-${Date.now().toString(36)}`;
+    return this.runExclusive(async () => {
+      const now = new Date().toISOString();
+      const slug =
+        input.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "custom-part";
+      const id = input.id || `part-${slug}-${Date.now().toString(36)}`;
 
-    // Process media assets: If thumbnail is Data URL, write to native assets/<part-id>/
-    let thumbnail = input.preview?.thumbnail;
-    if (thumbnail?.startsWith("data:image/") && isTauri()) {
-      try {
-        const ext = thumbnail.includes("png") ? "png" : "jpg";
-        const assetRes = await saveUIPartAsset(id, `preview.${ext}`, thumbnail);
-        if (assetRes) {
+      // Process media assets: If thumbnail is Data URL, strictly validate MIME and save to native assets/<part-id>/
+      let thumbnail = input.preview?.thumbnail;
+      if (thumbnail?.startsWith("data:image/")) {
+        const parsedImage = parseSupportedImageDataUrl(thumbnail);
+        if (!parsedImage) {
+          throw new Error(
+            "不支持的图片格式。UI Parts V1 仅支持 PNG, JPEG, WebP, GIF 格式，不支持 SVG 或未知媒体格式。"
+          );
+        }
+        if (isTauri()) {
+          const assetRes = await saveUIPartAsset(id, `preview.${parsedImage.ext}`, thumbnail);
+          if (!assetRes || !assetRes.relative_path) {
+            throw new Error(`保存媒体资产到本地磁盘失败 (part: ${id})`);
+          }
           this.assetUrlCache.set(assetRes.relative_path, thumbnail);
           thumbnail = assetRes.relative_path;
         }
-      } catch (err) {
-        console.warn(`Failed to save asset file for ${id}:`, err);
       }
-    }
 
-    const newPart: UIPart = {
-      id,
-      title: input.title,
-      lifecycle: input.lifecycle || "raw",
-      kind: input.kind || "component",
-      summary: input.summary || "",
-      sources: input.sources || [],
-      preview: {
-        ...(input.preview || {}),
-        thumbnail,
-      },
-      tags: input.tags || [],
-      notes: input.notes || "",
-      design: input.design,
-      implementation: input.implementation,
-      evidence: input.evidence,
-      assets: input.assets,
-      exports: input.exports || { package: "available" },
-      relationships: input.relationships,
-      realityTest: input.realityTest,
-      createdAt: now,
-      updatedAt: now,
-    };
+      const newPart: UIPart = {
+        id,
+        title: input.title,
+        lifecycle: input.lifecycle || "raw",
+        kind: input.kind || "component",
+        summary: input.summary || "",
+        sources: input.sources || [],
+        preview: {
+          ...(input.preview || {}),
+          thumbnail,
+        },
+        tags: input.tags || [],
+        notes: input.notes || "",
+        design: input.design,
+        implementation: input.implementation,
+        evidence: input.evidence,
+        assets: input.assets,
+        exports: input.exports || { package: "available" },
+        relationships: input.relationships,
+        realityTest: input.realityTest,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    const validation = UIPartRepositoryClass.validateContract(newPart);
-    if (!validation.valid) {
-      throw new Error(`创建失败: ${validation.error}`);
-    }
+      const validation = UIPartRepositoryClass.validateContract(newPart);
+      if (!validation.valid) {
+        throw new Error(`创建失败: ${validation.error}`);
+      }
 
-    const nextParts = [newPart, ...this.parts];
-    await this.commitToStorage(nextParts);
-    return newPart;
+      const nextParts = [newPart, ...this.parts];
+      await this.commitToStorage(nextParts);
+      return newPart;
+    });
   }
 
   /** Update an existing part */
   public async update(id: string, patch: Partial<UIPart>): Promise<UIPart> {
     await this.init();
 
-    const index = this.parts.findIndex((p) => p.id === id);
-    if (index === -1) {
-      throw new Error(`UIPart with id "${id}" not found.`);
-    }
+    return this.runExclusive(async () => {
+      const index = this.parts.findIndex((p) => p.id === id);
+      if (index === -1) {
+        throw new Error(`UIPart with id "${id}" not found.`);
+      }
 
-    const current = this.parts[index];
+      const current = this.parts[index];
 
-    let thumbnail = patch.preview?.thumbnail ?? current.preview?.thumbnail;
-    if (thumbnail?.startsWith("data:image/") && isTauri()) {
-      try {
-        const ext = thumbnail.includes("png") ? "png" : "jpg";
-        const assetRes = await saveUIPartAsset(id, `preview.${ext}`, thumbnail);
-        if (assetRes) {
-          this.assetUrlCache.set(assetRes.relative_path, thumbnail);
+      let thumbnail = patch.preview?.thumbnail ?? current.preview?.thumbnail;
+      if (patch.preview?.thumbnail && patch.preview.thumbnail.startsWith("data:image/")) {
+        const parsedImage = parseSupportedImageDataUrl(patch.preview.thumbnail);
+        if (!parsedImage) {
+          throw new Error(
+            "不支持的图片格式。UI Parts V1 仅支持 PNG, JPEG, WebP, GIF 格式，不支持 SVG 或未知媒体格式。"
+          );
+        }
+        if (isTauri()) {
+          const assetRes = await saveUIPartAsset(id, `preview.${parsedImage.ext}`, patch.preview.thumbnail);
+          if (!assetRes || !assetRes.relative_path) {
+            throw new Error(`更新媒体资产到本地磁盘失败 (part: ${id})`);
+          }
+          this.assetUrlCache.set(assetRes.relative_path, patch.preview.thumbnail);
           thumbnail = assetRes.relative_path;
         }
-      } catch (err) {
-        console.warn(`Failed to update asset file for ${id}:`, err);
       }
-    }
 
-    const updated: UIPart = {
-      ...current,
-      ...patch,
-      id: current.id, // prevent changing ID
-      preview: {
-        ...(current.preview || {}),
-        ...(patch.preview || {}),
-        thumbnail,
-      },
-      createdAt: current.createdAt,
-      updatedAt: new Date().toISOString(),
-    };
+      const updated: UIPart = {
+        ...current,
+        ...patch,
+        id: current.id, // prevent changing ID
+        preview: {
+          ...(current.preview || {}),
+          ...(patch.preview || {}),
+          thumbnail,
+        },
+        createdAt: current.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
 
-    const validation = UIPartRepositoryClass.validateContract(updated);
-    if (!validation.valid) {
-      throw new Error(`更新失败: ${validation.error}`);
-    }
+      const validation = UIPartRepositoryClass.validateContract(updated);
+      if (!validation.valid) {
+        throw new Error(`更新失败: ${validation.error}`);
+      }
 
-    const nextParts = [...this.parts];
-    nextParts[index] = updated;
+      const nextParts = [...this.parts];
+      nextParts[index] = updated;
 
-    await this.commitToStorage(nextParts);
-    return updated;
+      await this.commitToStorage(nextParts);
+      return updated;
+    });
   }
 
   /** Delete a part by ID */
   public async delete(id: string): Promise<boolean> {
     await this.init();
 
-    const prevLength = this.parts.length;
-    const nextParts = this.parts.filter((p) => p.id !== id);
-    if (nextParts.length === prevLength) {
-      return false;
-    }
-
-    // 1. Commit metadata removal to disk first
-    await this.commitToStorage(nextParts);
-
-    // 2. Remove associated asset files on disk
-    if (isTauri()) {
-      try {
-        await deleteUIPartAssets(id);
-      } catch (err) {
-        console.warn(`[UIParts] Metadata deleted, but failed to clean up assets for part ${id}:`, err);
+    return this.runExclusive(async () => {
+      const prevLength = this.parts.length;
+      const nextParts = this.parts.filter((p) => p.id !== id);
+      if (nextParts.length === prevLength) {
+        return false;
       }
-    }
 
-    return true;
+      // 1. Commit metadata removal to disk first
+      await this.commitToStorage(nextParts);
+
+      // 2. Remove associated asset files on disk
+      if (isTauri()) {
+        try {
+          await deleteUIPartAssets(id);
+        } catch (err) {
+          console.warn(`[UIParts] Metadata deleted, but failed to clean up assets for part ${id}:`, err);
+        }
+      }
+
+      return true;
+    });
   }
 
   /**
@@ -648,52 +679,60 @@ export class UIPartRepositoryClass {
   public async importPackage(pkg: UIPartPackage): Promise<UIPart> {
     await this.init();
 
-    if (!pkg || pkg.format !== "uipart-package.v1" || !pkg.part) {
-      throw new Error("非法包格式: 必须包含 format: 'uipart-package.v1' 与 part 字段");
-    }
-
-    const validation = UIPartRepositoryClass.validateContract(pkg.part);
-    if (!validation.valid) {
-      throw new Error(`导入包校验失败: ${validation.error}`);
-    }
-
-    const incoming: UIPart = JSON.parse(JSON.stringify(pkg.part));
-    let partToInsert: UIPart = incoming;
-
-    const existing = this.parts.find((p) => p.id === incoming.id);
-    if (existing) {
-      const collision = detectImportCollision(existing, incoming);
-      if (collision.action === "ignore") {
-        console.log(`[UIParts] 导入发现完全一致的现有零件 (${incoming.id})，忽略重复导入。`);
-        return collision.part;
+    return this.runExclusive(async () => {
+      if (!pkg || pkg.format !== "uipart-package.v1" || !pkg.part) {
+        throw new Error("非法包格式: 必须包含 format: 'uipart-package.v1' 与 part 字段");
       }
-      partToInsert = collision.part;
-    }
 
-    // If thumbnail has inlined Data URL, write to local asset file in Tauri
-    if (partToInsert.preview?.thumbnail?.startsWith("data:image/") && isTauri()) {
-      try {
-        const ext = partToInsert.preview.thumbnail.includes("png") ? "png" : "jpg";
-        const assetRes = await saveUIPartAsset(partToInsert.id, `preview.${ext}`, partToInsert.preview.thumbnail);
-        if (assetRes) {
+      const validation = UIPartRepositoryClass.validateContract(pkg.part);
+      if (!validation.valid) {
+        throw new Error(`导入包校验失败: ${validation.error}`);
+      }
+
+      const incoming: UIPart = JSON.parse(JSON.stringify(pkg.part));
+      let partToInsert: UIPart = incoming;
+
+      const existing = this.parts.find((p) => p.id === incoming.id);
+      if (existing) {
+        const collision = detectImportCollision(existing, incoming);
+        if (collision.action === "ignore") {
+          console.log(`[UIParts] 导入发现完全一致的现有零件 (${incoming.id})，忽略重复导入。`);
+          return collision.part;
+        }
+        partToInsert = collision.part;
+      }
+
+      // If thumbnail has inlined Data URL, validate and write to local asset file in Tauri
+      if (partToInsert.preview?.thumbnail?.startsWith("data:image/")) {
+        const parsedImage = parseSupportedImageDataUrl(partToInsert.preview.thumbnail);
+        if (!parsedImage) {
+          throw new Error(
+            "导入包包含不支持的图片格式。UI Parts V1 仅支持 PNG, JPEG, WebP, GIF 格式。"
+          );
+        }
+        if (isTauri()) {
+          const assetRes = await saveUIPartAsset(partToInsert.id, `preview.${parsedImage.ext}`, partToInsert.preview.thumbnail);
+          if (!assetRes || !assetRes.relative_path) {
+            throw new Error(`导入包媒体资产落盘失败 (part: ${partToInsert.id})`);
+          }
           this.assetUrlCache.set(assetRes.relative_path, partToInsert.preview.thumbnail);
           partToInsert.preview.thumbnail = assetRes.relative_path;
         }
-      } catch (err) {
-        console.warn(`Failed to extract imported asset to disk for ${partToInsert.id}:`, err);
       }
-    }
 
-    partToInsert.updatedAt = new Date().toISOString();
-    const nextParts = [partToInsert, ...this.parts];
+      partToInsert.updatedAt = new Date().toISOString();
+      const nextParts = [partToInsert, ...this.parts];
 
-    await this.commitToStorage(nextParts);
-    return partToInsert;
+      await this.commitToStorage(nextParts);
+      return partToInsert;
+    });
   }
 
   /** Reset library to initial seeds (for testing or recovery) */
   public async resetToSeeds(): Promise<void> {
-    await this.commitToStorage([...SEED_UI_PARTS]);
+    return this.runExclusive(async () => {
+      await this.commitToStorage([...SEED_UI_PARTS]);
+    });
   }
 }
 

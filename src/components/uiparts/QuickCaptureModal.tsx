@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import type { UIPartKind } from "../../core/uiparts/types";
 import { UIPartRepository } from "../../core/uiparts/repository";
+import {
+  SUPPORTED_IMAGE_ACCEPT,
+  SUPPORTED_IMAGE_MIMES,
+  parseSupportedImageDataUrl,
+} from "../../core/uiparts/persistenceLogic";
 
 interface QuickCaptureModalProps {
   isOpen: boolean;
@@ -83,13 +88,18 @@ export function QuickCaptureModal({
   }, [isOpen]);
 
   const loadFileReader = (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setError("请上传图片格式文件 (PNG, JPG, SVG, WebP)");
+    if (!SUPPORTED_IMAGE_MIMES.includes(file.type as any)) {
+      setError("不支持的图片格式。仅支持 PNG, JPEG, WebP, GIF，暂不支持 SVG 或其他格式。");
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
       if (typeof e.target?.result === "string") {
+        const parsed = parseSupportedImageDataUrl(e.target.result);
+        if (!parsed) {
+          setError("无法识别的图片数据，仅支持 PNG, JPEG, WebP, GIF。");
+          return;
+        }
         setPreviewDataUrl(e.target.result);
         setError(null);
       }
@@ -140,7 +150,7 @@ export function QuickCaptureModal({
         summary: notes.trim().slice(0, 100),
         preview: {
           thumbnail: previewDataUrl,
-          screenshots: previewDataUrl ? [previewDataUrl] : [],
+          // V1: Do not duplicate thumbnail into screenshots array to prevent redundant inline Data URLs
         },
         tags,
         notes: notes.trim(),
@@ -221,7 +231,7 @@ export function QuickCaptureModal({
           {/* Image Drag & Drop / Paste */}
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1">
-              视觉材料 (截图 / 示意图 / 粘贴图片)
+              视觉材料 (PNG / JPEG / WebP / GIF，粘贴或拖拽)
             </label>
             <div
               onDragOver={(e) => {
@@ -242,7 +252,7 @@ export function QuickCaptureModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={SUPPORTED_IMAGE_ACCEPT}
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
                     loadFileReader(e.target.files[0]);

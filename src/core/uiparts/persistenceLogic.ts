@@ -40,6 +40,56 @@ export const VALID_LIFECYCLES: UIPartLifecycle[] = [
   "validated",
 ];
 
+export const SUPPORTED_IMAGE_MIMES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+export type SupportedImageMime = (typeof SUPPORTED_IMAGE_MIMES)[number];
+
+export const SUPPORTED_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
+
+export interface SupportedImageInfo {
+  mime: SupportedImageMime;
+  ext: "png" | "jpg" | "webp" | "gif";
+}
+
+/**
+ * Validates and parses a Data URL against supported UI Part image formats.
+ *
+ * Formally supported:
+ * - image/png  -> png
+ * - image/jpeg -> jpg (also matches image/jpg)
+ * - image/webp -> webp
+ * - image/gif  -> gif
+ *
+ * Explicitly rejected:
+ * - SVG (image/svg+xml or raw <svg) - not supported in V1 captured media
+ * - Unknown image types (image/bmp, image/tiff, etc.)
+ * - Malformed data URLs
+ */
+export function parseSupportedImageDataUrl(dataUrl?: string | null): SupportedImageInfo | null {
+  if (!dataUrl || typeof dataUrl !== "string") return null;
+  const match = dataUrl.match(/^data:([a-zA-Z0-9+.-]+\/[a-zA-Z0-9+.-]+);base64,/i);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  switch (mime) {
+    case "image/png":
+      return { mime: "image/png", ext: "png" };
+    case "image/jpeg":
+    case "image/jpg":
+      return { mime: "image/jpeg", ext: "jpg" };
+    case "image/webp":
+      return { mime: "image/webp", ext: "webp" };
+    case "image/gif":
+      return { mime: "image/gif", ext: "gif" };
+    default:
+      return null;
+  }
+}
+
 /**
  * Validates that an object satisfies minimum contract safety.
  */

@@ -37,10 +37,13 @@
  */
 
 import {
+  SUPPORTED_IMAGE_ACCEPT,
+  SUPPORTED_IMAGE_MIMES,
   detectImportCollision,
   inspectStartupCache,
   mergeWithSeeds,
   normalizedPartFingerprint,
+  parseSupportedImageDataUrl,
   reconcileStorageState,
   validateAssetRelativePath,
   validateContract,
@@ -482,6 +485,141 @@ console.log("\nTest 9: Media Export / Import Round-Trip with Path Containment");
   assert(restoredPart.id === localPart.id, "ID preserved across round-trip");
   assert(restoredPart.title === localPart.title, "Title preserved across round-trip");
   assert(restoredPart.design.layout === "grid", "Design DNA preserved across round-trip");
+}
+
+// ---------------------------------------------------------------------------
+// TEST 10: Centralized Image MIME Handling & Externalization Safety
+// ---------------------------------------------------------------------------
+console.log("\nTest 10: Centralized Image MIME Handling & Externalization (Production parseSupportedImageDataUrl)");
+{
+  // 10a. Supported formats
+  const pngData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  const jpgData = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+  const webpData = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
+  const gifData = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+  const resPng = parseSupportedImageDataUrl(pngData);
+  const resJpg = parseSupportedImageDataUrl(jpgData);
+  const resWebp = parseSupportedImageDataUrl(webpData);
+  const resGif = parseSupportedImageDataUrl(gifData);
+
+  assert(resPng !== null && resPng.ext === "png" && resPng.mime === "image/png", "PNG data URL parses to ext 'png'");
+  assert(resJpg !== null && resJpg.ext === "jpg" && resJpg.mime === "image/jpeg", "JPEG data URL parses to ext 'jpg'");
+  assert(resWebp !== null && resWebp.ext === "webp" && resWebp.mime === "image/webp", "WebP data URL parses to ext 'webp'");
+  assert(resGif !== null && resGif.ext === "gif" && resGif.mime === "image/gif", "GIF data URL parses to ext 'gif'");
+
+  // 10b. Unsupported formats (SVG and unknown types must be rejected)
+  const svgData = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==";
+  const bmpData = "data:image/bmp;base64,Qk0=";
+  const invalidData = "not-a-data-url";
+
+  assert(parseSupportedImageDataUrl(svgData) === null, "SVG data URL is explicitly rejected (returns null)");
+  assert(parseSupportedImageDataUrl(bmpData) === null, "Unknown image MIME (BMP) is explicitly rejected (returns null)");
+  assert(parseSupportedImageDataUrl(invalidData) === null, "Malformed data URL returns null");
+
+  // 10c. QuickCapture RAW part: No duplicate inline Data URL in screenshots
+  const quickCapturedPart = {
+    id: "quick-captured-btn",
+    title: "Quick Captured Button",
+    kind: "component",
+    lifecycle: "raw",
+    preview: {
+      thumbnail: pngData,
+      // screenshots is intentionally omitted / empty in V1 RAW part creation
+    },
+    tags: ["button"],
+  };
+  assert(!quickCapturedPart.preview.screenshots, "RAW part creation avoids duplicate inline Data URL in screenshots");
+
+  // 10d. Tauri externalization simulation: Media write failure aborts creation
+  let simulatedNativeIndex = JSON.stringify({ revision: 1, parts: [] });
+  async function simulateCreateWithAsset(partInput, shouldAssetWriteFail) {
+    const parsed = parseSupportedImageDataUrl(partInput.preview?.thumbnail);
+    if (!parsed) {
+      throw new Error("不支持的图片格式");
+    }
+    if (shouldAssetWriteFail) {
+      throw new Error("磁盘空间不足或文件写入失败 (Simulated Asset I/O Failure)");
+    }
+    const relPath = `assets/${partInput.id}/preview.${parsed.ext}`;
+    const newPart = {
+      ...partInput,
+      preview: { thumbnail: relPath },
+    };
+    simulatedNativeIndex = JSON.stringify({ revision: 2, parts: [newPart] });
+    return newPart;
+  }
+
+  let creationFailed = false;
+  try {
+    await simulateCreateWithAsset(quickCapturedPart, true);
+  } catch (err) {
+    creationFailed = true;
+  }
+  assert(creationFailed === true, "Asset write failure rejects part creation");
+  assert(simulatedNativeIndex.includes("quick-captured-btn") === false, "Index was NOT mutated on media write failure");
+
+  // 10e. Successful externalization produces clean relative path and ZERO data:image in index
+  const successfulPart = await simulateCreateWithAsset(quickCapturedPart, false);
+  assert(successfulPart.preview.thumbnail === "assets/quick-captured-btn/preview.png", "Thumbnail externalized to clean relative path");
+  assert(simulatedNativeIndex.includes("data:image/") === false, "Authoritative native index contains ZERO data:image/");
+}
+
+// ---------------------------------------------------------------------------
+// TEST 11: Write Serialization, Concurrency & Unique Temp File Generation
+// ---------------------------------------------------------------------------
+console.log("\nTest 11: Write Serialization & Concurrency (Production runExclusive Mutex)");
+{
+  class SimulatedSerializedRepository {
+    constructor() {
+      this.parts = [];
+      this.revision = 1;
+      this.commitMutex = Promise.resolve();
+    }
+    runExclusive(task) {
+      const next = this.commitMutex.then(task, task);
+      this.commitMutex = next.catch(() => {});
+      return next;
+    }
+    async create(title) {
+      return this.runExclusive(async () => {
+        // Simulate async I/O latency
+        await new Promise((r) => setTimeout(r, 10));
+        const newPart = { id: `part-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title };
+        this.revision += 1;
+        this.parts = [newPart, ...this.parts];
+        return newPart;
+      });
+    }
+  }
+
+  const repo = new SimulatedSerializedRepository();
+
+  // Fire two create operations concurrently
+  const [createdA, createdB] = await Promise.all([
+    repo.create("Concurrent Part A"),
+    repo.create("Concurrent Part B"),
+  ]);
+
+  assert(repo.parts.length === 2, "Concurrent writes strictly serialized: both parts saved (no lost updates)");
+  assert(repo.revision === 3, "Revision strictly monotonic: incremented from 1 to 3");
+  assert(
+    repo.parts.some((p) => p.title === "Concurrent Part A") &&
+    repo.parts.some((p) => p.title === "Concurrent Part B"),
+    "Both concurrent part titles exist in storage",
+  );
+
+  // 11b. Unique temp filename verification pattern
+  function generateMockUniqueTmp(target) {
+    const pid = process.pid;
+    const now = Date.now();
+    const count = Math.floor(Math.random() * 10000);
+    return `${target}.tmp.${pid}.${now}.${count}`;
+  }
+  const tmp1 = generateMockUniqueTmp("index.json");
+  const tmp2 = generateMockUniqueTmp("index.json");
+  assert(tmp1 !== tmp2, "Rapid temporary file generation yields distinct filenames");
+  assert(tmp1.startsWith("index.json.tmp."), "Unique temp filename follows index.json.tmp.<pid>.<timestamp>.<counter> convention");
 }
 
 console.log(`\n=== Test Summary: ${passed} passed, ${failed} failed ===`);

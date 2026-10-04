@@ -1139,13 +1139,32 @@ pub fn resolve_uipart_asset_dir(base_dir: &std::path::Path, part_id: &str) -> Re
     Ok(target)
 }
 
+static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Generates a unique temporary file path within the same directory as target:
+/// <file_name>.tmp.<pid>.<timestamp_nanos>.<counter>
+pub fn generate_unique_tmp_path(target: &std::path::Path) -> std::path::PathBuf {
+    let pid = std::process::id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let count = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let tmp_name = format!("{file_name}.tmp.{pid}.{now}.{count}");
+    target.with_file_name(tmp_name)
+}
+
 #[tauri::command]
 pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UIPartsSaveResult> {
     let dir = get_uiparts_base_dir(&app)?;
     let target = dir.join("index.json");
-    let tmp = dir.join("index.json.tmp");
+    let tmp = generate_unique_tmp_path(&target);
 
-    {
+    let write_res = (|| -> Result<(), AppError> {
         use std::io::Write;
         let mut f = std::fs::File::create(&tmp)
             .map_err(|e| AppError::Internal(format!("创建临时文件失败: {e}")))?;
@@ -1153,10 +1172,18 @@ pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UI
             .map_err(|e| AppError::Internal(format!("写入临时文件失败: {e}")))?;
         f.sync_all()
             .map_err(|e| AppError::Internal(format!("同步临时文件失败: {e}")))?;
+        Ok(())
+    })();
+
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
 
-    atomic_replace_file(&tmp, &target)
-        .map_err(|e| AppError::Internal(format!("安全原子替换 index.json 失败: {e}")))?;
+    if let Err(e) = atomic_replace_file(&tmp, &target) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(AppError::Internal(format!("安全原子替换 index.json 失败: {e}")));
+    }
 
     Ok(UIPartsSaveResult {
         success: true,
@@ -1182,7 +1209,7 @@ pub fn save_uipart_asset(
     std::fs::create_dir_all(parent_dir)
         .map_err(|e| AppError::Internal(format!("创建零件资源目录失败: {e}")))?;
 
-    let tmp_file = parent_dir.join(format!("{file_name}.tmp"));
+    let tmp_file = generate_unique_tmp_path(&target_file);
 
     let (raw_b64, detected_ext) = if let Some(comma_pos) = base64_data.find(',') {
         let prefix = &base64_data[..comma_pos];
@@ -1218,7 +1245,7 @@ pub fn save_uipart_asset(
         return Err(AppError::Internal("媒体资源大小超出最大限制 (15MB)".into()));
     }
 
-    {
+    let write_res = (|| -> Result<(), AppError> {
         use std::io::Write;
         let mut f = std::fs::File::create(&tmp_file)
             .map_err(|e| AppError::Internal(format!("创建资源临时文件失败: {e}")))?;
@@ -1226,10 +1253,18 @@ pub fn save_uipart_asset(
             .map_err(|e| AppError::Internal(format!("写入资源临时文件失败: {e}")))?;
         f.sync_all()
             .map_err(|e| AppError::Internal(format!("同步资源临时文件失败: {e}")))?;
+        Ok(())
+    })();
+
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp_file);
+        return Err(e);
     }
 
-    atomic_replace_file(&tmp_file, &target_file)
-        .map_err(|e| AppError::Internal(format!("安全原子保存资源文件失败: {e}")))?;
+    if let Err(e) = atomic_replace_file(&tmp_file, &target_file) {
+        let _ = std::fs::remove_file(&tmp_file);
+        return Err(AppError::Internal(format!("安全原子保存资源文件失败: {e}")));
+    }
 
     let rel = format!("assets/{part_id}/{file_name}");
     Ok(UIPartAssetSaveResult {
@@ -3000,5 +3035,18 @@ mod tests {
         assert!(resolve_uipart_asset_dir(&base, "../evil").is_err());
         assert!(resolve_uipart_asset_dir(&base, "/evil").is_err());
         assert!(resolve_uipart_asset_dir(&base, "evil/sub").is_err());
+    }
+
+    #[test]
+    fn unique_tmp_path_generates_distinct_monotonic_filenames() {
+        let target = std::path::PathBuf::from(r"C:\AppData\Local\SetupCenter\uiparts\index.json");
+        let tmp1 = generate_unique_tmp_path(&target);
+        let tmp2 = generate_unique_tmp_path(&target);
+
+        assert_ne!(tmp1, tmp2);
+        assert!(tmp1.to_string_lossy().contains("index.json.tmp."));
+        assert!(tmp2.to_string_lossy().contains("index.json.tmp."));
+        assert_eq!(tmp1.parent(), target.parent());
+        assert_eq!(tmp2.parent(), target.parent());
     }
 }
