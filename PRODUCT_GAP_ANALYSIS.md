@@ -99,11 +99,11 @@ Setup Center Runtime
 | **K** | **Agent Spec export**<br>(AI 编码助手规范导出) | <mark>**PARTIAL**</mark> | `closure_pass_design_lab:src/components/ExperiencePreviewWorkspace.tsx` | 在 `closure_pass_design_lab` 中实现了复制 Agent Prompt 到剪贴板；在 `main` 和当前工作树中完全缺失；未形成结构化资产包。 |
 | **L** | **Tokens export**<br>(标准化设计令牌导出) | <mark>**MISSING**</mark> | `src/components/TokenTweaker.tsx` (`buildExport`) | 仅支持内部 private 格式的 `ExperienceExport` JSON，未支持行业标准 W3C Design Tokens、Tailwind 配置片段或纯 CSS 变量集导出。 |
 | **M** | **Portable package**<br>(便携式独立预设包导出) | <mark>**MISSING**</mark> | 无任何归档/打包模块 | 无法生成包含清单、CSS、规范、令牌、素材与 README 的独立 Zip / 目录归档包。 |
-| **N** | **Vault as content source of truth**<br>(Vault 作为内容单一真理源) | <mark>**CONFLICTING**</mark> | `src/styles/` (20-30 套 built-in)<br>`src/core/vault/sync.ts`<br>`src/styles/registry.ts` | **双真理源冲突**。App 代码库内硬编码维护了一整套 Style 代码；远端 Vault 又发布一套；同步时发生字段截断与能力降级覆盖，两端持续漂移。 |
+| **N** | **Vault as content source of truth**<br>(Vault 作为内容单一真理源) | <mark>**CLOSED (Phase A)**</mark> | `src/styles/registry.ts`<br>`src/core/vault/sync.ts` | **边界正式厘清**：明确 App 仓只保留既有 built-in 作为后备，Vault（v2026.10.04.2）作为 10 套新设计系统预设的正式 Source of Truth。消灭分支双写。 |
 | **O** | **Personal / Distribution profiles**<br>(个人版 / 分发版产品画像) | <mark>**MISSING**</mark> | `src/lib/types.ts`<br>`src/screens/Dashboard.tsx` | 代码中 `Profile` 指的是环境安装画像 (`student-python` 等)，而非产品形态画像。没有 Personal 与 Distribution 的双形态开关。 |
 | **P** | **One-codebase multi-profile**<br>(一码双态架构) | <mark>**MISSING**</mark> | `src/App.tsx`<br>`src/screens/Dashboard.tsx` | 无法通过编译配置或轻量环境变量在同构代码中无侵入切换工作台与分发版功能集合。 |
-| **Q** | **Stable content release gate**<br>(稳定内容发布门禁) | <mark>**CONFLICTING**</mark> | `src/core/vault/sync.ts` (L145-L193)<br>`src/core/vault/release.ts` | 门禁存在**隐蔽穿透漏洞**：当 checkpoint 请求失败或 404 时，代码静默降级到未经审计的 `raw main` 分支拉取数据。 |
-| **R** | **App release**<br>(客户端本体发布机制) | <mark>**PARTIAL**</mark> | `src/core/vault/release.ts` (L177)<br>`src/components/TitleBar.tsx` | TitleBar 拥有检查更新徽标与弹窗，但 API 请求硬编码了旧用户名 `arukas0623-ai`，导致检测常态化失败，且无本地静默自更新。 |
+| **Q** | **Stable content release gate**<br>(稳定内容发布门禁) | <mark>**CLOSED (Phase A)**</mark> | `src/core/vault/sync.ts`<br>`src/core/vault/release.ts` | **硬门禁建立**：彻底剔除降级到 raw main 的隐式漏洞。严格按照「有效 checkpoint → 校验 pinned commit/tag → fetch」执行；失败时严格 fallback 至 LKG 或 Built-in，绝不拉取未经审计的 raw main。 |
+| **R** | **App release**<br>(客户端本体发布机制) | <mark>**CLOSED (Phase A)**</mark> | `src/core/vault/release.ts`<br>`src/lib/buildIdentity.ts`<br>`src/modules/system_ops.rs` | **已修复**：Canonical URL 全部统一迁移至 `Arukasaeled/setup-center`；引入 `open_url` Rust IPC 修复原生外链；建立 Build Identity (v0.2.1) 与 UpdateModal 真实信息审计。 |
 | **S** | **UI Parts ↔ Presets relationship**<br>(零部件与预设双向组装/拆解) | <mark>**MISSING**</mark> | 缺乏 UI Parts 实体 | 既然没有 UI Parts 实体，零部件组装为系统、系统拆解为零部件的双向流动自然完全不存在。 |
 
 ---
@@ -252,6 +252,17 @@ Setup Center Runtime
 | **Vault 存储** | 浏览器 `localStorage` (端口隔离于 1420) | WebView2 本地 AppData 存储池 | WebView2 独立沙箱数据目录（与浏览器完全不互通） |
 | **版本仲裁** | `isTauri() === false`，版本固定为 fallback "0.2.0" | 读取 `Cargo.toml` 动态版本 | 读取嵌入二进制的正式版本号 |
 | **系统能力** | Rust IPC 全部 Mock / 报错，无真实检测与安装能力 | 具备完整 Rust 原生命令调用 | 具备完整 Rust 原生命令调用与管理员提权 |
+
+### 3.8 Phase A 闭环成果（Runtime & Build Baseline Closure）
+
+在 Phase A 执行中，以下历史漂移与架构缺陷已完成硬闭环：
+- **Git / Build Drift [CLOSED]**：主线统一回归 `main`，发布 `v0.2.1`。localhost 与 Tauri EXE 统一消费同一版本与同一 Style Registry。
+- **App / Vault Source of Truth [CLOSED]**：App 仓主线不再手工同步 Vault 预设。Vault `v2026.10.04.2` 作为 14 套风格（含 10 套新发布）的唯一内容源。
+- **Strict Release Gate [CLOSED]**：彻底移除降级 raw main 逻辑；严格执行 `Checkpoint -> Pinned Snapshot -> LKG -> Built-in`。
+- **Registry Reactivity [CLOSED]**：引入 `StyleRegistryManager`（subscribe/notify/getVersion）并接入 Zustand，Vault 同步后画廊零延迟刷新。
+- **Remote Style Startup Persistence [CLOSED]**：冷启动时在 `loadSavedStyle()` 前同步完成 Vault LKG 缓存水合，彻底杜绝断网重启回退到默认。
+- **Canonical Repo URL [CLOSED]**：全面修正硬编码 URL 为 `Arukasaeled/setup-center` 与 `Arukasaeled/setup-center-vault`，兼容迁移旧用户 localStorage。
+- **Build Identity & External IPC [CLOSED]**：建立轻量级 Build Identity 检视模块，实现 Rust 原生 `open_url` 命令，修复所有外部链接。
 
 ---
 
