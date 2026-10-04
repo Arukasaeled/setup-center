@@ -1,0 +1,80 @@
+import type { SetupStyle } from "../types";
+
+export const musicalStaffStyle: SetupStyle = {
+  id: "musical-staff",
+  name: "乐谱谱表",
+  version: "1.0.0",
+  subtitle: "Score Staff & Rhythm Cadence",
+  description:
+    "五线谱表通道与乐章节奏编排。水平贯穿谱表标线、小节线段落分区、声部音符指示与节拍间距，以严谨工整的乐谱编辑语言组织多维系统信息。",
+  inspiration: "音乐总谱记谱法（Score Notation）、管弦乐多声部编排、小节线（Measure Bar Lines）与节拍律动",
+  author: "Setup Center Design Lab",
+  tags: ["乐谱谱表", "五线谱", "小节线", "声部编排", "节拍律动", "总谱标注"],
+  palette: {
+    baseBg: "#101114",
+    surface: "#181a22",
+    cardBorder: "#2a2d3b",
+    accent: "#eab308",
+    accentSecondary: "#f43f5e",
+    text: "#f8fafc",
+  },
+  features: [
+    "水平微细五线谱表贯穿辅助线（Staff Rules），建立多声部信息通道",
+    "竖向双小节线（Measure Bars）界定段落与卡片节奏单元",
+    "椭圆符头式状态指示点（Notehead Dots）与声部调号标签",
+    "详情弹层呈现指挥总谱注解（Conductor's Score Annotation）排版",
+  ],
+  tokens: {
+    borderWidth: "1px",
+    hardShadow: "none",
+    borderRadius: "2px",
+    accentHue: "#eab308",
+  },
+  designPrinciples: [
+    "Polyphonic Registers — 将不同类别的内容视为管弦乐的不同声部（Soprano / Tenor / Bass），各按其位",
+    "Measure Cadence — 严格的节拍间距与小节线分割，让密集的数据展示具备清晰的呼吸与律动感",
+    "Elliptical Notehead — 去除泛滥的几何圆形，采用微带倾角的符头形态作为状态与标记符号",
+    "Typographic Harmony — 现代古典衬线标题与精炼等宽节拍标注协同，庄重典雅且易于阅读",
+  ],
+  experience: {
+    tier: "experience",
+    shell: "sidebar",
+    navigation: "sidebar",
+    detail: "modal",
+    card: "editorial-block",
+    composition: "ledger",
+    density: "compact",
+    motion: "reduced",
+    typography: {
+      headingFamily: '"Baskerville", "Georgia", "Times New Roman", serif',
+      bodyFamily: 'system-ui, -apple-system, sans-serif',
+      monoFamily: '"JetBrains Mono", Consolas, monospace',
+      headingScale: 1.05,
+      bodyScale: 0.95,
+      headingWeight: 600,
+      headingTracking: "0.02em",
+    },
+    ornament: {
+      rule: "double",
+      corner: "square",
+      decoration: "pinstripe",
+      chrome: "status",
+    },
+    tweakable: [
+      "borderWidth",
+      "shadow",
+      "accent",
+      "accentSecondary",
+      "surface",
+      "text",
+      "density",
+      "motion",
+    ],
+    specimenNote: "五线谱表标线，双小节线分割与符头节奏排版",
+  },
+  implemented: true,
+  license: "MIT",
+  updatedAt: "2026-10-04",
+};
+
+export default musicalStaffStyle;
