@@ -1,0 +1,62 @@
+{
+  "id": "persistent-statusline",
+  "name": "Persistent Statusline",
+  "kind": "status",
+  "summary": "常驻于操作区底部的低侵入式状态腰带：以彩色锚点+仪表盘为视觉核心，搭载自收敛的同构事件折叠、条件显隐活动行与绝对时间过期指示。",
+  "source": {
+    "title": "jarrodwatts/claude-hud (MIT)",
+    "url": "https://github.com/jarrodwatts/claude-hud",
+    "type": "repo-readme"
+  },
+  "portablePrinciple": {
+    "rule": "When a persistent status belt repaints discretely on system events rather than continuous frame polling, render time-sensitive limits as absolute clock timestamps rather than relative countdowns because wall-clock truth survives stale renders.",
+    "zh": "当常驻状态带依靠系统事件离散触发重绘而非连续逐帧轮询时，将时效性限制渲染为绝对钟表时刻（如 expires 21:40）而非相对倒计时（如 3m 24s），因为即使界面长期停止刷新，绝对时间在物理世界中依然保真。"
+  },
+  "essentialMechanisms": [
+    "常驻输入/工作区边缘，保持低视觉侵入性，不遮挡主内容视窗",
+    "彩色视觉锚点（徽章 + 阈值色彩仪表条）统领整体扫读重心",
+    "阈值状态色转换：正常(绿) → 警告(黄) → 临界(红)",
+    "同类事件智能折叠计数：如连续相同文件操作或编译任务折叠为 Name ×N",
+    "活动行动态存在性：仅在存在活跃任务/工具时才渲染对应辅助行，行数随负载动态收敛",
+    "绝对时间过期原则：显示到期时钟时刻，规避渲染陈旧时的倒计时欺骗",
+    "双模式支持：Compact 单行紧凑模式与 Expanded 多行展开模式"
+  ],
+  "optionalCharacteristics": [
+    "Claude / Anthropic 品牌徽章与 CLAUDE.md 规则计数",
+    "终端等宽字符 ASCII 进度块（如 █ ░）还是现代 Web CSS 渐变槽",
+    "Git 分支与仓库状态展示",
+    "特定数值阈值（如 80%、85%）"
+  ],
+  "useCases": [
+    {
+      "scenario": "AI Agent Session Console (智能体执行上下文监视带)",
+      "fit": "high",
+      "notes": "上下文占用、活动工具、子智能体与待办完成度一览无余"
+    },
+    {
+      "scenario": "Long-running Build & Test Pipeline (构建与测试流水线监控)",
+      "fit": "high",
+      "notes": "资源消耗、编译模块、运行测试与产物生命周期"
+    },
+    {
+      "scenario": "Dev Server / Tunnel Monitor",
+      "fit": "medium"
+    },
+    {
+      "scenario": "Marketing Landing Page",
+      "fit": "low"
+    }
+  ],
+  "implementation": {
+    "difficulty": "low",
+    "preferredTech": "Semantic Flex/Grid + CSS Gradient Meter + Tabular Monospace Typography"
+  },
+  "evidence": {
+    "structure": "verified",
+    "behavior": "verified",
+    "visual": "observed",
+    "sourceCode": "unread"
+  },
+  "implementationBasis": "README 与 CLAUDE.md 完整记载了事件离散重绘机制、绝对到期时间设计哲学、同类事件合并与紧凑/展开模式规范，并比对官方真实运行预览图。",
+  "exportable": true
+}
