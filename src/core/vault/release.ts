@@ -1,13 +1,35 @@
 /**
- * Setup Center — Release-Gated Update Engine
+ * Setup Center — Vault Release Engine
  *
- * Implements two distinct update channels:
- * 1. App Release: Binary, runtime, installer, and frontend shell updates via GitHub Releases.
- * 2. Vault Release: Curated, staged content batches (Styles, Resources, Templates, Patterns)
- *    gated by formal release checkpoints rather than raw commits to main.
+ * One update channel, and only one: the **Vault content release**. Setup Center
+ * content (Style CSS, open-source development resources, scaffolding templates
+ * and design patterns) is curated in the Setup Vault workspace and published as
+ * a formal release checkpoint, so raw work-in-progress commits to `main` never
+ * reach a customer's machine.
+ *
+ * ## What was removed here, and why the removal is not cosmetic
+ *
+ * This module used to run a *second*, independent channel: an "App Release"
+ * check that polled `api.github.com` for the newest `setup-center` release and
+ * compared it against the running build. That check is gone — every part of it:
+ * the `AppReleaseInfo` interface, the `status.app` member, the
+ * `hydrateRuntimeVersion()` call into the Tauri `app_canonical_version` command,
+ * and the `fetch()` to the GitHub Releases API itself.
+ *
+ * It was removed rather than hidden because the installer is distributed by
+ * hand (a网盘 link) and the app must not claim an authority over its own version
+ * that it does not have. In practice the check produced one observable outcome
+ * on a customer's machine: `检测失败 / 网络受限` — a red error about a release
+ * channel the customer was told to ignore anyway. An update indicator that is
+ * wrong more often than it is right is worse than no indicator, and this
+ * product's whole promise is that its status readouts are true.
+ *
+ * So: Setup Center no longer checks its own program version, and there is no
+ * longer any code here that could. The binary is replaced by the author
+ * re-distributing a new installer. The Vault channel below is unaffected by that
+ * decision — it is content, it is versioned separately, and it keeps working.
  */
 
-import { appCanonicalVersion, isTauri } from "../../lib/ipc";
 import { getCachedContentVersion } from "./cache";
 
 export type UpdateCheckStatus =
@@ -16,17 +38,6 @@ export type UpdateCheckStatus =
   | "up-to-date"
   | "update-available"
   | "error";
-
-export interface AppReleaseInfo {
-  currentVersion: string;
-  runtimeSource?: string;
-  latestVersion?: string;
-  releaseUrl?: string;
-  publishedAt?: string;
-  notes?: string;
-  status: UpdateCheckStatus;
-  hasUpdate: boolean;
-}
 
 export interface VaultReleaseInfo {
   currentVersion: string;
@@ -39,26 +50,27 @@ export interface VaultReleaseInfo {
 }
 
 export interface ReleaseStatusSnapshot {
-  app: AppReleaseInfo;
   vault: VaultReleaseInfo;
   lastCheckedAt?: string;
   isChecking: boolean;
   error?: string;
 }
 
-const STORAGE_KEY = "setup-center.release-status.v2";
+const STORAGE_KEY = "setup-center.release-status.v3";
+
+/**
+ * The storage key the App-Release era wrote to.
+ *
+ * Deleted on construction rather than ignored. Leaving it behind would leave a
+ * persisted `{ app: {...} }` blob in every existing customer's `localStorage`
+ * that nothing reads and nothing cleans — a stale record of a channel that no
+ * longer exists, which is exactly the kind of leftover that gets re-wired into a
+ * later feature by accident.
+ */
+const LEGACY_STORAGE_KEY = "setup-center.release-status.v2";
 
 class ReleaseManager {
   private status: ReleaseStatusSnapshot = {
-    app: {
-      currentVersion: isTauri() ? "" : "dev-preview",
-      runtimeSource: isTauri()
-        ? "Tauri Desktop Runtime (待检测)"
-        : "Browser Preview (无原生环境)",
-      status: "unchecked",
-      hasUpdate: false,
-      releaseUrl: "https://github.com/Arukasaeled/setup-center/releases",
-    },
     vault: {
       currentVersion: getCachedContentVersion() || "builtin",
       status: "unchecked",
@@ -70,7 +82,17 @@ class ReleaseManager {
   private listeners: Set<(status: ReleaseStatusSnapshot) => void> = new Set();
 
   constructor() {
+    this.purgeLegacyAppState();
     this.hydrateFromStorage();
+  }
+
+  private purgeLegacyAppState(): void {
+    try {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      // A storage failure must never break startup; the write path is
+      // best-effort for the same reason.
+    }
   }
 
   public getSnapshot(): ReleaseStatusSnapshot {
@@ -92,49 +114,20 @@ class ReleaseManager {
     }
   }
 
-  public async hydrateRuntimeVersion(): Promise<string> {
-    try {
-      if (isTauri()) {
-        const ver = await appCanonicalVersion();
-        if (ver && ver.trim()) {
-          const clean = ver.trim();
-          this.status.app.currentVersion = clean;
-          this.status.app.runtimeSource = "Tauri 桌面运行时 (Cargo manifest)";
-          if (this.status.app.latestVersion) {
-            const cleanLatest = this.status.app.latestVersion.replace(/^v/, "");
-            this.status.app.hasUpdate = this.compareVersions(cleanLatest, clean) > 0;
-          }
-          this.notify();
-          this.saveToStorage();
-          return clean;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return this.status.app.currentVersion;
-  }
-
   private hydrateFromStorage(): void {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const curApp = this.status.app.currentVersion;
         const curVault = this.status.vault.currentVersion;
         this.status = {
           ...this.status,
-          ...parsed,
-          app: {
-            ...this.status.app,
-            ...parsed.app,
-            currentVersion: curApp,
-            status: parsed.app?.status || "unchecked",
-            hasUpdate: Boolean(parsed.app?.hasUpdate),
-          },
           vault: {
             ...this.status.vault,
             ...parsed.vault,
+            // The *installed* content version is local truth and always wins
+            // over whatever was cached last session — a cache that could
+            // override it would report a version the machine does not have.
             currentVersion: curVault,
             status: parsed.vault?.status || "unchecked",
             hasUpdate: Boolean(parsed.vault?.hasUpdate),
@@ -167,25 +160,26 @@ class ReleaseManager {
   }
 
   /**
-   * Check both App and Vault updates in parallel
+   * Compares the installed Vault content against the published checkpoint.
+   *
+   * Vault-only by construction. There is deliberately no "also check the app"
+   * step to add back later: the signature of this method is the guarantee.
    */
   public async checkForUpdates(): Promise<ReleaseStatusSnapshot> {
     this.status.isChecking = true;
     this.status.error = undefined;
     this.notify();
 
-    await Promise.allSettled([
-      this.checkAppRelease(),
-      this.checkVaultRelease(),
-    ]);
+    await this.checkVaultRelease();
 
     this.status.isChecking = false;
     this.status.lastCheckedAt = new Date().toISOString();
 
-    if (
-      this.status.app.status === "error" &&
-      this.status.vault.status === "error"
-    ) {
+    // There is now exactly one channel, so "the channel failed" is its error
+    // rather than a both-of-two condition. The old wording ("无法连接至发布
+    // 检测服务") is kept because it is still the accurate sentence for a failed
+    // content checkpoint fetch.
+    if (this.status.vault.status === "error") {
       this.status.error = "无法连接至发布检测服务，请检查网络";
     }
 
@@ -195,56 +189,11 @@ class ReleaseManager {
   }
 
   /**
-   * Check GitHub Releases for the Setup Center App
-   */
-  public async checkAppRelease(): Promise<AppReleaseInfo> {
-    const cur = this.status.app.currentVersion;
-    this.status.app.status = "checking";
-    this.notify();
-
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch("https://api.github.com/repos/Arukasaeled/setup-center/releases/latest", {
-        signal: controller.signal,
-        headers: { Accept: "application/vnd.github.v3+json" },
-      });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        const tag = (data.tag_name || "").replace(/^v/, "");
-        const hasUpdate = Boolean(cur && cur !== "dev-preview" && this.compareVersions(tag, cur) > 0);
-        this.status.app = {
-          ...this.status.app,
-          currentVersion: cur,
-          latestVersion: data.tag_name || `v${tag}`,
-          releaseUrl: data.html_url || "https://github.com/Arukasaeled/setup-center/releases",
-          publishedAt: data.published_at,
-          notes: data.body,
-          status: hasUpdate ? "update-available" : "up-to-date",
-          hasUpdate,
-        };
-      } else {
-        // Fallback info if API rate limited or server error
-        this.status.app = {
-          ...this.status.app,
-          status: "error",
-          hasUpdate: false,
-        };
-      }
-    } catch {
-      this.status.app = {
-        ...this.status.app,
-        status: "error",
-        hasUpdate: false,
-      };
-    }
-    return this.status.app;
-  }
-
-  /**
-   * Check release checkpoint in Setup Vault
+   * Reads the Vault release checkpoint.
+   *
+   * A plain file read of a curated JSON document on the content repo — no API,
+   * no token, no rate limit. See the module doc for why the App channel that
+   * used to sit beside this is gone.
    */
   public async checkVaultRelease(): Promise<VaultReleaseInfo> {
     const cur = this.status.vault.currentVersion;

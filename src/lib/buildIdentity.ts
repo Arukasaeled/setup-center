@@ -30,7 +30,7 @@ export function getBuildIdentity(): BuildIdentity {
   const vaultContentVersion = getCachedContentVersion() || "builtin";
 
   return {
-    appVersion: "0.2.2",
+    appVersion: "0.2.3",
     runtime,
     commitSha,
     buildTime,

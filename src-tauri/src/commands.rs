@@ -2408,11 +2408,6 @@ pub fn open_in_editor(editor: String, path: String, executable_path: Option<Stri
     system_ops::launch_in_editor(&editor, &path, executable_path.as_deref())
 }
 
-/// Returns the canonical app version from Cargo manifest.
-#[tauri::command]
-pub fn app_canonical_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
-}
 
 /// Returns the user's authentic Downloads directory.
 #[tauri::command]

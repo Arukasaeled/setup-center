@@ -35,10 +35,10 @@
  */
 
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import { Button, SectionLabel } from "./ui";
 import { CONTACT } from "./ProGate";
 import { useApp } from "../lib/store";
-import { ReleaseManagerInstance } from "../core/vault/release";
 
 /** Renders the stored ISO-8601 timestamp as a readable local date. */
 export function formatActivatedAt(iso: string): string {
@@ -274,7 +274,7 @@ function ActivationDetailRow({
  * so it is never asked twice. The consequence was unintended: a customer who
  * chose FREE — or anyone re-opening the app months later — had no way to reach
  * activation at all, because the only other copy of `ActivationCard` lives on
- * the 版本与授权 section and nothing pointed at it. "随时可以在「版本与授权」中升级"
+ * the 版本与激活 section and nothing pointed at it. "随时可以在「版本与激活」中升级"
  * was true and undiscoverable.
  *
  * This is the entry that makes it discoverable, and it is deliberately tiny: a
@@ -302,139 +302,245 @@ function ActivationDetailRow({
  *   *upgrade* button at them would be worse, because it asks them to buy
  *   something they already own.
  */
-export function UpgradePrompt(_props?: {
+export function UpgradePrompt({
+  className,
+  align = "end",
+  defaultOpen = false,
+  onUpgraded,
+  onNavigate,
+}: {
   className?: string;
+  /** Which edge the revealed card hugs. The wizard is centred, the bar is not. */
   align?: "start" | "end";
   defaultOpen?: boolean;
   onUpgraded?: () => void;
+  /** Optional "去版本与激活页" route, for hosts that have such a section. */
   onNavigate?: () => void;
 }) {
-  return null;
+  const entitlements = useApp((s) => s.entitlements);
+  const [open, setOpen] = useState(defaultOpen);
+
+  // Still reading, or the read failed. Say nothing rather than something wrong.
+  if (!entitlements) return null;
+
+  const isPro = entitlements.state === "active";
+
+  if (isPro) {
+    return (
+      <div
+        data-testid="upgrade-pro-active"
+        className={clsx(
+          "flex items-center gap-2 text-[color:var(--text-secondary)] text-[12.5px]",
+          className,
+        )}
+      >
+        <span className="text-[color:var(--status-ok)]" aria-hidden>
+          ✓
+        </span>
+        <span data-testid="upgrade-pro-label">PRO 已激活</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={clsx("flex flex-col", className)}>
+      <div
+        className={clsx(
+          "flex items-center gap-2.5",
+          align === "end" ? "justify-end" : "justify-start",
+        )}
+      >
+        <span
+          data-testid="upgrade-free-label"
+          className="text-[color:var(--text-quiet)] text-[12.5px]"
+        >
+          FREE
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="upgrade-entry"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "收起" : "升级 PRO"}
+        </Button>
+      </div>
+
+      {/* The card in place, not in a modal. A modal would be the one interaction
+          this app has spent every previous round removing, and the card is small
+          enough to sit in the flow. */}
+      {open && (
+        <div
+          data-testid="upgrade-panel"
+          className="rise mt-3 w-full text-left"
+        >
+          <ActivationCard
+            autoFocus
+            onActivated={() => {
+              setOpen(false);
+              onUpgraded?.();
+            }}
+          />
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-secondary)] mt-2.5 text-[12px] transition-colors"
+            >
+              查看功能范围与设备绑定 →
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
- * The dashboard's 版本与更新 section.
+ * The dashboard's 版本与激活 section.
  *
- * Fully free, open-source & local-first. Shows version, integrity, and available capabilities.
+ * Behaviour is unchanged from the version that lived inside `Dashboard.tsx`;
+ * the extraction only moved it. The loading and unreadable branches stay here
+ * because they are about the *section*, not the card.
  */
 export function LicenseSection() {
-  const status = useApp((s) => s.status);
-  const loadStatus = useApp((s) => s.loadStatus);
-  const [appVersion, setAppVersion] = useState(
-    () => ReleaseManagerInstance.getSnapshot().app.currentVersion,
-  );
+  const entitlements = useApp((s) => s.entitlements);
+  const phase = useApp((s) => s.entitlementsPhase);
+  const error = useApp((s) => s.entitlementsError);
+  const loadEntitlements = useApp((s) => s.loadEntitlements);
 
   useEffect(() => {
-    if (!status) void loadStatus();
-    void ReleaseManagerInstance.hydrateRuntimeVersion().then((v) => {
-      if (v) setAppVersion(v);
-    });
-    return ReleaseManagerInstance.subscribe((s) => setAppVersion(s.app.currentVersion));
-  }, [status, loadStatus]);
+    if (phase === "idle") void loadEntitlements();
+  }, [phase, loadEntitlements]);
+
+  if (phase === "loading" && !entitlements) {
+    return (
+      <div className="flex flex-col gap-6">
+        <SectionLabel>版本与激活</SectionLabel>
+        <div className="text-[color:var(--text-tertiary)] text-[13px]">
+          正在读取…
+        </div>
+      </div>
+    );
+  }
+
+  if (!entitlements) {
+    return (
+      <div className="flex flex-col gap-6">
+        <SectionLabel>版本与激活</SectionLabel>
+        <div className="glass-soft rise rounded-[12px] p-5">
+          <div className="text-[color:var(--text-primary)] mb-1.5 text-[13px] font-medium">
+            无法读取授权状态
+          </div>
+          <p className="text-[color:var(--text-tertiary)] text-[12.5px] leading-relaxed">
+            {error ??
+              "读取本机授权信息时出错。这不影响环境检测与软件推荐功能。"}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-3.5"
+            onClick={() => void loadEntitlements()}
+          >
+            重试
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const isPro = entitlements.state === "active";
+  const mismatch = entitlements.state === "device_mismatch";
 
   return (
     <div className="flex flex-col gap-8">
       <header className="rise">
-        <div className="inline-flex items-center gap-2 rounded px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[color:var(--status-accent)] bg-[color:var(--surface-sunken)] mb-2">
-          STATUS & RELEASE // 版本与更新
-        </div>
         <h1
           data-testid="license-heading"
-          className="text-[color:var(--text-strong)] text-[22px] font-bold tracking-[-0.02em]"
+          className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]"
         >
-          Setup Center {appVersion ? `· v${appVersion}` : ""}
+          {isPro ? "Setup Center Professional" : "Setup Center 免费版"}
         </h1>
         <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed">
-          免费开源 · 本地优先 · 面向开发者的 Creative & Development Bootstrap Hub。
-          所有功能默认完全可用，无需激活码，不设付费门槛。
+          {isPro
+            ? "自动安装与配置功能已解锁。"
+            : mismatch
+              ? "授权验证失败，该授权已绑定其他设备。"
+              : // Derived from the gate rather than written as a fixed sentence.
+                // A hard-coded "不包含自动安装" was the first version of this
+                // line, and it was a real bug: it kept asserting that
+                // installation was locked even in a build where `canInstall`
+                // was true, so the screen contradicted the button below it.
+                entitlements.canInstall
+                ? "本构建未启用限制，全部功能可用。"
+                : "可检测环境与查看软件推荐，不包含自动安装。"}
         </p>
       </header>
 
-      {/* Feature scope list */}
+      {/* The capability list. Kept in capability terms rather than marketing
+          ones: what the customer is buying is a specific set of actions, and
+          naming them is what makes the price decidable. */}
       <section className="glass rose rise rounded-[12px] p-5">
-        <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium mb-1">
-          功能与核心能力
+        <div className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
+          功能范围
         </div>
-        <p className="text-[color:var(--text-tertiary)] text-[12px] mb-3 leading-relaxed">
-          Setup Center 致力于让「找资源」与「Setup」无缝闭环：
-        </p>
-        <div className="flex flex-col gap-3">
+        <div className="mt-3 flex flex-col gap-2.5">
           <EntitlementRow
-            label="环境检测与硬件侦测"
-            detail="深度读取系统信息、扫描已装软件、硬件兼容性诊断"
+            label="环境检测"
+            detail="读取系统信息、扫描已装软件、分析缺口"
             allowed
           />
           <EntitlementRow
-            label="软件清单与 Winget 全网检索"
-            detail="36 款精选开发软件官方源 + Winget 官方仓库数万款软件秒级搜索与安装"
+            label="软件推荐"
+            detail="按方向推荐要装什么、为什么需要它"
             allowed
           />
           <EntitlementRow
-            label="GitHub 项目探索与一键克隆"
-            detail="实时检索开源热门仓库、多项目指标对比、一键 Git Clone 至本地目录"
-            allowed
+            label="自动安装"
+            detail={
+              entitlements.canInstall
+                ? "已授权，可自动下载并安装"
+                : "激活专业版后可用"
+            }
+            allowed={entitlements.canInstall}
           />
           <EntitlementRow
-            label="现代化项目脚手架 (Scaffolding)"
-            detail="Next.js、Vite、FastAPI、Tauri 等模板一键交互式生成"
-            allowed
-          />
-          <EntitlementRow
-            label="自动化安装与环境初始化"
-            detail="一键配置 PATH、环境变量与开发前置依赖"
-            allowed
-          />
-          <EntitlementRow
-            label="我的库与 AI 上下文导出"
-            detail="个人收藏清单、历史足迹、自定义开发套件与结构化 Prompt 生成"
-            allowed
-          />
-          <EntitlementRow
-            label="20 套视觉体验系统 (Experience System V2)"
-            detail="纯粹声明式版式语法，涵盖极简、复古、终端与现代美学"
-            allowed
+            label="自动配置"
+            detail={
+              entitlements.canConfigure
+                ? "已授权，可初始化环境与配置文件"
+                : "激活专业版后可用"
+            }
+            allowed={entitlements.canConfigure}
           />
         </div>
       </section>
 
-      {/* Release and open source links */}
+      {/* Activation, or the activated state. */}
       <section className="rise">
-        <SectionLabel>开源仓库与反馈</SectionLabel>
-        <div className="glass-soft mt-3 rounded-[12px] p-5 flex flex-col gap-3 text-[12.5px]">
-          <div className="flex items-center justify-between">
-            <span className="text-[color:var(--text-secondary)]">项目开源仓库</span>
-            <a
-              href="https://github.com/Arukasaeled/setup-center"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[color:var(--status-accent)] hover:underline font-mono"
-            >
-              github.com/Arukasaeled/setup-center ↗
-            </a>
-          </div>
-          <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
-            <span className="text-[color:var(--text-secondary)]">远程 Setup Vault</span>
-            <a
-              href="https://github.com/Arukasaeled/setup-center-vault"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[color:var(--status-accent)] hover:underline font-mono"
-            >
-              github.com/Arukasaeled/setup-center-vault ↗
-            </a>
-          </div>
-          <div className="flex items-center justify-between border-t border-[color:var(--line-subtle)] pt-2.5">
-            <span className="text-[color:var(--text-secondary)]">开发者交流 / 问题反馈</span>
-            <span className="text-[color:var(--text-primary)] font-mono">
-              QQ: {CONTACT.qq} · 微信: {CONTACT.wechat}
-            </span>
-          </div>
+        <SectionLabel>激活</SectionLabel>
+        <div className="mt-3">
+          <ActivationCard />
         </div>
       </section>
 
-      {/* Privacy guarantee */}
-      <p className="text-[color:var(--text-quiet)] rise text-[12px] leading-relaxed">
-        本工具坚持本地优先（Local-First）原则，不采集个人隐私与机器指纹，无需注册登录，所有配置数据均保存在本机。
+      {/* Purchase route, for the tier that cannot do the main thing. */}
+      {!isPro && (
+        <section className="rise">
+          <SectionLabel>获取专业版</SectionLabel>
+          <div className="glass-soft mt-3 rounded-[12px] p-5">
+            <ContactRows />
+          </div>
+        </section>
+      )}
+
+      {/* Honesty about what activation does not do. There is no account and no
+          server, and saying so is better than letting a customer assume an
+          activation protects something it does not. */}
+      <p className="text-[color:var(--quiet-text,var(--text-quiet))] rise text-[12px] leading-relaxed">
+        本版本不联网校验授权，不收集账号信息，激活信息仅保存在本机，
+        且无法导出或复制到其他设备。
       </p>
     </div>
   );

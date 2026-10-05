@@ -282,7 +282,7 @@ impl Entitlements {
                 "授权验证失败，该授权已绑定其他设备。本版本暂未限制功能。".to_string()
             }
             (Tier::Free, false, _) => {
-                "Setup Center 现已全面免费开放，所有开发工具与环境配置均可直接使用。".to_string()
+                "当前版本：免费版（本构建未启用限制，全部功能可用）。".to_string()
             }
         };
 
@@ -307,12 +307,14 @@ impl Entitlements {
 
 /// Whether tier enforcement is on in this build.
 ///
-/// **Off by default** — Setup Center is now completely free and community driven.
-/// Tier enforcement is disabled unless explicitly turned on via `AISSETUP_ENFORCE_TIERS=1`.
+/// **On by default**, which is the shipping configuration — a commercial build
+/// that gave away installation would have no product. `AISSETUP_ENFORCE_TIERS=0`
+/// turns it off so the ungated path stays exercisable in development without a
+/// rebuild, and so the tests can prove both branches against the real function.
 pub fn enforcement_enabled() -> bool {
-    matches!(
+    !matches!(
         std::env::var("AISSETUP_ENFORCE_TIERS").as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE")
+        Ok("0") | Ok("false") | Ok("FALSE")
     )
 }
 
@@ -566,11 +568,12 @@ mod tests {
     }
 
     #[test]
-    fn enforcement_is_off_by_default() {
-        // Setup Center is now completely free. Tier enforcement is disabled by default.
+    fn enforcement_is_on_by_default() {
+        // Guards the commercial decision itself. If this fails, the shipping
+        // build has started giving away the paid feature.
         let previous = std::env::var("AISSETUP_ENFORCE_TIERS").ok();
         std::env::remove_var("AISSETUP_ENFORCE_TIERS");
-        assert!(!enforcement_enabled());
+        assert!(enforcement_enabled());
         if let Some(v) = previous {
             std::env::set_var("AISSETUP_ENFORCE_TIERS", v);
         }

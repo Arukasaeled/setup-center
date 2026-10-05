@@ -580,9 +580,6 @@ export const detectEditors = () => call<DetectedEditor[]>("detect_editors");
 export const openInEditor = (editor: string, path: string, executablePath?: string) =>
   call<void>("open_in_editor", { editor, path, executablePath });
 
-/** Returns the canonical application version from Cargo manifest */
-export const appCanonicalVersion = () =>
-  call<string>("app_canonical_version");
 
 /** Returns the authenticated user's real Downloads directory */
 export const getDownloadsDir = () =>

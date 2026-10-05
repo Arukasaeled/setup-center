@@ -119,7 +119,6 @@ pub fn run() {
             commands::open_url,
             commands::detect_editors,
             commands::open_in_editor,
-            commands::app_canonical_version,
             commands::get_downloads_dir,
             commands::verify_file_sha256,
             commands::load_user_uiparts,

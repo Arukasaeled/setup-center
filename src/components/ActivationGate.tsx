@@ -201,7 +201,7 @@ export function ActivationGate({
               </div>
               <p className="text-[color:var(--text-tertiary)] mt-1 text-[12.5px] leading-relaxed">
                 可长期使用，不需要激活码。环境检测、软件推荐与手动安装全部可用，
-                随时可以在「版本与授权」中升级。
+                随时可以在「版本与激活」中升级。
               </p>
             </div>
             <Button

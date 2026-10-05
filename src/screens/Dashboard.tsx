@@ -67,7 +67,9 @@ import { QuickAction } from "../components/QuickAction";
 import { useApp, type Section } from "../lib/store";
 import {
   LicenseSection,
+  UpgradePrompt,
 } from "../components/ActivationPanel";
+import { ProNotice } from "../components/ProGate";
 import { PluginsSection } from "../components/PluginsSection";
 import { STYLE_REGISTRY } from "../styles";
 import type { PageLayoutContract, SetupStyle } from "../styles/types";
@@ -137,7 +139,7 @@ const SECTIONS: { id: Section; label: string; hint: string }[] = [
   { id: "config", label: "环境配置", hint: "身份、路径、代理" },
   { id: "history", label: "历史记录", hint: "做过什么，如何恢复" },
   { id: "plugins", label: "插件增强", hint: "Claude 中文与效率增强" },
-  { id: "license", label: "版本与更新", hint: "当前版本、更新与开源说明" },
+  { id: "license", label: "版本与激活", hint: "当前权益、激活与内容更新" },
   { id: "about", label: "关于", hint: "关于 Setup Center 与开源社区" },
 ];
 
@@ -254,6 +256,28 @@ export function Dashboard() {
           data-window-title={`Setup Center — ${SECTIONS.find((s) => s.id === section)?.label ?? ""}`}
           className="min-w-0 flex-1 overflow-y-auto px-8 py-7"
         >
+          {/* The persistent tier row. It sits at the top of every section rather
+              than only on 版本与激活, because the whole gap this closes is that a
+              FREE customer had no visible route to activation anywhere they
+              habitually look.
+
+              The licence section does not get a second copy: it renders the full
+              scope list, the contacts and the card already, and stacking the
+              entry on top of them would put the same control on screen twice. */}
+          {section !== "license" && (
+            <div className="mb-6 flex justify-end">
+              <UpgradePrompt
+                onNavigate={() => setSection("license")}
+                onUpgraded={() => setSection("license")}
+              />
+            </div>
+          )}
+
+          {/* A refused gated action surfaces here rather than inside whichever
+              section triggered it: the refusal can come from install, resume or
+              bootstrap, and the customer should see the same explanation and the
+              same route to activation regardless of which one it was. */}
+          <ProNotice />
           {section === "overview" && (
             <OverviewSection
               loading={loading}

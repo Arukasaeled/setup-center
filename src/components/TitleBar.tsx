@@ -66,7 +66,7 @@ const SECTION_TITLES: Record<Section, string> = {
   config: "环境配置",
   history: "历史记录",
   plugins: "插件增强",
-  license: "版本与更新",
+  license: "版本与激活",
   about: "关于",
 };
 
@@ -153,20 +153,20 @@ export function TitleBar() {
           type="button"
           onClick={() => setShowUpdateModal(true)}
           className="titlebar-nodrag flex items-center gap-1.5 rounded-full border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] px-2.5 py-0.5 text-[11px] font-sans text-[color:var(--text-quiet)] hover:border-[color:var(--line-strong)] hover:text-[color:var(--text-primary)] transition-colors ml-1 cursor-pointer"
-          title="点击打开版本与更新控制台 (Version Inspector)"
+          title="点击打开内容与更新中心 (Vault Inspector)"
         >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              releaseSnapshot.app.status === "update-available" || releaseSnapshot.vault.status === "update-available"
+              releaseSnapshot.vault.status === "update-available"
                 ? "bg-[color:var(--status-accent)] animate-pulse"
-                : releaseSnapshot.app.status === "up-to-date" && releaseSnapshot.vault.status === "up-to-date"
+                : releaseSnapshot.vault.status === "up-to-date"
                 ? "bg-emerald-400"
-                : releaseSnapshot.app.status === "error" || releaseSnapshot.vault.status === "error"
+                : releaseSnapshot.vault.status === "error"
                 ? "bg-rose-400/80"
                 : "bg-[color:var(--line-strong)]"
             }`}
           />
-          <span>版本查看</span>
+          <span>内容更新</span>
         </button>
       </div>
 
