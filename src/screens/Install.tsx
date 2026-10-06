@@ -620,6 +620,24 @@ function ChoosePhase({
     onChoose(next.size === runnable.length ? null : [...next]);
   };
 
+  const storagePolicy = useApp((s) => s.storagePolicy);
+  const loadStoragePolicy = useApp((s) => s.loadStoragePolicy);
+  const openDashboard = useApp((s) => s.openDashboard);
+
+  useEffect(() => {
+    if (!storagePolicy) {
+      void loadStoragePolicy();
+    }
+  }, [storagePolicy, loadStoragePolicy]);
+
+  const supportedCount = runnable.filter(
+    (s) =>
+      selected.has(s.id) &&
+      (s.locationSupport === "supported" ||
+        catalogue.find((c) => c.id === s.id)?.installLocation === "supported"),
+  ).length;
+  const defaultCount = Math.max(0, selected.size - supportedCount);
+
   return (
     <div className="flex h-full flex-col px-10 py-8">
       <header className="fade shrink-0">
@@ -644,6 +662,36 @@ function ChoosePhase({
             </>
           )}
         </p>
+
+        {/* Compact Storage Policy Bar */}
+        {runnable.length > 0 && (
+          <div className="mt-3.5 flex items-center justify-between rounded-[9px] border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)]/70 px-3.5 py-2 text-[12px]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[color:var(--text-tertiary)]">📦 存储目标:</span>
+              <span className="font-medium text-[color:var(--text-primary)]">
+                {storagePolicy?.mode === "prefer-secondary" ? (
+                  <>优先副盘 · <span className="font-mono text-[color:var(--text-secondary)]">{storagePolicy.resolvedRoot ?? "D:\\SetupCenterApps"}</span></>
+                ) : storagePolicy?.mode === "custom" ? (
+                  <>自定义路径 · <span className="font-mono text-[color:var(--text-secondary)]">{storagePolicy.resolvedRoot ?? storagePolicy.customRoot}</span></>
+                ) : (
+                  "系统默认 (C: 盘官方位置)"
+                )}
+              </span>
+              {storagePolicy?.mode !== "system-default" && selected.size > 0 && (
+                <span className="text-[color:var(--text-quiet)] text-[11.5px]">
+                  ({supportedCount} 款支持副盘，{defaultCount} 款使用系统默认)
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => openDashboard("config")}
+              className="text-[color:var(--accent)] hover:underline text-[11.5px] font-medium ml-2 shrink-0"
+            >
+              修改存储策略 →
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
@@ -664,6 +712,9 @@ function ChoosePhase({
           {runnable.map((step) => {
             const on = selected.has(step.id);
             const meta = describeSoftware(step.id, catalogue);
+            const catalogItem = catalogue.find((c) => c.id === step.id);
+            const locationSupport =
+              step.locationSupport ?? catalogItem?.installLocation ?? "fixed-default";
             return (
               <label
                 key={step.id}
@@ -683,9 +734,33 @@ function ChoosePhase({
                 />
                 <SoftwareIcon id={step.id} size={28} />
                 <span className="min-w-0 flex-1">
-                  <span className="text-[color:var(--text-primary)] block text-[13.5px]">
-                    {meta.name}
-                  </span>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[color:var(--text-primary)] block text-[13.5px]">
+                      {meta.name}
+                    </span>
+                    {/* Location capability badge */}
+                    {locationSupport === "supported" ? (
+                      storagePolicy?.mode !== "system-default" ? (
+                        <span className="text-[color:var(--text-primary)] bg-[color:var(--surface-active)] border border-[color:var(--line-default)] px-1.5 py-0.2 rounded text-[10.5px] font-mono">
+                          目标: {step.expectedLocation ? step.expectedLocation.split("\\")[0] : "副盘"}
+                        </span>
+                      ) : (
+                        <span className="text-[color:var(--text-quiet)] bg-[color:var(--surface-base)] border border-[color:var(--line-subtle)] px-1.5 py-0.2 rounded text-[10.5px]">
+                          支持副盘
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-[color:var(--text-tertiary)] bg-[color:var(--surface-base)] px-1.5 py-0.2 rounded text-[10.5px]">
+                        {locationSupport === "fixed-default"
+                          ? "默认路径 (C:)"
+                          : locationSupport === "script-managed"
+                            ? "环境自管理"
+                            : locationSupport === "system-managed"
+                              ? "系统组件"
+                              : "安装器接管"}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[color:var(--text-quiet)] block truncate text-[12px]">
                     {meta.purpose}
                   </span>
@@ -1489,13 +1564,29 @@ function VerificationList({ report }: { report: PostInstallReport }) {
           >
             <SoftwareIcon id={check.id} size={26} />
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-[color:var(--text-primary)] text-[13.5px] font-medium">
                   {check.name}
                 </span>
                 {check.ok && check.version && (
                   <span className="text-[color:var(--text-quiet)] tnum text-[12px]">
                     版本: {check.version}
+                  </span>
+                )}
+                {/* Location verification tags */}
+                {check.locationStatus === "matched" && check.actualLocation && (
+                  <span className="text-[color:var(--status-ok)] text-[11px] font-mono bg-[color:var(--surface-inset)] px-1.5 py-0.5 rounded border border-[color:var(--line-subtle)]">
+                    已安装至 {check.actualLocation}
+                  </span>
+                )}
+                {check.locationStatus === "ignored" && (
+                  <span className="text-[color:var(--status-warning)] text-[11px] bg-[color:var(--surface-inset)] px-1.5 py-0.5 rounded border border-[color:var(--status-warning)]/30">
+                    安装器已使用默认位置
+                  </span>
+                )}
+                {check.locationStatus === "default" && (
+                  <span className="text-[color:var(--text-quiet)] text-[11px] bg-[color:var(--surface-inset)] px-1.5 py-0.5 rounded">
+                    默认位置 (C:)
                   </span>
                 )}
               </div>

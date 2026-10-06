@@ -13,7 +13,7 @@ use crate::model::*;
 use crate::modules::{
     bootstrap::{self, run as bootstrap_run},
     catalog, capability, config, detect, executor, install, install_log, inventory, knowledge,
-    license, machine, plugins, system_ops, verify,
+    license, machine, plugins, storage, system_ops, verify,
 };
 use crate::state::AppState;
 
@@ -179,15 +179,21 @@ pub struct ProfileCapabilityView {
 /// but name, purpose, category and installability all come from here.
 #[tauri::command]
 pub fn software_catalogue() -> Vec<SoftwareDescriptorView> {
+    let cat = catalog::Catalog::builtin();
     SoftwareId::ALL
         .iter()
-        .map(|id| SoftwareDescriptorView {
-            id: *id,
-            name: id.display_name().to_string(),
-            purpose: id.purpose().to_string(),
-            category: id.category().key().to_string(),
-            category_name: id.category().name().to_string(),
-            installable: id.installable(),
+        .map(|id| {
+            let entry = cat.entry(*id);
+            SoftwareDescriptorView {
+                id: *id,
+                name: id.display_name().to_string(),
+                purpose: id.purpose().to_string(),
+                category: id.category().key().to_string(),
+                category_name: id.category().name().to_string(),
+                installable: id.installable(),
+                install_location: entry.install_location,
+                storage_subdir: entry.storage_subdir.map(|s| s.to_string()),
+            }
         })
         .collect()
 }
@@ -204,6 +210,10 @@ pub struct SoftwareDescriptorView {
     pub category_name: String,
     /// Whether this product can install it, or only detect it.
     pub installable: bool,
+    #[serde(default)]
+    pub install_location: InstallLocationSupport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_subdir: Option<String>,
 }
 
 /// The current machine's hardware facts.
@@ -614,6 +624,12 @@ pub struct PostInstallCheck {
     pub message: String,
     /// A remedy, when there is one.
     pub hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actual_location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_status: Option<String>,
 }
 
 /// What the install screen needs after a run: per-program verification, and
@@ -661,6 +677,37 @@ pub fn verify_install_result(
             let version_ok = package.version.confidence.is_ok();
             let ok = package.passed;
 
+            let step = plan.steps.iter().find(|s| s.id == package.id);
+            let requested_location = step.and_then(|s| s.expected_location.clone());
+            let actual_location = scan.inventory.find(package.id).and_then(|info| info.path.clone());
+
+            let location_status = if let Some(ref req) = requested_location {
+                if let Some(ref act) = actual_location {
+                    let req_norm = req.to_lowercase().replace('/', "\\");
+                    let act_norm = act.to_lowercase().replace('/', "\\");
+                    if act_norm.starts_with(&req_norm) {
+                        Some("matched".to_string())
+                    } else {
+                        Some("ignored".to_string())
+                    }
+                } else {
+                    Some("n/a".to_string())
+                }
+            } else {
+                Some("default".to_string())
+            };
+
+            let mut hint = package
+                .version
+                .hint
+                .clone()
+                .or_else(|| package.present.hint.clone())
+                .or_else(|| package.on_path.hint.clone());
+
+            if location_status.as_deref() == Some("ignored") && hint.is_none() {
+                hint = Some("软件已安装在默认位置（未应用自定义路径）".to_string());
+            }
+
             let message = if ok {
                 match package.version.observed.as_deref() {
                     Some(v) => format!("安装完成，版本: {v}"),
@@ -698,12 +745,10 @@ pub fn verify_install_result(
                     .filter(|v| v != "未安装，跳过" && v != "无法确认")
                     .or_else(|| package.present.observed.clone()),
                 message,
-                hint: package
-                    .version
-                    .hint
-                    .clone()
-                    .or_else(|| package.present.hint.clone())
-                    .or_else(|| package.on_path.hint.clone()),
+                hint,
+                requested_location,
+                actual_location,
+                location_status,
             }
         })
         .collect();
@@ -2493,6 +2538,81 @@ pub struct KnowledgeStatus {
     pub without_knowledge: Vec<String>,
 }
 
+
+// ---------------------------------------------------------------------------
+// Installation & Storage Policy
+// ---------------------------------------------------------------------------
+
+/// Gets the effective installation storage policy.
+#[tauri::command]
+pub fn get_storage_policy(state: State<'_, AppState>) -> StoragePolicy {
+    let disks = state
+        .last_environment()
+        .map(|e| e.disks)
+        .unwrap_or_else(|| detect::probe_disks(1024));
+    storage::get_effective_storage_policy(&disks)
+}
+
+/// Sets and persists the installation storage policy.
+#[tauri::command]
+pub fn set_storage_policy(
+    mode: StorageMode,
+    custom_root: Option<String>,
+    state: State<'_, AppState>,
+) -> StoragePolicy {
+    let disks = state
+        .last_environment()
+        .map(|e| e.disks)
+        .unwrap_or_else(|| detect::probe_disks(1024));
+    storage::set_storage_policy(&disks, mode, custom_root)
+}
+
+/// Invokes a native folder browser dialog to pick a custom installation directory.
+#[tauri::command]
+pub async fn select_storage_folder() -> AppResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "选择软件安装目录"
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $dialog.SelectedPath
+}
+"#;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(detect::CREATE_NO_WINDOW);
+        }
+        let out = cmd.output().ok()?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            None
+        } else {
+            Some(stdout)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+/// Validates a custom directory path before user confirms.
+#[tauri::command]
+pub fn validate_storage_path(path: String) -> Result<String, String> {
+    let sys = storage::detect_system_drive();
+    storage::validate_custom_path(&path, &sys)
+}
+
+/// Cleans temporary download files in the download directory.
+#[tauri::command]
+pub fn clean_download_cache() -> AppResult<bool> {
+    let policy = storage::load_effective_policy();
+    storage::clean_downloads_with_policy(&policy);
+    Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Tests

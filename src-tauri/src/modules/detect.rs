@@ -351,36 +351,62 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
     // the root of a system drive is denied for every standard user — including
     // on a perfectly healthy machine, which would produce a false "blocking".
     let work_dir = work_directory();
-
-    let mut roots: Vec<PathBuf> = vec![work_dir.clone()];
-    for root in drive_roots() {
-        // Only report the drive holding the work directory; listing every volume
-        // asks the student a question they cannot answer.
-        if root.to_string_lossy().to_uppercase().starts_with(
-            &work_dir
-                .to_string_lossy()
-                .chars()
-                .next()
-                .unwrap_or('C')
-                .to_string()
-                .to_uppercase(),
-        ) {
-            roots = vec![work_dir.clone()];
-            break;
-        }
-    }
+    let work_letter = work_dir
+        .to_string_lossy()
+        .chars()
+        .next()
+        .unwrap_or('C')
+        .to_ascii_uppercase();
 
     let mut out = Vec::new();
+    let all_roots = drive_roots();
 
-    for root in roots {
-        let writable = match std::fs::create_dir_all(&root) {
-            Ok(()) => {
-                let probe = root.join(".write-test");
-                let ok = std::fs::write(&probe, b"ok").is_ok();
-                let _ = std::fs::remove_file(&probe);
-                ok
+    // 1. Primary volume (where work_directory lives, typically C:\) must be first.
+    let primary_root = PathBuf::from(format!("{}:\\", work_letter));
+    let primary_writable = match std::fs::create_dir_all(&work_dir) {
+        Ok(()) => {
+            let probe = work_dir.join(".write-test");
+            let ok = std::fs::write(&probe, b"ok").is_ok();
+            let _ = std::fs::remove_file(&probe);
+            ok
+        }
+        Err(_) => false,
+    };
+    let (p_total, p_free) = disk_space(&primary_root).unwrap_or((0, 0));
+    let p_free_mb = p_free / (1024 * 1024);
+    out.push(DiskInfo {
+        root: format!("{}:\\", work_letter),
+        label: None,
+        total_bytes: p_total,
+        free_bytes: p_free,
+        writable: primary_writable,
+        low_space: p_free_mb > 0 && p_free_mb < required_mb,
+    });
+
+    // 2. Discover and report all other candidate disks (D:\, E:\, etc.)
+    for root in all_roots {
+        let letter = root
+            .to_string_lossy()
+            .chars()
+            .next()
+            .unwrap_or('C')
+            .to_ascii_uppercase();
+        if letter == work_letter {
+            continue;
+        }
+
+        let writable = {
+            let probe_dir = root.join(".setup-center-test");
+            match std::fs::create_dir_all(&probe_dir) {
+                Ok(()) => {
+                    let probe = probe_dir.join(".write-test");
+                    let ok = std::fs::write(&probe, b"ok").is_ok();
+                    let _ = std::fs::remove_file(&probe);
+                    let _ = std::fs::remove_dir(&probe_dir);
+                    ok
+                }
+                Err(_) => false,
             }
-            Err(_) => false,
         };
 
         let (total, free) = disk_space(&root).unwrap_or((0, 0));
@@ -392,8 +418,6 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
             total_bytes: total,
             free_bytes: free,
             writable,
-            // Only call it low when we could actually measure. A failed probe
-            // must not be reported as "not enough space".
             low_space: free_mb > 0 && free_mb < required_mb,
         });
     }
@@ -410,6 +434,18 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
     }
 
     out
+}
+
+/// System drive string (e.g. "C:").
+pub fn system_drive() -> String {
+    let work = work_directory();
+    let letter = work
+        .to_string_lossy()
+        .chars()
+        .next()
+        .unwrap_or('C')
+        .to_ascii_uppercase();
+    format!("{}:", letter)
 }
 
 /// The directory this app installs into and downloads to.

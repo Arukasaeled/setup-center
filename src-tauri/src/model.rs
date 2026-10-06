@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::modules::storage::{InstallLocationSupport, StorageMode, StoragePolicy};
+
 // ---------------------------------------------------------------------------
 // Shared scalar types
 // ---------------------------------------------------------------------------
@@ -1125,6 +1127,10 @@ pub struct InstallStep {
     pub fallback_plan: Vec<String>,
     /// Already present and healthy — the step becomes a no-op.
     pub satisfied: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_support: Option<InstallLocationSupport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_location: Option<String>,
 }
 
 /// The complete plan for a detected environment + chosen profile.

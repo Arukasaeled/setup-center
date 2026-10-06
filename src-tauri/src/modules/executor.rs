@@ -123,7 +123,7 @@ pub fn execute_source(
     let started_at = now_iso8601();
 
     let (outcome, exit_code, output, error) = match source {
-        InstallSource::Winget { package_id } => run_winget(package_id, cancel),
+        InstallSource::Winget { package_id } => run_winget(package_id, id, cancel),
         InstallSource::OfficialInstaller { url, .. } => run_official_installer(url, id, cancel),
         InstallSource::Script { command } => run_script(command, cancel),
         InstallSource::ConfigurationOnly => (
@@ -137,10 +137,25 @@ pub fn execute_source(
         ),
     };
 
+    let command_desc = if let InstallSource::Winget { package_id } = source {
+        let catalog = Catalog::builtin();
+        let entry = catalog.entry(id);
+        let policy = super::storage::load_effective_policy();
+        let args = super::storage::build_winget_args(
+            package_id,
+            entry.install_location,
+            &policy,
+            entry.storage_subdir,
+        );
+        format!("winget {}", args.join(" "))
+    } else {
+        describe_source(source)
+    };
+
     ActionRecord {
         id,
         source: source.clone(),
-        command: describe_source(source),
+        command: command_desc,
         started_at,
         finished_at: now_iso8601(),
         duration_ms: started.elapsed().as_millis() as u64,
@@ -157,26 +172,8 @@ pub fn execute_source(
 // Executor 1: winget
 // ---------------------------------------------------------------------------
 
-/// `winget install --id <package> -e --accept-* --silent`.
-///
-/// The flag set is chosen for an unattended, non-elevated run:
-///
-/// * `-e` / `--exact`: the id must match exactly. Without it, winget's fuzzy
-///   matching can resolve `Git.Git` to an unrelated package, which is a silent
-///   wrong install rather than an error.
-/// * `--accept-package-agreements` / `--accept-source-agreements`: otherwise
-///   winget stops on an interactive prompt there is no one to answer, and the
-///   student sees a hang.
-/// * `--disable-interactivity`: stops any remaining prompt from blocking.
-/// * `--silent`: no per-package installer UI.
-///
-/// `--scope user` is deliberately **not** passed. Forcing a scope makes winget
-/// fail outright on packages that only publish a machine-wide installer, and
-/// winget already prefers a per-user install when it can — which is what keeps
-/// this working for a student without admin rights. Hard-coding the scope would
-/// convert "installable without admin" into "not installable at all" on a
-/// handful of packages, for no gain.
-fn run_winget(package_id: &str, cancel: &CancelFlag) -> ExecResult {
+/// `winget install --id <package> -e --accept-* --silent [--location <path>]`.
+fn run_winget(package_id: &str, id: SoftwareId, cancel: &CancelFlag) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
@@ -187,23 +184,18 @@ fn run_winget(package_id: &str, cancel: &CancelFlag) -> ExecResult {
             // attempted it. A surprising winget failure is usually a version
             // characteristic, and without this the log cannot show it.
             let version_note = format!("winget {version}\n");
-            // No `--source`: winget's default resolution is correct for both
-            // community package ids and Microsoft Store product ids. Verified on
-            // winget 1.29.290 — `msstore` is registered and non-explicit, so
-            // `--id 9PLM9XGG6VKS` resolves; pinning `--source winget` instead
-            // breaks it with 0x8A150014. Passing no source is the working case,
-            // not an omission.
-            let args = [
-                "install",
-                "--id",
+            let catalog = Catalog::builtin();
+            let entry = catalog.entry(id);
+            let policy = super::storage::load_effective_policy();
+            let args_vec = super::storage::build_winget_args(
                 package_id,
-                "-e",
-                "--silent",
-                "--accept-package-agreements",
-                "--accept-source-agreements",
-                "--disable-interactivity",
-            ];
-            match run_process("winget", &args, ATTEMPT_TIMEOUT, cancel) {
+                entry.install_location,
+                &policy,
+                entry.storage_subdir,
+            );
+            let args_refs: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
+
+            match run_process("winget", &args_refs, ATTEMPT_TIMEOUT, cancel) {
                 Ok(result) => {
                     let combined = format!("{version_note}{}", result.output);
                     classify(package_id, result.exit_code, combined)
@@ -375,7 +367,8 @@ fn looks_like_windows_executable(path: &Path) -> bool {
 fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
     use std::io::Read;
 
-    let dir = super::detect::work_directory().join("downloads");
+    let policy = super::storage::load_effective_policy();
+    let dir = super::storage::resolve_download_directory(&policy);
     std::fs::create_dir_all(&dir).ok()?;
 
     let extension = if url.ends_with(".ps1") {
@@ -864,16 +857,14 @@ pub fn readiness(plan: &InstallPlan, catalog: &Catalog, is_elevated: bool) -> Ex
 }
 
 /// Removes the downloaded payloads of a finished session.
-///
-/// Called at the end of a run so the work directory does not accumulate
-/// installers. Failures are ignored: a file we could not delete is not a reason
-/// to report the installation as failed.
 pub fn clean_downloads() {
-    let dir = super::detect::work_directory().join("downloads");
-    if !dir.exists() {
-        return;
-    }
-    let _ = std::fs::remove_dir_all(&dir);
+    let policy = super::storage::load_effective_policy();
+    super::storage::clean_downloads_with_policy(&policy);
+}
+
+/// Removes the downloaded payloads using an explicit policy.
+pub fn clean_downloads_with_policy(policy: &StoragePolicy) {
+    super::storage::clean_downloads_with_policy(policy);
 }
 
 /// Absolute path an installer would be downloaded to. Exposed so a test can
@@ -1435,6 +1426,8 @@ mod tests {
                 },
                 fallback_plan: vec!["优先使用 winget 安装".into()],
                 satisfied: false,
+                location_support: None,
+                expected_location: None,
             }],
             ready_count: 1,
             satisfied_count: 0,

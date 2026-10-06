@@ -166,12 +166,30 @@ pub fn build_plan_with(
             spec.chain.iter().map(|f| f.rationale.clone()).collect()
         };
 
+        let entry = catalog.entry(*id);
+        let location_support = Some(entry.install_location);
+        let policy = super::storage::load_effective_policy();
+        let expected_location = if entry.install_location == InstallLocationSupport::WingetLocation {
+            policy.resolved_root.as_ref().map(|root| {
+                if let Some(sub) = entry.storage_subdir {
+                    let clean = root.trim_end_matches(['\\', '/']);
+                    format!("{clean}\\{sub}")
+                } else {
+                    root.clone()
+                }
+            })
+        } else {
+            None
+        };
+
         steps.push(InstallStep {
             id: *id,
             name: id.display_name().to_string(),
             source,
             fallback_plan,
             satisfied,
+            location_support,
+            expected_location,
         });
     }
 

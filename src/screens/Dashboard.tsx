@@ -71,6 +71,7 @@ import {
 } from "../components/ActivationPanel";
 import { ProNotice } from "../components/ProGate";
 import { PluginsSection } from "../components/PluginsSection";
+import { StoragePolicyCard } from "../components/StoragePolicyCard";
 import { STYLE_REGISTRY } from "../styles";
 import type { PageLayoutContract, SetupStyle } from "../styles/types";
 import { ResourceSection } from "./ResourceSection";
@@ -1907,12 +1908,22 @@ function ConfigSection() {
     <div className="flex flex-col gap-6">
       <header className="rise">
         <h1 className="text-[color:var(--text-strong)] text-[21px] font-semibold tracking-[-0.02em]">
-          需要你亲自完成的部分
+          环境与存储配置
         </h1>
         <p className="text-[color:var(--text-tertiary)] mt-1 text-[13px] leading-relaxed">
-          有些配置涉及你的身份或账号，本工具不会替你填。这里只告诉你缺什么、怎么补。
+          管理软件安装位置、安装包缓存，以及需要你手动填写的开发身份与环境参数。
         </p>
       </header>
+
+      {/* 安装与存储策略 */}
+      <StoragePolicyCard />
+
+      <div className="mt-2">
+        <SectionLabel>需要你亲自完成的环境参数</SectionLabel>
+        <p className="text-[color:var(--text-tertiary)] mt-0.5 text-[12.5px]">
+          涉及个人身份、网络代理或安全认证的配置，本工具不会替你代填。
+        </p>
+      </div>
 
       {manual.length === 0 ? (
         <EmptyBlock

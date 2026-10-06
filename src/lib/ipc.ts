@@ -31,6 +31,7 @@ import type {
   LicenseDeviceView,
   LocalizationTargetView,
   MachineFacts,
+  PathValidationResult,
   PluginRun,
   PluginRunMode,
   PluginTargetState,
@@ -44,6 +45,7 @@ import type {
   SoftwareId,
   SoftwareInventory,
   StepProgress,
+  StoragePolicy,
   VerificationReport,
   WindowsInfo,
 } from "./types";
@@ -764,5 +766,34 @@ export async function deleteUIPartAssets(partId: string): Promise<boolean> {
     console.warn("Failed to delete UI part assets via Tauri IPC:", err);
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Storage & Installation Policy
+// ---------------------------------------------------------------------------
+
+/** Loads the effective storage policy. */
+export async function getStoragePolicy(): Promise<StoragePolicy> {
+  return await call<StoragePolicy>("get_storage_policy");
+}
+
+/** Updates and persists the storage policy. */
+export async function setStoragePolicy(policy: StoragePolicy): Promise<StoragePolicy> {
+  return await call<StoragePolicy>("set_storage_policy", { policy });
+}
+
+/** Opens native Windows FolderBrowserDialog to pick a custom directory. */
+export async function selectStorageFolder(): Promise<string | null> {
+  return await call<string | null>("select_storage_folder");
+}
+
+/** Validates custom path syntax, writability, and disk space. */
+export async function validateStoragePath(path: string): Promise<PathValidationResult> {
+  return await call<PathValidationResult>("validate_storage_path", { path });
+}
+
+/** Cleans temporary downloaded installers in downloads cache directory. */
+export async function cleanDownloadCache(): Promise<number> {
+  return await call<number>("clean_download_cache");
 }
 

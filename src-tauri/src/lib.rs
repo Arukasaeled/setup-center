@@ -127,6 +127,12 @@ pub fn run() {
             commands::save_uipart_asset,
             commands::read_uipart_asset,
             commands::delete_uipart_assets,
+            // Storage policy (0.2.4)
+            commands::get_storage_policy,
+            commands::set_storage_policy,
+            commands::select_storage_folder,
+            commands::validate_storage_path,
+            commands::clean_download_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Setup Center");

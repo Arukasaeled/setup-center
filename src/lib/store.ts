@@ -40,6 +40,7 @@ import type {
   SoftwareId,
   SoftwareInventory,
   StepProgress,
+  StoragePolicy,
   VerificationReport,
 } from "./types";
 import {
@@ -357,6 +358,14 @@ interface AppStore {
   /** Activates a key. Resolves `true` on success so the form can clear itself. */
   activateLicense: (key: string) => Promise<boolean>;
   deactivateLicense: () => Promise<void>;
+
+  // --- Storage policy (v0.2.4) ---------------------------------------------
+  storagePolicy: StoragePolicy | null;
+  storagePolicyLoading: boolean;
+  storagePolicyError: string | null;
+  loadStoragePolicy: () => Promise<void>;
+  updateStoragePolicy: (policy: StoragePolicy) => Promise<boolean>;
+  cleanDownloadCache: () => Promise<number>;
 
   loadExplained: () => Promise<void>;
   loadGoals: () => Promise<void>;
@@ -940,6 +949,51 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   // -------------------------------------------------------------------------
+  // Storage & Installation Policy (v0.2.4)
+  // -------------------------------------------------------------------------
+  storagePolicy: null,
+  storagePolicyLoading: false,
+  storagePolicyError: null,
+
+  loadStoragePolicy: async () => {
+    set({ storagePolicyLoading: true, storagePolicyError: null });
+    try {
+      const storagePolicy = await ipc.getStoragePolicy();
+      set({ storagePolicy, storagePolicyLoading: false });
+    } catch (err) {
+      set({ storagePolicyLoading: false, storagePolicyError: describeError(err) });
+    }
+  },
+
+  updateStoragePolicy: async (policy: StoragePolicy) => {
+    set({ storagePolicyLoading: true, storagePolicyError: null });
+    try {
+      const updated = await ipc.setStoragePolicy(policy);
+      set({ storagePolicy: updated, storagePolicyLoading: false });
+      // If a plan is currently loaded, rebuild it with the new policy so paths update
+      if (get().plan && get().selectedProfileId) {
+        void get().buildPlan();
+      }
+      return true;
+    } catch (err) {
+      set({ storagePolicyLoading: false, storagePolicyError: describeError(err) });
+      return false;
+    }
+  },
+
+  cleanDownloadCache: async () => {
+    try {
+      const freed = await ipc.cleanDownloadCache();
+      // Reload policy to reflect any updated download root or status
+      void get().loadStoragePolicy();
+      return freed;
+    } catch (err) {
+      set({ notice: describeError(err) });
+      return 0;
+    }
+  },
+
+  // -------------------------------------------------------------------------
   // Knowledge, goals and advisor (stage 5)
   //
   // Three separate loaders rather than one, because they fail independently and
@@ -1021,6 +1075,7 @@ export const useApp = create<AppStore>((set, get) => ({
     await get().loadGoals();
     await get().loadAdvisor();
     await get().loadEntitlements();
+    await get().loadStoragePolicy();
   },
 
   loadCapabilities: async () => {

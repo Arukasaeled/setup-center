@@ -91,6 +91,12 @@ pub enum ProbeSource {
 pub struct CatalogEntry {
     pub id: SoftwareId,
 
+    /// How this software handles custom/secondary installation paths.
+    pub install_location: InstallLocationSupport,
+
+    /// Default subfolder under the custom root (e.g. "VSCode", "Git", "Python").
+    pub storage_subdir: Option<&'static str>,
+
     /// winget package ids, best candidate first. `None` for programs that have
     /// no winget package at all (Codex's desktop app is Store-signed MSIX under
     /// the ChatGPT product name, so it has no usable id to search for).
@@ -371,16 +377,15 @@ impl Catalog {
 
 impl Clone for CatalogEntry {
     fn clone(&self) -> Self {
-        // Every field is a `Copy` reference type; the clone is shallow by
-        // construction. Implemented manually so `Catalog` can be `Clone` without
-        // deriving it on a struct that holds `&'static str` slices.
         Self {
             id: self.id,
+            install_location: self.install_location,
+            storage_subdir: self.storage_subdir,
             winget_ids: self.winget_ids,
             name_patterns: self.name_patterns,
             executables: self.executables,
             install_roots: self.install_roots,
-            location_markers: &[],
+            location_markers: self.location_markers,
             version_args: self.version_args,
             version_env: self.version_env,
             version_via_shim: self.version_via_shim,
@@ -397,6 +402,8 @@ fn entries() -> Vec<CatalogEntry> {
     vec![
         CatalogEntry {
             id: SoftwareId::Vscode,
+            install_location: InstallLocationSupport::WingetLocation,
+            storage_subdir: Some("VSCode"),
             winget_ids: &["Microsoft.VisualStudioCode"],
             name_patterns: &[
                 // The winget display name is `Microsoft Visual Studio Code
@@ -443,6 +450,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Git,
+            install_location: InstallLocationSupport::WingetLocation,
+            storage_subdir: Some("Git"),
             winget_ids: &["Git.Git"],
             name_patterns: &[
                 NamePattern::Exact("Git"),
@@ -475,6 +484,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Python,
+            install_location: InstallLocationSupport::WingetLocation,
+            storage_subdir: Some("Python"),
             winget_ids: &["Python.Python.3.12", "Python.Python.3.13", "Python.Python.3.11"],
             name_patterns: &[
                 // Python registers as `Python 3.12.1 (64-bit)`, `Python
@@ -509,6 +520,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Node,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["OpenJS.NodeJS.LTS", "OpenJS.NodeJS"],
             name_patterns: &[
                 NamePattern::Exact("Node.js"),
@@ -529,6 +542,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::ClaudeDesktop,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             winget_ids: &["Anthropic.Claude"],
             name_patterns: &[
                 NamePattern::Exact("Claude"),
@@ -566,6 +581,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::ClaudeCode,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             name_patterns: &[NamePattern::Word("Claude Code")],
             executables: &["claude.cmd", "claude.exe"],
@@ -587,6 +604,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Codex,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             // **Intentionally empty**, for the same reason ChatGPT's is.
             //
             // This entry used to declare `OpenAI.Codex`, which does not exist in
@@ -698,6 +717,8 @@ fn entries() -> Vec<CatalogEntry> {
         // -------------------------------------------------------------------
         CatalogEntry {
             id: SoftwareId::ChatgptDesktop,
+            install_location: InstallLocationSupport::SystemManaged,
+            storage_subdir: None,
             // **Intentionally empty.** Read this before "fixing" it with an id.
             //
             // These ids are matched against the **ID column of `winget list`**
@@ -798,6 +819,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Docker,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["Docker.DockerDesktop"],
             name_patterns: &[NamePattern::Prefix("Docker Desktop")],
             executables: &["docker.exe"],
@@ -813,6 +836,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Cursor,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["Anysphere.Cursor"],
             name_patterns: &[NamePattern::Prefix("Cursor")],
             // Same shim arrangement as VS Code: Cursor is an Electron app that
@@ -830,6 +855,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Windsurf,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["Codeium.Windsurf"],
             name_patterns: &[
                 NamePattern::Prefix("Windsurf"),
@@ -851,6 +878,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Wsl,
+            install_location: InstallLocationSupport::SystemManaged,
+            storage_subdir: None,
             // WSL is an optional Windows feature, not a downloadable package in
             // any useful sense — `wsl --install` enables components, which is a
             // system change this product deliberately does not make.
@@ -869,6 +898,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::MsvcBuildTools,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["Microsoft.VisualStudio.2022.BuildTools"],
             name_patterns: &[
                 NamePattern::Prefix("Microsoft Visual Studio Installer"),
@@ -887,6 +918,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Cmake,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["Kitware.CMake"],
             name_patterns: &[NamePattern::Exact("CMake"), NamePattern::Prefix("CMake ")],
             executables: &["cmake.exe"],
@@ -902,6 +935,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Npm,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             name_patterns: &[],
             // npm ships *with* Node, so only the PATH provider can find it, and
@@ -917,6 +952,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Pnpm,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &["pnpm.pnpm"],
             name_patterns: &[NamePattern::Exact("pnpm")],
             executables: &["pnpm.cmd", "pnpm.exe"],
@@ -932,6 +969,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Uv,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &["astral-sh.uv"],
             name_patterns: &[NamePattern::Exact("uv")],
             executables: &["uv.exe", "uv.cmd"],
@@ -947,6 +986,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Rust,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &["Rustlang.Rustup"],
             name_patterns: &[
                 NamePattern::Prefix("Rustup"),
@@ -965,6 +1006,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Java,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["EclipseAdoptium.Temurin.21.JDK", "Microsoft.OpenJDK.21"],
             name_patterns: &[
                 NamePattern::Prefix("Java(TM)"),
@@ -993,6 +1036,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Gemini,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             // No `winget` package exists at all: `winget search "Gemini CLI"`
             // returns 找不到与输入条件匹配的程序包. The CLI ships through npm
             // (`@google/gemini-cli`), which is a Node-dependent install route this
@@ -1010,6 +1055,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::OpenCode,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             name_patterns: &[NamePattern::Word("opencode")],
             executables: &["opencode.cmd", "opencode.exe"],
@@ -1022,6 +1069,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Continue,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             // `Continue` is a VS Code *extension*, not a program. It has no
             // executable and no uninstall key, so it is deliberately invisible to
@@ -1040,6 +1089,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::LmStudio,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             // Detect-only on purpose: the package is a moving target and the
             // first run needs the student to pick a multi-GB model, which is a
             // decision this tool must not make for them.
@@ -1058,6 +1109,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Jetbrains,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             winget_ids: &["JetBrains.Toolbox"],
             name_patterns: &[
                 NamePattern::Prefix("JetBrains Toolbox"),
@@ -1076,6 +1129,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::WindowsTerminal,
+            install_location: InstallLocationSupport::SystemManaged,
+            storage_subdir: None,
             winget_ids: &["Microsoft.WindowsTerminal"],
             // Matched on the Store display name. `wt.exe` is the shim Windows
             // installs, and unlike the Electron cases above it needs no special
@@ -1101,6 +1156,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::QwenCode,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             // No winget package exists for it. An invented winget id would fail
             // with "no such package" instead of falling through to the npm
             // strategy, so the list stays empty on purpose.
@@ -1122,6 +1179,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::KimiCli,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             name_patterns: &[NamePattern::Word("Kimi")],
             // Official distribution is the GitHub release archive at
@@ -1138,6 +1197,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::CcSwitch,
+            install_location: InstallLocationSupport::FixedDefault,
+            storage_subdir: None,
             // No winget package at the time of writing, and this product
             // deliberately does **not** install it: CC Switch rewrites other
             // tools' configuration and PATH, so an unattended install that
@@ -1163,6 +1224,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Crush,
+            install_location: InstallLocationSupport::ScriptManaged,
+            storage_subdir: None,
             winget_ids: &[],
             name_patterns: &[NamePattern::Word("Crush")],
             // The official scope is `@charmland/crush`; the unscoped `crush`
@@ -1193,6 +1256,8 @@ fn entries() -> Vec<CatalogEntry> {
         // -------------------------------------------------------------------
         CatalogEntry {
             id: SoftwareId::Doubao,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id ByteDance.Doubao -e` → 2.30.4.
             // Already installed on the reference machine, where `winget list`
             // printed exactly this id — the strongest form of the evidence.
@@ -1211,6 +1276,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::CherryStudio,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id kangfenmao.CherryStudio -e` → 2.1.2.
             //
             // The `msstore` source also lists a Cherry Studio (`XPDDXMTVP41MPH`).
@@ -1232,6 +1299,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::Chatbox,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id Bin-Huang.Chatbox -e` → 1.23.3.
             winget_ids: &["Bin-Huang.Chatbox"],
             name_patterns: &[NamePattern::Prefix("Chatbox")],
@@ -1248,6 +1317,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::JianyingPro,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id ByteDance.JianyingPro -e` →
             // 11.5.0.14471. Already installed on the reference machine, where
             // `winget list` printed this exact id against the display name
@@ -1271,6 +1342,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::CapCut,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id ByteDance.CapCut -e` → 9.4.0.4015.
             winget_ids: &["ByteDance.CapCut"],
             name_patterns: &[NamePattern::Prefix("CapCut")],
@@ -1287,6 +1360,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::ComfyUi,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live: `winget show --id Comfy.ComfyUI-Desktop -e` → 1.0.47.
             winget_ids: &["Comfy.ComfyUI-Desktop"],
             name_patterns: &[NamePattern::Prefix("ComfyUI")],
@@ -1303,6 +1378,8 @@ fn entries() -> Vec<CatalogEntry> {
         },
         CatalogEntry {
             id: SoftwareId::GeminiDesktop,
+            install_location: InstallLocationSupport::InstallerManaged,
+            storage_subdir: None,
             // Verified live on this machine: `winget show --id Google.GoogleDesktop -e`
             // → 名称 "Google App for Desktop", 版本 152.0.7933.0, 发布者 Google,
             // tags include `google-gemini`.

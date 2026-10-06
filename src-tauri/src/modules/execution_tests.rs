@@ -73,6 +73,8 @@ fn plan_with_step(id: SoftwareId, source: InstallSource, satisfied: bool) -> Ins
             source,
             fallback_plan: vec!["测试用策略".into()],
             satisfied,
+            location_support: None,
+            expected_location: None,
         }],
         ready_count: if satisfied { 0 } else { 1 },
         satisfied_count: if satisfied { 1 } else { 0 },

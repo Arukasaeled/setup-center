@@ -60,6 +60,30 @@ export interface DiskInfo {
   lowSpace: boolean;
 }
 
+export type StorageMode = "system-default" | "prefer-secondary" | "custom";
+
+export type InstallLocationSupport =
+  | "supported"
+  | "fixed-default"
+  | "script-managed"
+  | "system-managed"
+  | "installer-managed";
+
+export interface StoragePolicy {
+  mode: StorageMode;
+  customRoot?: string | null;
+  resolvedRoot?: string | null;
+  systemDrive?: string | null;
+  downloadRoot?: string | null;
+  fallbackReason?: string | null;
+}
+
+export interface PathValidationResult {
+  valid: boolean;
+  reason?: string | null;
+  freeSpaceBytes?: number | null;
+}
+
 export type NetworkQuality = "good" | "degraded" | "offline" | "unknown";
 
 export interface NetworkInfo {
@@ -172,6 +196,8 @@ export interface SoftwareDescriptor {
   categoryName: string;
   /** `false` means detected but not managed by this tool. */
   installable: boolean;
+  installLocation: InstallLocationSupport;
+  storageSubdir?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +451,8 @@ export interface InstallStep {
   source: InstallSource;
   fallbackPlan: string[];
   satisfied: boolean;
+  locationSupport?: InstallLocationSupport;
+  expectedLocation?: string | null;
 }
 
 export interface InstallPlan {
@@ -539,6 +567,9 @@ export interface PostInstallCheck {
   /** One line for the student. */
   message: string;
   hint: string | null;
+  requestedLocation?: string | null;
+  actualLocation?: string | null;
+  locationStatus?: string | null;
 }
 
 /** The result of verifying an install that has just finished. */
