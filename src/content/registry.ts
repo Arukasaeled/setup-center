@@ -68,7 +68,7 @@ class ContentRegistryManager {
     return () => this.listeners.delete(listener);
   }
 
-  private notify(): void {
+  public notify(): void {
     this.revision++;
     for (const listener of this.listeners) {
       try {
@@ -176,7 +176,7 @@ class ContentRegistryManager {
    * Purges items previously attributed to `origin` and registers the fresh batch.
    * Implements Issue D09 (Replace semantics for remote Vault updates).
    */
-  public replaceOrigin(origin: string, items: ContentItem[]): void {
+  public replaceOrigin(origin: string, items: ContentItem[], shouldNotify = true): void {
     for (const [key, item] of Array.from(this.items.entries())) {
       if (item.source === origin) {
         this.items.delete(key);
@@ -192,7 +192,15 @@ class ContentRegistryManager {
         lifecycle: item.lifecycle || "discovered",
       });
     }
-    this.notify();
+    if (shouldNotify) this.notify();
+  }
+
+  /** Restore only keys affected by a vault transaction, including overwritten built-ins. */
+  public restoreItems(snapshot: Map<string, ContentItem | undefined>): void {
+    for (const [id, item] of snapshot) {
+      if (item) this.items.set(id, item);
+      else this.items.delete(id);
+    }
   }
 
   /**

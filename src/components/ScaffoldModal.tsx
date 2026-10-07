@@ -15,6 +15,13 @@ import { AccessibleDialog } from "./AccessibleDialog";
 import { TransferHistory } from "../core/transfer/history";
 import { useApp } from "../lib/store";
 import type { ScaffoldStep } from "../core/vault/types";
+import {
+  resolveScaffoldSteps,
+  generatePowerShellScript,
+  generatePowerShellReference,
+  normalizeWindowsDirectory,
+  joinScaffoldTarget,
+} from "../core/transfer/scaffolder";
 
 export interface ScaffoldTemplateDefinition {
   id: string;
@@ -66,33 +73,30 @@ export function ScaffoldModal({
   );
   const [parentDir, setParentDir] = useState("C:\\Projects");
 
-  // Supported package managers (Issue E04)
+  // The current template contract contains one recipe, not one recipe per manager.
   const supportedPms = useMemo(() => {
-    if (template?.supportedPackageManagers !== undefined) {
-      return template.supportedPackageManagers;
-    }
-    // Fallback: if template is JS/Node based, default to standard PMs
-    return ["pnpm", "npm", "yarn"];
-  }, [template?.supportedPackageManagers]);
-
-  const defaultPm = useMemo(() => {
-    if (template?.defaultPackageManager && supportedPms.includes(template.defaultPackageManager)) {
-      return template.defaultPackageManager;
-    }
-    return supportedPms.includes("pnpm") ? "pnpm" : (supportedPms[0] || "npm");
-  }, [template?.defaultPackageManager, supportedPms]);
-
-  const [pm, setPm] = useState<string>(defaultPm);
+    const programs = template?.steps?.length
+      ? template.steps.map((step) => step.program.toLowerCase().replace(/\.cmd$/, ""))
+      : [(cmd.trim().split(/\s+/)[0] || "").toLowerCase()];
+    return [...new Set(programs.map((program) => program === "npx" ? "npm" : program)
+      .filter((program) => ["npm", "pnpm", "yarn"].includes(program)))];
+  }, [template?.steps, cmd]);
+  const pm = supportedPms.join(" + ");
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   // Sanitize project name: disallow path traversal, spaces, and separators
   const sanitizedProjectName = projectName.trim().replace(/[^a-zA-Z0-9_.-]/g, "") || "my-app";
-  const normalizedParent = parentDir.trim().replace(/[/\\]+$/, "");
+  let normalizedParent = "";
+  let pathError: string | null = null;
+  try {
+    normalizedParent = normalizeWindowsDirectory(parentDir);
+    joinScaffoldTarget(normalizedParent, sanitizedProjectName);
+  } catch (error) {
+    pathError = error instanceof Error ? error.message : String(error);
+  }
   // Issue E03: Strict match between displayed target path and command parameters
-  const targetPath = `${normalizedParent}\\${sanitizedProjectName}`;
+  const targetPath = pathError ? "" : joinScaffoldTarget(normalizedParent, sanitizedProjectName);
 
   // Evaluate requirements and capabilities (Issue E05)
   const envEvaluation = useMemo(() => {
@@ -167,126 +171,46 @@ export function ScaffoldModal({
     return { status: "satisfied" as const, missing: [], unknown: false };
   }, [template, inventory, capabilities, capabilitiesPhase]);
 
-  // Resolve structured steps (Issue E01, E02)
+  // Resolve structured steps (Issue E01, E02, S07)
   const resolvedSteps: ScaffoldStep[] = useMemo(() => {
-    if (template?.steps && template.steps.length > 0) {
-      return template.steps.map((rawStep, index) => {
-        let program = rawStep.program;
-        let args = [...rawStep.args];
-
-        // Adapt package manager if the step is an npm/npx invocation
-        if (supportedPms.length > 0 && pm && pm !== "npm") {
-          if (program === "npm" && args[0] === "create") {
-            program = pm;
-          } else if (program === "npx") {
-            program = pm;
-            args = ["dlx", ...args];
-          } else if (program === "pnpm" && pm !== "pnpm") {
-            program = pm;
-          }
-        }
-
-        // Safe parameter substitution without whitespace splitting (Issue E01)
-        const substitutedArgs = args.map((arg) =>
-          arg
-            .replace(/\{\{projectName\}\}/g, sanitizedProjectName)
-            .replace(/\{\{parentDir\}\}/g, normalizedParent)
-            .replace(/\{\{targetPath\}\}/g, targetPath),
-        );
-
-        let cwd = rawStep.cwd;
-        if (cwd) {
-          cwd = cwd
-            .replace(/\{\{projectName\}\}/g, sanitizedProjectName)
-            .replace(/\{\{parentDir\}\}/g, normalizedParent)
-            .replace(/\{\{targetPath\}\}/g, targetPath);
-        } else if (index > 0) {
-          // Default subsequent steps into targetPath
-          cwd = targetPath;
-        } else {
-          cwd = normalizedParent;
-        }
-
-        return {
-          id: rawStep.id || `step-${index + 1}`,
-          program,
-          args: substitutedArgs,
-          cwd,
-          description: rawStep.description,
-          optional: rawStep.optional,
-        };
+    if (!pathError && template?.steps && template.steps.length > 0) {
+      return resolveScaffoldSteps(template.steps, {
+        projectName: sanitizedProjectName,
+        parentDir: normalizedParent,
+        packageManager: pm,
       });
     }
+    // S07: Legacy 纯 command 字符串只作原文参考，不按空格转换成可执行 steps；不能默默用默认 Vite 配方替代它。
+    return [];
+  }, [template?.steps, sanitizedProjectName, normalizedParent, pm, pathError]);
 
-    // Fallback: derive structured step from legacy cmd string
-    if (cmd && cmd.startsWith("git clone")) {
-      const gitParts = cmd.split(" ");
-      const repoUrl = gitParts[2] || (template as { repository?: string })?.repository || "";
-      const steps: ScaffoldStep[] = [
-        {
-          id: "step-1",
-          program: "git",
-          args: ["clone", repoUrl, targetPath],
-          cwd: normalizedParent,
-          description: "克隆模板仓库到目标目录",
-        },
-      ];
-      if (cmd.includes("pnpm install") || cmd.includes("npm install")) {
-        steps.push({
-          id: "step-2",
-          program: pm || "pnpm",
-          args: ["install"],
-          cwd: targetPath,
-          description: "安装依赖包",
-        });
+  // Compose full PowerShell 5.1+ script for copy and display (S07)
+  const commandPreview = useMemo(() => {
+    try {
+      if (pathError) return { script: `# ${pathError}`, error: pathError };
+      if (resolvedSteps.length > 0) {
+        return { script: generatePowerShellScript(resolvedSteps, normalizedParent), error: null };
       }
-      return steps;
+      if (cmd) {
+        const formattedCmd = cmd
+          .replace(/\{\{projectName\}\}/g, sanitizedProjectName)
+          .replace(/\{\{parentDir\}\}/g, normalizedParent)
+          .replace(/\{\{targetPath\}\}/g, targetPath);
+        return { script: generatePowerShellReference(formattedCmd, normalizedParent), error: null };
+      }
+      return { script: generatePowerShellReference("", normalizedParent), error: null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { script: `# 无法生成脚手架命令：${message}`, error: message };
     }
-
-    if (cmd) {
-      // Cleanly replace variables in cmd
-      const formattedCmd = cmd
-        .replace(/\{\{projectName\}\}/g, sanitizedProjectName)
-        .replace(/my-[a-zA-Z0-9_-]+/g, sanitizedProjectName);
-      return [
-        {
-          id: "step-1",
-          program: "powershell",
-          args: ["-Command", formattedCmd],
-          cwd: normalizedParent,
-          description: "执行脚手架命令",
-        },
-      ];
-    }
-
-    // Modern vite scaffold default
-    return [
-      {
-        id: "step-1",
-        program: pm || "pnpm",
-        args: ["create", "vite@latest", sanitizedProjectName, "--", "--template", "react-ts"],
-        cwd: normalizedParent,
-        description: "生成 Vite + React 模板",
-      },
-    ];
-  }, [template, cmd, sanitizedProjectName, normalizedParent, targetPath, pm, supportedPms]);
-
-  // Compose full shell script for copy and display (Issue E02)
-  const fullCommandScript = useMemo(() => {
-    return resolvedSteps
-      .map((step) => {
-        const quotedArgs = step.args
-          .map((a) => (a.includes(" ") || a.includes("\t") || a === "" ? `"${a}"` : a))
-          .join(" ");
-        if (step.cwd && step.cwd !== normalizedParent) {
-          return `cd "${step.cwd}" && ${step.program} ${quotedArgs}`;
-        }
-        return `${step.program} ${quotedArgs}`;
-      })
-      .join(" &&\n");
-  }, [resolvedSteps, normalizedParent]);
+  }, [resolvedSteps, normalizedParent, cmd, sanitizedProjectName, targetPath, pathError]);
+  const fullCommandScript = commandPreview.script;
 
   const handleCopyCommand = async () => {
+    if (commandPreview.error) {
+      setNotice(commandPreview.error);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(fullCommandScript);
       setCopied(true);
@@ -312,6 +236,8 @@ export function ScaffoldModal({
       setNotice("复制失败，请手动选择命令复制");
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <AccessibleDialog
@@ -392,34 +318,26 @@ export function ScaffoldModal({
         {/* Target directory strictly matching project name (Issue E03) */}
         <div className="rounded-md border border-[var(--line-subtle,#27272a)] bg-[var(--surface-panel,#18181b)]/50 px-3 py-2 text-[11.5px] text-[var(--text-secondary,#a1a1aa)] font-mono flex items-center justify-between">
           <span>完整目标路径:</span>
-          <span className="text-emerald-400 font-bold truncate max-w-[400px]">{targetPath}</span>
+          <span className="text-emerald-400 font-bold truncate max-w-[400px]">{pathError || targetPath}</span>
         </div>
 
         {/* Package manager selection (Issue E04) */}
         {supportedPms.length > 0 ? (
           <div>
             <span className="text-[12px] font-semibold text-[var(--text-secondary,#d4d4d8)] block mb-1.5">
-              首选包管理器 (Package Manager)
+              此配方使用的包管理器
             </span>
-            <div className="flex gap-2" role="radiogroup" aria-label="首选包管理器">
+            <div className="flex gap-2">
               {supportedPms.map((p) => (
-                <button
+                <span
                   key={p}
-                  type="button"
-                  role="radio"
-                  aria-checked={pm === p}
-                  aria-label={`包管理器: ${p}`}
-                  onClick={() => setPm(p)}
-                  className={`min-h-[32px] rounded-lg border px-3.5 py-1 font-mono text-[12px] font-bold transition-all cursor-pointer ${
-                    pm === p
-                      ? "border-blue-500 bg-blue-600/20 text-blue-300"
-                      : "border-[var(--line-subtle,#27272a)] bg-[var(--surface-ground,#0a0c0f)] text-[var(--text-tertiary,#71717a)] hover:border-[var(--line-focus,#3f3f46)]"
-                  }`}
+                  className="min-h-[32px] rounded-lg border border-blue-500 bg-blue-600/20 text-blue-300 px-3.5 py-1 font-mono text-[12px] font-bold"
                 >
                   {p}
-                </button>
+                </span>
               ))}
             </div>
+            <p className="mt-1 text-[11px] text-[var(--text-tertiary,#71717a)]">按模板原有步骤复制；其他包管理器尚未提供独立配方。</p>
           </div>
         ) : (
           <div className="text-[11.5px] text-[var(--text-tertiary,#71717a)]">
@@ -428,30 +346,36 @@ export function ScaffoldModal({
         )}
 
         {/* Structured steps overview (Issue E02) */}
-        <div>
-          <span className="text-[12px] font-semibold text-[var(--text-secondary,#d4d4d8)] block mb-1.5">
-            执行步骤清单 ({resolvedSteps.length} 步)
-          </span>
-          <div className="space-y-1.5">
-            {resolvedSteps.map((s, idx) => (
-              <div
-                key={s.id || idx}
-                className="flex items-center justify-between rounded-md border border-[var(--line-subtle,#27272a)] bg-[var(--surface-panel,#0e1116)] px-3 py-1.5 text-[11px] font-mono text-[var(--text-secondary,#a1a1aa)]"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <span className="text-blue-400 font-bold">#{idx + 1}</span>
-                  <span className="text-[var(--text-primary,#ffffff)] font-semibold">{s.program}</span>
-                  <span className="truncate text-[var(--text-tertiary,#71717a)]">{s.args.join(" ")}</span>
+        {resolvedSteps.length > 0 ? (
+          <div>
+            <span className="text-[12px] font-semibold text-[var(--text-secondary,#d4d4d8)] block mb-1.5">
+              执行步骤清单 ({resolvedSteps.length} 步)
+            </span>
+            <div className="space-y-1.5">
+              {resolvedSteps.map((s, idx) => (
+                <div
+                  key={s.id || idx}
+                  className="flex items-center justify-between rounded-md border border-[var(--line-subtle,#27272a)] bg-[var(--surface-panel,#0e1116)] px-3 py-1.5 text-[11px] font-mono text-[var(--text-secondary,#a1a1aa)]"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-blue-400 font-bold">#{idx + 1}</span>
+                    <span className="text-[var(--text-primary,#ffffff)] font-semibold">{s.program}</span>
+                    <span className="truncate text-[var(--text-tertiary,#71717a)]">{s.args.join(" ")}</span>
+                  </div>
+                  {s.cwd && (
+                    <span className="text-[10px] text-[var(--text-tertiary,#52525b)] shrink-0 ml-2">
+                      cwd: {s.cwd.split(/[/\\]/).pop()}
+                    </span>
+                  )}
                 </div>
-                {s.cwd && (
-                  <span className="text-[10px] text-[var(--text-tertiary,#52525b)] shrink-0 ml-2">
-                    cwd: {s.cwd.split(/[/\\]/).pop()}
-                  </span>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-md border border-[var(--line-subtle,#27272a)] bg-[var(--surface-panel,#0e1116)] p-3 text-[11.5px] text-[var(--text-tertiary,#71717a)]">
+            ℹ️ 该模板未定义结构化独立步骤。已保留原始参考命令供终端核对。
+          </div>
+        )}
 
         {/* Command preview box */}
         <div className="rounded-lg border border-[var(--line-subtle,#27272a)] bg-[var(--surface-ground,#0e1116)] p-3 text-[12px] font-mono">

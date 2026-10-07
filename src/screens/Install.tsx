@@ -149,6 +149,10 @@ export function InstallScreen() {
   const verifiedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (installing || !session || !plan) return;
+    if (session.taskStatus === "needsAttention" || session.taskStatus === "interrupted") {
+      setPostCheck(null);
+      return;
+    }
     if (session.cancelledByUser) return;
     if (verifiedSessionRef.current === session.id) return;
     verifiedSessionRef.current = session.id;
@@ -479,13 +483,14 @@ export function InstallScreen() {
           )}
           {!installing && canResume && (
             <Button variant="ghost" onClick={() => void resumeInstall()}>
-              继续安装（还剩 {session?.remaining.length ?? 0} 项）
+              {session?.taskStatus === "needsAttention" || session?.taskStatus === "interrupted"
+                ? "恢复处理任务" : `继续安装（还剩 ${session?.remaining.length ?? 0} 项）`}
             </Button>
           )}
         </div>
 
         <Button
-          disabled={installing}
+          disabled={installing || session?.taskStatus === "needsAttention" || session?.taskStatus === "interrupted"}
           onClick={() => {
             // Straight to the bootstrap screen, which runs the configuration
             // engine on arrival. It is not a second confirmation: the student
@@ -1085,6 +1090,10 @@ function outcomeLabel(outcome: AttemptOutcome): string {
   switch (outcome) {
     case "succeeded":
       return "成功";
+    case "succeededWithWarning":
+      return "成功，有提示";
+    case "needsAttention":
+      return "需要人工介入";
     case "failed":
       return "失败";
     case "unavailable":
@@ -1265,6 +1274,7 @@ function derivePhase({
   }
 
   if (!session) return executionError ? "failed" : "idle";
+  if (session.taskStatus === "needsAttention" || session.taskStatus === "interrupted") return "failed";
 
   // The run is over. `cancelled` wins over `failed` — see above.
   if (session.cancelledByUser) return "cancelled";
@@ -1469,7 +1479,8 @@ function buildFailureView({
     };
   }
 
-  const failureKind = classifyFailure(lastAction);
+  const failureKind = session?.taskStatus === "needsAttention" || session?.taskStatus === "interrupted"
+    ? "needsAttention" : classifyFailure(lastAction);
   const failedStep = session?.steps.find((s) => s.status === "failed") ?? null;
 
   return {
@@ -1498,6 +1509,7 @@ function classifyFailure(
   if (lastAction?.outcome === "permissionDenied") return "permissionDenied";
   if (lastAction?.outcome === "unavailable") return "unavailable";
   if (lastAction?.outcome === "cancelled") return "cancelled";
+  if (lastAction?.outcome === "needsAttention") return "needsAttention";
   return "nonZeroExit";
 }
 
@@ -1514,6 +1526,8 @@ function failureReason(kind: InstallFailureKind, name: string | null): string {
       return "安装执行完成，但是未检测到命令。";
     case "nonZeroExit":
       return `${subject} 安装失败`;
+    case "needsAttention":
+      return "执行资源或任务状态需要人工处理，后续安装已停止";
   }
 }
 
@@ -1529,6 +1543,8 @@ function suggestionFor(kind: InstallFailureKind): string {
       return "命令可能在新的终端窗口中才生效，请重启本程序后再试。";
     case "nonZeroExit":
       return "检查网络连接，或稍后重试。";
+    case "needsAttention":
+      return "先处理未退出的进程或存储问题，再恢复任务；不要重复启动安装。";
   }
 }
 

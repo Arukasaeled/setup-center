@@ -23,11 +23,12 @@ import type {
 } from "./types";
 import {
   loadVaultCache,
+  loadVaultCacheEnvelope,
   saveVaultCache,
   loadVaultConfig,
-  saveVaultConfig,
   clearVaultCache,
 } from "./cache";
+import { getBundledSnapshot } from "./bundledSnapshot";
 import { VaultClient } from "./client";
 import {
   validateCommitSha,
@@ -39,14 +40,34 @@ import {
   validateSkillItem,
 } from "./validation";
 import { scopeRemoteCss } from "./cssPolicy";
-import { registerResourcesBatch, type ResourceItem } from "../../content/resources";
-import { registerStyle, type SetupStyle } from "../../styles";
-import { unmountDynamicStyleCss } from "../../styles/registry";
+import {
+  registerResourcesBatch,
+  restoreResource,
+  RESOURCE_CATALOG,
+  type ResourceItem,
+} from "../../content/resources";
+import type { SetupStyle } from "../../styles";
+import {
+  StyleRegistry,
+  mountDynamicStyleCss,
+  unmountDynamicStyleCss,
+} from "../../styles/registry";
+import { canonicalizeId, isSameContentId } from "../../content/idAliases";
 import { ContentRegistry } from "../../content/registry";
 import { TransferHistory } from "../transfer/history";
 import type { ContentItem } from "../../content/types";
 
 type SyncListener = (status: VaultSyncStatus, result?: VaultSyncResult) => void;
+
+interface VaultRuntimeSnapshot {
+  previousContentItems: Map<string, ContentItem | undefined>;
+  previousResources: Map<string, ResourceItem | undefined>;
+  previousStyles: Map<string, { style?: SetupStyle; css: string | null }>;
+  previousTemplates: VaultTemplateItem[];
+  previousPatterns: VaultPatternItem[];
+  previousSkills: VaultSkillItem[];
+  previousMountedStyleIds: Set<string>;
+}
 
 /**
  * Executes async tasks with bounded concurrency and cancellation support.
@@ -101,16 +122,23 @@ class VaultSyncManager {
   private currentPatterns: VaultPatternItem[] = [];
   private currentSkills: VaultSkillItem[] = [];
   private mountedDynamicStyleIds: Set<string> = new Set();
+  private hasHydrated = false;
 
   // Concurrency & Generation controls (Issue D05)
   private inFlightPromise: Promise<VaultSyncResult> | null = null;
   private generation = 0;
   private activeAbortController: AbortController | null = null;
 
+  private hydrateOnce(): void {
+    if (this.hasHydrated) return;
+    this.hasHydrated = true;
+    this.hydrateFromCache();
+  }
+
   constructor() {
-    // Safely hydrate from cache or bundled offline baseline immediately
+    // Safely hydrate from cache or bundled offline baseline immediately (single hydration)
     try {
-      this.hydrateFromCache();
+      this.hydrateOnce();
     } catch (err) {
       console.warn("[VaultSync] Safe cache hydration caught error on init:", err);
     }
@@ -121,7 +149,7 @@ class VaultSyncManager {
    * Hydrates offline/LKG content immediately, then triggers background sync if enabled.
    */
   public async initialize(): Promise<void> {
-    this.hydrateFromCache();
+    this.hydrateOnce();
     const config = loadVaultConfig();
     if (config.autoSyncOnLaunch) {
       void this.sync();
@@ -185,13 +213,23 @@ class VaultSyncManager {
    */
   public hydrateFromCache(): boolean {
     try {
-      const cached = loadVaultCache();
-      this.applyVaultData(cached);
+      const envelope = loadVaultCacheEnvelope();
+      const cached = envelope?.data ?? getBundledSnapshot();
+      const snapshot = this.captureRuntimeSnapshot(cached);
+      try {
+        this.applyVaultData(cached);
+      } catch (error) {
+        this.rollbackRuntimeSnapshot(snapshot);
+        throw error;
+      }
+      this.notifyRuntimeCommit();
       this.lastResult = {
         ok: true,
         updated: false,
         contentVersion: cached.manifest.contentVersion,
         fromCache: true,
+        origin: envelope?.descriptor?.origin,
+        descriptor: envelope?.descriptor,
         itemCounts: {
           styles: Object.keys(cached.styles).length,
           resources: cached.resources.length,
@@ -363,12 +401,17 @@ class VaultSyncManager {
       }
 
       if (!remoteManifest) throw new Error("Vault manifest unavailable");
-      const cached = loadVaultCache();
+      if (releaseCheckpoint?.releaseVersion !== remoteManifest.contentVersion) {
+        throw new Error("Release checkpoint version does not match the pinned manifest");
+      }
+      const activeEnvelope = loadVaultCacheEnvelope();
+      const cached = activeEnvelope?.data ?? getBundledSnapshot();
       const targetVersion = releaseCheckpoint?.releaseVersion || remoteManifest.contentVersion;
 
       // Check if update is needed
       if (
         !options?.force &&
+        activeEnvelope?.descriptor?.origin === descriptor.origin &&
         cached &&
         (cached.manifest.contentVersion === targetVersion ||
           cached.manifest.contentVersion === remoteManifest.contentVersion)
@@ -526,7 +569,7 @@ class VaultSyncManager {
         );
       }
 
-      // Candidate is complete! Perform atomic swap (Issue D08)
+      // Candidate is complete! Prepare candidate data
       const freshVaultData: CachedVaultData = {
         manifest: remoteManifest,
         syncedAt: new Date().toISOString(),
@@ -537,18 +580,29 @@ class VaultSyncManager {
         skills: skillsList,
       };
 
-      const savedOk = saveVaultCache(freshVaultData);
-      if (!savedOk) {
-        throw new Error("Failed to atomically commit fresh vault cache to local storage");
+      // 1. Capture runtime memory & DOM snapshot BEFORE mutating active state (S08)
+      const runtimeSnapshot = this.captureRuntimeSnapshot(freshVaultData);
+
+      try {
+        // 2. Apply to runtime memory registries FIRST (Issue D09)
+        this.applyVaultData(freshVaultData);
+
+        // 3. Atomically commit active cache document ONLY after runtime application succeeds (S08)
+        const savedOk = saveVaultCache(
+          freshVaultData,
+          descriptor,
+          remoteManifest.contentVersion,
+          freshVaultData.syncedAt,
+        );
+        if (!savedOk) {
+          throw new Error("Failed to atomically commit fresh vault cache to local storage");
+        }
+      } catch (applyOrSaveErr) {
+        console.warn("[VaultSync] Apply or cache save failed, executing controlled rollback:", applyOrSaveErr);
+        this.rollbackRuntimeSnapshot(runtimeSnapshot);
+        throw applyOrSaveErr;
       }
-
-      saveVaultConfig({
-        lastSyncTime: freshVaultData.syncedAt,
-        lastSyncVersion: remoteManifest.contentVersion,
-      });
-
-      // Apply to runtime memory registries with replace semantics (Issue D09)
-      this.applyVaultData(freshVaultData);
+      this.notifyRuntimeCommit();
 
       const successResult: VaultSyncResult = {
         ok: true,
@@ -566,16 +620,23 @@ class VaultSyncManager {
         },
       };
 
-      TransferHistory.record({
-        type: "sync",
-        title: "Setup Vault 内容库同步成功",
-        targetId: `vault-${remoteManifest.contentVersion}`,
-        targetName: `Vault v${remoteManifest.contentVersion}`,
-        status: "success",
-        summary: `已同步最新批次资产 (Styles: ${Object.keys(stylesRecord).length}, Resources: ${resourcesList.length}, Templates: ${templatesList.length})`,
-      });
+      // TransferHistory recording outside core commit (S08)
+      try {
+        TransferHistory.record({
+          type: "sync",
+          title: "Setup Vault 内容库同步成功",
+          targetId: `vault-${remoteManifest.contentVersion}`,
+          targetName: `Vault v${remoteManifest.contentVersion}`,
+          status: "success",
+          summary: `已同步最新批次资产 (Styles: ${Object.keys(stylesRecord).length}, Resources: ${resourcesList.length}, Templates: ${templatesList.length})`,
+        });
+      } catch (historyErr) {
+        console.warn("[VaultSync] Optional TransferHistory logging failed (non-fatal):", historyErr);
+      }
 
-      this.notify("success", successResult);
+      if (gen === this.generation) {
+        this.notify("success", successResult);
+      }
       return successResult;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -588,7 +649,9 @@ class VaultSyncManager {
           origin: descriptor.origin,
           descriptor,
         };
-        this.notify("idle", abortResult);
+        if (gen === this.generation) {
+          this.notify("idle", abortResult);
+        }
         return abortResult;
       }
 
@@ -606,9 +669,94 @@ class VaultSyncManager {
         descriptor,
       };
 
-      this.notify("error", failResult);
+      if (gen === this.generation) {
+        this.notify("error", failResult);
+      }
       return failResult;
     }
+  }
+
+  private captureRuntimeSnapshot(incomingData: CachedVaultData): VaultRuntimeSnapshot {
+    const currentContent = new Map(ContentRegistry.listAll().map((item) => [item.id, item]));
+    const affectedIds = new Set(ContentRegistry.listAll().filter((item) => item.source === "vault").map((item) => item.id));
+    for (const resource of incomingData.resources) affectedIds.add(canonicalizeId(String(resource.id), "resource"));
+    for (const template of incomingData.templates) affectedIds.add(canonicalizeId(template.id, "template"));
+    for (const pattern of incomingData.patterns) affectedIds.add(canonicalizeId(pattern.id, "pattern"));
+    for (const skill of incomingData.skills ?? []) affectedIds.add(canonicalizeId(skill.id, "skill"));
+    const styleIds = new Set([
+      ...this.mountedDynamicStyleIds,
+      ...Object.keys(incomingData.styles),
+      ...Object.values(incomingData.styles).map((style) => style.id),
+    ]);
+    for (const id of styleIds) affectedIds.add(canonicalizeId(id, "style"));
+    const previousContentItems = new Map<string, ContentItem | undefined>();
+    for (const id of affectedIds) previousContentItems.set(id, currentContent.get(id));
+
+    // 2. RESOURCE_CATALOG previous items touched by incoming
+    const previousResources = new Map<string, ResourceItem | undefined>();
+    if (Array.isArray(incomingData.resources)) {
+      for (const res of incomingData.resources as unknown as ResourceItem[]) {
+        if (!previousResources.has(res.id)) {
+          const existing = RESOURCE_CATALOG.find((r) => isSameContentId(r.id, res.id));
+          previousResources.set(res.id, existing ? { ...existing } : undefined);
+        }
+      }
+    }
+
+    // 3. Styles previous state
+    const previousStyles = new Map<string, { style?: SetupStyle; css: string | null }>();
+    for (const id of styleIds) {
+      const existingStyle = StyleRegistry.getStyle(id);
+      const existingCss = typeof document !== "undefined"
+        ? document.getElementById(`vault-style-${id}`)?.textContent ?? null
+        : null;
+      previousStyles.set(id, {
+        style: existingStyle ? { ...existingStyle } : undefined,
+        css: existingCss,
+      });
+    }
+
+    return {
+      previousContentItems,
+      previousResources,
+      previousStyles,
+      previousTemplates: [...this.currentTemplates],
+      previousPatterns: [...this.currentPatterns],
+      previousSkills: [...this.currentSkills],
+      previousMountedStyleIds: new Set(this.mountedDynamicStyleIds),
+    };
+  }
+
+  private rollbackRuntimeSnapshot(snapshot: VaultRuntimeSnapshot): void {
+    // 1. Rollback ContentRegistry
+    ContentRegistry.restoreItems(snapshot.previousContentItems);
+
+    // 2. Rollback RESOURCE_CATALOG
+    for (const [id, prevItem] of snapshot.previousResources) {
+      restoreResource(id, prevItem);
+    }
+
+    // 3. Rollback Styles & CSS
+    for (const [id, prev] of snapshot.previousStyles) {
+      StyleRegistry.restoreStyle(id, prev.style);
+      if (prev.css !== null) {
+        mountDynamicStyleCss(id, prev.css);
+      } else {
+        unmountDynamicStyleCss(id);
+      }
+    }
+    this.mountedDynamicStyleIds = new Set(snapshot.previousMountedStyleIds);
+
+    // 4. Rollback in-memory arrays
+    this.currentTemplates = snapshot.previousTemplates;
+    this.currentPatterns = snapshot.previousPatterns;
+    this.currentSkills = snapshot.previousSkills;
+  }
+
+  private notifyRuntimeCommit(): void {
+    // Style subscribers also refresh the content adapter. Both observe committed state.
+    StyleRegistry.notify();
+    ContentRegistry.notify();
   }
 
   /**
@@ -709,11 +857,10 @@ class VaultSyncManager {
     }
 
     // Atomic replace in ContentRegistry for origin "vault"
-    ContentRegistry.replaceOrigin("vault", allContentItems);
+    ContentRegistry.replaceOrigin("vault", allContentItems, false);
 
     // 3. Styles: Unmount retracted styles and mount updated ones (Issue D09)
     const incomingStyles = data.styles ?? {};
-    const incomingStyleIds = new Set(Object.keys(incomingStyles));
 
     // Unmount any previously mounted style no longer present or marked retracted (implemented: false)
     for (const mountedId of Array.from(this.mountedDynamicStyleIds)) {
@@ -730,6 +877,9 @@ class VaultSyncManager {
       if (s.cssContent && s.implemented !== false) {
         this.mountDynamicStyleCss(s.id, s.cssContent);
         this.mountedDynamicStyleIds.add(s.id);
+      } else {
+        unmountDynamicStyleCss(s.id);
+        this.mountedDynamicStyleIds.delete(s.id);
       }
       const setupStyle: SetupStyle = {
         id: s.id,
@@ -761,7 +911,7 @@ class VaultSyncManager {
         designPrinciples: s.designPrinciples ?? [],
         ...(s.experience ? { experience: s.experience } : {}),
       };
-      registerStyle(setupStyle);
+      StyleRegistry.registerStyleInternal(setupStyle, false);
     }
   }
 

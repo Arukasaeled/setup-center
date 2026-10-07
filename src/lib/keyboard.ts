@@ -19,7 +19,12 @@ export function isHotkeyAllowed(
   options: HotkeyEligibilityOptions = {},
 ): boolean {
   // 1. IME composition check (H04)
-  if (e.isComposing || (e as any).keyCode === 229 || (e.nativeEvent as any)?.isComposing) {
+  const isComposing =
+    "nativeEvent" in e
+      ? Boolean(e.nativeEvent.isComposing || e.keyCode === 229)
+      : Boolean(e.isComposing || e.keyCode === 229);
+
+  if (isComposing) {
     return false;
   }
 

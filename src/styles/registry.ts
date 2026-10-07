@@ -61,7 +61,7 @@ export type RegistryListener = (version: number) => void;
  * Mount or update dynamic style CSS in DOM for remotely synced styles.
  */
 export function mountDynamicStyleCss(styleId: string, cssContent: string): void {
-  if (typeof document === "undefined" || !cssContent) return;
+  if (typeof document === "undefined") return;
   const tagId = `vault-style-${styleId}`;
   let styleTag = document.getElementById(tagId) as HTMLStyleElement | null;
   if (!styleTag) {
@@ -150,6 +150,7 @@ export class StyleRegistryManager {
 
     const styleWithRev: SetupStyle = {
       ...style,
+      id: normalizedId,
       revision: nextRev,
     };
 
@@ -161,7 +162,7 @@ export class StyleRegistryManager {
       this.styles[existingIdx] = {
         ...styleWithRev,
         baseStyleId: styleWithRev.baseStyleId ?? existing.baseStyleId,
-        implemented: styleWithRev.implemented || existing.implemented,
+        implemented: styleWithRev.implemented ?? existing.implemented,
         experience: styleWithRev.experience ?? existing.experience,
       };
     }
@@ -172,6 +173,20 @@ export class StyleRegistryManager {
 
   public registerStyle(style: SetupStyle): void {
     this.registerStyleInternal(style, true);
+  }
+
+  /** Exact rollback: do not inherit fields from the failed candidate. */
+  public restoreStyle(id: StyleId, style?: SetupStyle): void {
+    const normalized = id === "p5-comic" ? "phantom-comic" : id;
+    const index = this.styles.findIndex((entry) => entry.id === normalized);
+    if (style) {
+      if (index < 0) this.styles.push(style);
+      else this.styles[index] = style;
+      this.styleRevisions.set(normalized, style.revision ?? 1);
+    } else {
+      if (index >= 0) this.styles.splice(index, 1);
+      this.styleRevisions.delete(normalized);
+    }
   }
 
   public removeStyle(id: StyleId): void {

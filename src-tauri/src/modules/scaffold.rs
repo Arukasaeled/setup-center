@@ -60,31 +60,27 @@ const RESERVED_DEVICE_NAMES: &[&str] = &[
 pub fn validate_project_name(name: &str) -> AppResult<()> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(AppError::InvalidInput {
-            field: "projectName".into(),
+        return Err(AppError::InvalidRequest {
             reason: "工程名称不能为空".into(),
         });
     }
 
     if trimmed.len() > 128 {
-        return Err(AppError::InvalidInput {
-            field: "projectName".into(),
+        return Err(AppError::InvalidRequest {
             reason: "工程名称长度不能超过 128 个字符".into(),
         });
     }
 
     // Disallow path traversal and separator characters
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") || trimmed.contains(':') {
-        return Err(AppError::InvalidInput {
-            field: "projectName".into(),
+        return Err(AppError::InvalidRequest {
             reason: "工程名称不能包含路径分隔符、冒号或上级目录引用 (..)".into(),
         });
     }
 
     // Must be valid alphanumeric, hyphen, underscore, or dot
     if !trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') {
-        return Err(AppError::InvalidInput {
-            field: "projectName".into(),
+        return Err(AppError::InvalidRequest {
             reason: "工程名称仅支持英文字母、数字、短横线、下划线及点".into(),
         });
     }
@@ -92,8 +88,7 @@ pub fn validate_project_name(name: &str) -> AppResult<()> {
     let upper = trimmed.to_ascii_uppercase();
     let stem = upper.split('.').next().unwrap_or(&upper);
     if RESERVED_DEVICE_NAMES.contains(&stem) {
-        return Err(AppError::InvalidInput {
-            field: "projectName".into(),
+        return Err(AppError::InvalidRequest {
             reason: format!("工程名称不能使用 Windows 保留设备名: {trimmed}"),
         });
     }
@@ -153,8 +148,7 @@ pub fn build_scaffold_plan(
     validate_project_name(&project_name)?;
 
     if !parent_dir.is_absolute() {
-        return Err(AppError::InvalidInput {
-            field: "parentDir".into(),
+        return Err(AppError::InvalidRequest {
             reason: "父级目录必须是绝对路径".into(),
         });
     }

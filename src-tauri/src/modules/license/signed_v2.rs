@@ -27,7 +27,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::fingerprint::{current_device_evidence_v2, DeviceEvidenceV2, DeviceMatchVerdict};
+use super::current_device_evidence_v2;
+use super::fingerprint::{DeviceEvidenceV2, DeviceMatchVerdict};
 use super::public_keys::{lookup_key, KeyStatus, SignatureAlgorithm, TrustedIssuerKey};
 use super::Tier;
 use crate::model::{AppError, AppResult};

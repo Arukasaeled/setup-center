@@ -301,7 +301,7 @@ export function DetailPresenter({
         onClose={onClose}
         titleId="detail-shell-title"
         dataProtectedUi={true}
-        panelClassName="fixed inset-y-0 right-0 z-50 flex h-full w-[520px] max-w-[95vw] flex-col border-l border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200"
+        contentClassName="fixed inset-y-0 right-0 z-50 flex h-full w-[520px] max-w-[95vw] flex-col border-l border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200"
       >
         {header}
         {degradationBanner}
@@ -321,7 +321,7 @@ export function DetailPresenter({
         onClose={onClose}
         titleId="detail-shell-title"
         dataProtectedUi={true}
-        panelClassName="fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-[95vw] flex-col border-l border-[color:var(--line-strong)] bg-[color:var(--surface-raised)] text-[color:var(--text-primary)] shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200"
+        contentClassName="fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-[95vw] flex-col border-l border-[color:var(--line-strong)] bg-[color:var(--surface-raised)] text-[color:var(--text-primary)] shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200"
       >
         {header}
         {degradationBanner}
@@ -340,8 +340,7 @@ export function DetailPresenter({
       onClose={onClose}
       titleId="detail-shell-title"
       dataProtectedUi={true}
-      maxWidth={widthClass}
-      panelClassName="relative w-full rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl transition-all duration-200 flex flex-col max-h-[90vh] overflow-hidden"
+      contentClassName={clsx("w-full rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl transition-all duration-200 flex flex-col max-h-[90vh] overflow-hidden", widthClass)}
     >
       {header}
       {degradationBanner}

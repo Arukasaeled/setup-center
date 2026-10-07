@@ -606,7 +606,8 @@ export type InstallFailureKind =
   | "unavailable"
   | "permissionDenied"
   | "cancelled"
-  | "verifyFailed";
+  | "verifyFailed"
+  | "needsAttention";
 
 /** What the cancel / error panel shows. */
 export interface InstallFailureView {
@@ -678,7 +679,8 @@ export type AttemptOutcome =
   | "unavailable"
   | "permissionDenied"
   | "skipped"
-  | "cancelled";
+  | "cancelled"
+  | "needsAttention";
 
 export type SubjectKind = "software" | "config" | "plugin" | "skill";
 
@@ -704,12 +706,31 @@ export interface ActionRecord {
   finalAttempt: boolean;
 }
 
+export type TaskStatus =
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "needsAttention";
+
+export interface PackageObservation {
+  provider: "winget";
+  packageId: string;
+  presence: "present" | "absent" | "unknown";
+  installedVersion?: string | null;
+  observedAt: string;
+  detail?: string | null;
+}
+
 /** The record of one installation run. */
 export interface ExecutionSession {
   id: string;
   profileId: string;
   startedAt: string;
   finishedAt: string | null;
+  taskStatus: TaskStatus;
+  packageObservation?: PackageObservation | null;
   actions: ActionRecord[];
   steps: StepProgress[];
   failedSteps: SoftwareId[];

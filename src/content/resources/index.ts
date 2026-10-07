@@ -120,9 +120,27 @@ export function registerResource(item: ResourceItem): void {
 }
 
 /** Batch register resources (e.g. from Vault synchronization) */
+export function restoreResource(id: string, item: ResourceItem | undefined): void {
+  const index = RESOURCE_CATALOG.findIndex((entry) => isSameContentId(entry.id, id));
+  if (item) {
+    if (index >= 0) RESOURCE_CATALOG[index] = item;
+    else RESOURCE_CATALOG.push(item);
+  } else if (index >= 0) {
+    RESOURCE_CATALOG.splice(index, 1);
+  }
+}
+
 export function registerResourcesBatch(items: ResourceItem[]): void {
   for (const item of items) {
     registerResource(item);
+  }
+}
+
+/** Unregister or remove a resource from active catalog (for rollback) */
+export function unregisterResource(id: string): void {
+  const existingIdx = RESOURCE_CATALOG.findIndex((r) => isSameContentId(r.id, id));
+  if (existingIdx >= 0) {
+    RESOURCE_CATALOG.splice(existingIdx, 1);
   }
 }
 

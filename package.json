@@ -15,7 +15,6 @@
     "ui-parts:test": "node tools/ui-parts-storage-test.mjs"
   },
   "dependencies": {
-    "@cfworker/json-schema": "^2.0.1",
     "@tauri-apps/api": "^2.9.0",
     "clsx": "^2.1.1",
     "react": "^19.2.0",

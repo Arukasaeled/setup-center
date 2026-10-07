@@ -436,8 +436,7 @@ function NavPreferencesModal({
       onClose={onClose}
       titleId="nav-prefs-title"
       dataProtectedUi={true}
-      maxWidth="max-w-md"
-      panelClassName="relative w-full max-w-md rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-5 text-[color:var(--text-primary)] shadow-2xl space-y-4"
+      contentClassName="w-full max-w-md rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-5 text-[color:var(--text-primary)] shadow-2xl space-y-4"
     >
       <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] pb-3">
         <h3 id="nav-prefs-title" className="text-[16px] font-bold text-[color:var(--text-strong)] flex items-center gap-2">

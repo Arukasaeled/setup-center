@@ -123,6 +123,14 @@ pub fn execute_source(
     execute_source_with_policy(id, source, attempt, cancel, &policy)
 }
 
+/// Contextual information for tracking execution within TaskManager and Windows Job Objects.
+#[derive(Clone, Default)]
+pub struct ExecutionContext {
+    pub task_id: Option<String>,
+    pub job_object: Option<Arc<crate::modules::task::JobObjectGuard>>,
+    pub task_manager: Option<Arc<crate::modules::task::TaskManager>>,
+}
+
 /// Runs one [`InstallSource`] using a frozen storage policy snapshot.
 pub fn execute_source_with_policy(
     id: SoftwareId,
@@ -131,17 +139,29 @@ pub fn execute_source_with_policy(
     cancel: &CancelFlag,
     policy: &super::storage::StoragePolicy,
 ) -> ActionRecord {
+    execute_source_with_context(id, source, attempt, cancel, policy, None)
+}
+
+/// Runs one [`InstallSource`] with full execution context (JobObject, Task ID, TaskManager).
+pub fn execute_source_with_context(
+    id: SoftwareId,
+    source: &InstallSource,
+    attempt: u32,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+    ctx: Option<&ExecutionContext>,
+) -> ActionRecord {
     let started = Instant::now();
     let started_at = now_iso8601();
 
     let (outcome, exit_code, output, error) = match source {
-        InstallSource::Winget { package_id } => run_winget(package_id, id, cancel, policy),
+        InstallSource::Winget { package_id } => run_winget_with_context(package_id, id, cancel, policy, ctx),
         InstallSource::OfficialInstaller { url, kind, vendor_id, .. } => {
             let effective_kind = kind.unwrap_or_else(|| InstallerKind::from_url_pathname(url));
-            run_official_installer(url, effective_kind, vendor_id.as_deref(), id, cancel, policy)
+            run_official_installer_with_context(url, effective_kind, vendor_id.as_deref(), id, cancel, policy, ctx)
         }
         InstallSource::Script { command, program_kind, args } => {
-            run_script(command, *program_kind, args.as_deref(), cancel)
+            run_script_with_context(command, *program_kind, args.as_deref(), cancel, ctx)
         }
         InstallSource::ConfigurationOnly => (
             // Nothing to run. Recorded as a success so a configuration-only step
@@ -197,6 +217,16 @@ fn run_winget(
     cancel: &CancelFlag,
     policy: &super::storage::StoragePolicy,
 ) -> ExecResult {
+    run_winget_with_context(package_id, id, cancel, policy, None)
+}
+
+fn run_winget_with_context(
+    package_id: &str,
+    id: SoftwareId,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+    ctx: Option<&ExecutionContext>,
+) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
@@ -217,13 +247,13 @@ fn run_winget(
             );
             let args_refs: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
 
-            match run_process("winget", &args_refs, ATTEMPT_TIMEOUT, cancel) {
+            match run_process_with_context("winget", &args_refs, ATTEMPT_TIMEOUT, cancel, ctx) {
                 Ok(result) => {
                     let combined = format!("{version_note}{}", result.output);
                     classify(package_id, result.exit_code, combined)
                 }
                 Err(e) => (
-                    AttemptOutcome::Unavailable,
+                    e.outcome(),
                     None,
                     version_note,
                     Some(format!("无法启动 winget：{e}")),
@@ -273,6 +303,18 @@ fn run_official_installer(
     id: SoftwareId,
     cancel: &CancelFlag,
     policy: &super::storage::StoragePolicy,
+) -> ExecResult {
+    run_official_installer_with_context(url, kind, vendor_id, id, cancel, policy, None)
+}
+
+fn run_official_installer_with_context(
+    url: &str,
+    kind: InstallerKind,
+    vendor_id: Option<&str>,
+    id: SoftwareId,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+    ctx: Option<&ExecutionContext>,
 ) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
@@ -373,13 +415,13 @@ fn run_official_installer(
     // Controlled execution dispatch per InstallerKind
     let result = match kind {
         InstallerKind::Exe => {
-            run_process(&path.to_string_lossy(), &[], ATTEMPT_TIMEOUT, cancel)
+            run_process_with_context(&path.to_string_lossy(), &[], ATTEMPT_TIMEOUT, cancel, ctx)
         }
         InstallerKind::Msi => {
             let msiexec = crate::modules::system_ops::system32_executable("msiexec.exe");
             let msiexec_str = msiexec.to_string_lossy();
             let path_str = path.to_string_lossy();
-            run_process(&msiexec_str, &["/i", &path_str, "/qn", "/norestart"], ATTEMPT_TIMEOUT, cancel)
+            run_process_with_context(&msiexec_str, &["/i", &path_str, "/qn", "/norestart"], ATTEMPT_TIMEOUT, cancel, ctx)
         }
         InstallerKind::Ps1 => {
             let ps_v1 = crate::modules::system_ops::system32_executable("WindowsPowerShell\\v1.0\\powershell.exe");
@@ -389,18 +431,19 @@ fn run_official_installer(
                 crate::modules::system_ops::system32_executable("powershell.exe").to_string_lossy().to_string()
             };
             let path_str = path.to_string_lossy();
-            run_process(
+            run_process_with_context(
                 &ps_str,
                 &["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", &path_str],
                 ATTEMPT_TIMEOUT,
                 cancel,
+                ctx,
             )
         }
         InstallerKind::Cmd | InstallerKind::Bat => {
             let cmd_exe = crate::modules::system_ops::system32_executable("cmd.exe");
             let cmd_str = cmd_exe.to_string_lossy().to_string();
             let path_str = path.to_string_lossy();
-            run_process(&cmd_str, &["/D", "/C", &path_str], ATTEMPT_TIMEOUT, cancel)
+            run_process_with_context(&cmd_str, &["/D", "/C", &path_str], ATTEMPT_TIMEOUT, cancel, ctx)
         }
         InstallerKind::Unsupported => unreachable!(),
     };
@@ -421,7 +464,7 @@ fn run_official_installer(
             classify_with_kind(url, r.exit_code, combined, Some(kind))
         }
         Err(e) => (
-            AttemptOutcome::Unavailable,
+            e.outcome(),
             None,
             format_note,
             Some(format!("无法运行安装包：{e}")),
@@ -652,6 +695,16 @@ fn run_script(
     args: Option<&[String]>,
     cancel: &CancelFlag,
 ) -> ExecResult {
+    run_script_with_context(command, program_kind, args, cancel, None)
+}
+
+fn run_script_with_context(
+    command: &str,
+    program_kind: Option<ScriptProgramKind>,
+    args: Option<&[String]>,
+    cancel: &CancelFlag,
+    ctx: Option<&ExecutionContext>,
+) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
@@ -743,10 +796,10 @@ fn run_script(
     };
 
     let arg_refs: Vec<&str> = process_args.iter().map(String::as_str).collect();
-    match run_process(&program, &arg_refs, ATTEMPT_TIMEOUT, cancel) {
+    match run_process_with_context(&program, &arg_refs, ATTEMPT_TIMEOUT, cancel, ctx) {
         Ok(r) => classify(command, r.exit_code, r.output),
         Err(e) => (
-            AttemptOutcome::Unavailable,
+            e.outcome(),
             None,
             String::new(),
             Some(format!("无法执行命令 {command}：{e}")),
@@ -765,6 +818,37 @@ struct ProcessResult {
     output: String,
 }
 
+enum ProcessFailure {
+    Unavailable(String),
+    Cancelled,
+    Timeout(String),
+    NeedsAttention(String),
+}
+
+impl ProcessFailure {
+    fn outcome(&self) -> AttemptOutcome {
+        match self {
+            Self::Cancelled => AttemptOutcome::Cancelled,
+            Self::NeedsAttention(_) => AttemptOutcome::NeedsAttention,
+            Self::Timeout(_) => AttemptOutcome::Failed,
+            Self::Unavailable(_) => AttemptOutcome::Unavailable,
+        }
+    }
+}
+
+impl From<String> for ProcessFailure {
+    fn from(error: String) -> Self { Self::Unavailable(error) }
+}
+
+impl std::fmt::Display for ProcessFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cancelled => f.write_str("已取消"),
+            Self::Unavailable(message) | Self::Timeout(message) | Self::NeedsAttention(message) => f.write_str(message),
+        }
+    }
+}
+
 /// Runs a process to completion and captures its merged output.
 ///
 /// The child's stdout and stderr are merged into one buffer through a real pipe
@@ -776,17 +860,36 @@ fn run_process(
     timeout: Duration,
     cancel: &CancelFlag,
 ) -> Result<ProcessResult, String> {
-    let spec = crate::modules::process::ProcessSpec::new(program, args)
+    run_process_with_context(program, args, timeout, cancel, None).map_err(|e| e.to_string())
+}
+
+fn run_process_with_context(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    cancel: &CancelFlag,
+    ctx: Option<&ExecutionContext>,
+) -> Result<ProcessResult, ProcessFailure> {
+    let mut spec = crate::modules::process::ProcessSpec::new(program, args)
         .with_timeout(timeout)
         .with_cancel(cancel.clone());
+
+    if let Some(c) = ctx {
+        spec = spec
+            .with_job_object(c.job_object.clone())
+            .with_task_context(c.task_id.clone(), c.task_manager.clone());
+    }
 
     let res = crate::modules::process::execute_process(&spec)?;
 
     match res.termination_reason {
-        crate::modules::process::TerminationReason::Cancelled => Err("已取消".into()),
-        crate::modules::process::TerminationReason::Timeout => Err(format!(
+        crate::modules::process::TerminationReason::Cancelled => Err(ProcessFailure::Cancelled),
+        crate::modules::process::TerminationReason::Timeout => Err(ProcessFailure::Timeout(format!(
             "超过 {} 分钟未完成，已终止",
             timeout.as_secs() / 60
+        ))),
+        crate::modules::process::TerminationReason::NeedsAttention => Err(ProcessFailure::NeedsAttention(
+            res.cleanup_error.unwrap_or_else(|| "进程资源未确认回收，需要人工介入".into())
         )),
         _ => Ok(ProcessResult {
             exit_code: res.exit_code.unwrap_or(-1),
@@ -1007,8 +1110,8 @@ pub fn clean_downloads() {
 }
 
 /// Removes the downloaded payloads using an explicit policy and manifest.
-pub fn clean_downloads_with_policy(policy: &StoragePolicy) {
-    super::storage::clean_downloads_with_manifest(policy, &[]);
+pub fn clean_downloads_with_policy(policy: &StoragePolicy) -> super::storage::CleanupResult {
+    super::storage::clean_downloads_with_manifest(policy, &[])
 }
 
 /// Absolute path an installer would be downloaded to. Exposed so a test can

@@ -37,10 +37,10 @@ pub fn run_capture(program: &str, args: &[&str]) -> AppResult<String> {
         reason: e,
     })?;
 
-    if res.exit_code != Some(0) {
+    if res.exit_code != Some(0) || res.termination_reason != crate::modules::process::TerminationReason::ExitSuccess || res.truncated {
         return Err(AppError::ProbeFailed {
             probe: program.to_string(),
-            reason: format!("进程退出非零 ({:?}): {}", res.exit_code, res.merged_output),
+            reason: format!("探测输出未完整正常结束 ({:?}, {:?}, truncated={}): {}", res.exit_code, res.termination_reason, res.truncated, res.merged_output),
         });
     }
 

@@ -34,9 +34,8 @@ import {
   loadUserUIParts,
   readUIPartAsset,
   saveUIPartAsset,
-  saveUserUIParts,
   stageUIPartAsset,
-  commitUIPartAssets,
+  commitUIPartTransaction,
   discardUIPartAssets,
 } from "../../lib/ipc";
 import {
@@ -304,7 +303,10 @@ export class UIPartRepositoryClass {
    *   - Syncs startup cache
    *   - Notifies listeners
    */
-  public async commitToStorage(candidateParts: UIPart[]): Promise<boolean> {
+  public async commitToStorage(
+    candidateParts: UIPart[],
+    stagedAssets?: { stagingPath: string; relativePath: string }[],
+  ): Promise<boolean> {
     const candidateRevision = this.revision + 1;
     const candidateUpdatedAt = new Date().toISOString();
 
@@ -326,11 +328,17 @@ export class UIPartRepositoryClass {
     // 1. Authoritative disk write FIRST in Tauri
     if (isTauri()) {
       const json = JSON.stringify(candidateDoc, null, 2);
-      const res = await saveUserUIParts(json);
-      if (!res || !res.success) {
-        const err = new Error("Failed to write UI parts to disk atomically via Tauri IPC");
-        console.error("[UIParts] Disk write failed. In-memory state preserved without taint:", err);
-        throw err;
+      {
+        const commitItems = (stagedAssets ?? []).map((s) => ({
+          stagingPath: s.stagingPath,
+          relativePath: s.relativePath,
+        }));
+        const res = await commitUIPartTransaction(json, commitItems);
+        if (!res || !res.success || res.committedAssets !== commitItems.length) {
+          const err = new Error("Failed to commit UI parts transaction atomically via Tauri IPC");
+          console.error("[UIParts] Transaction write failed. In-memory state preserved without taint:", err);
+          throw err;
+        }
       }
     } else {
       // In browser fallback mode, propagate storage errors (F09)
@@ -575,7 +583,8 @@ export class UIPartRepositoryClass {
           );
         }
         if (isTauri()) {
-          const staged = await stageUIPartAsset(id, `preview.${parsedImage.ext}`, thumbnail);
+          const fileName = mediaFileNameHint("preview", parsedImage.ext);
+          const staged = await stageUIPartAsset(id, fileName, thumbnail);
           if (!staged || !staged.staging_path) {
             throw new Error(`暂存媒体资产到本地磁盘失败 (part: ${id})`);
           }
@@ -618,17 +627,9 @@ export class UIPartRepositoryClass {
 
       const nextParts = [newPart, ...this.parts];
       try {
-        await this.commitToStorage(nextParts);
-        if (stagedAssets.length > 0 && isTauri()) {
-          await commitUIPartAssets(
-            stagedAssets.map((s) => ({
-              staging_path: s.stagingPath,
-              relative_path: s.relativePath,
-            })),
-          );
-          if (thumbnail) {
-            this.assetUrlCache.set(thumbnail, input.preview?.thumbnail || "");
-          }
+        await this.commitToStorage(nextParts, stagedAssets);
+        if (thumbnail && input.preview?.thumbnail) {
+          this.assetUrlCache.set(thumbnail, input.preview.thumbnail);
         }
       } catch (err) {
         if (stagedAssets.length > 0 && isTauri()) {
@@ -662,7 +663,8 @@ export class UIPartRepositoryClass {
           );
         }
         if (isTauri()) {
-          const staged = await stageUIPartAsset(id, `preview.${parsedImage.ext}`, patch.preview.thumbnail);
+          const fileName = mediaFileNameHint("preview", parsedImage.ext);
+          const staged = await stageUIPartAsset(id, fileName, patch.preview.thumbnail);
           if (!staged || !staged.staging_path) {
             throw new Error(`暂存媒体资产到本地磁盘失败 (part: ${id})`);
           }
@@ -696,17 +698,9 @@ export class UIPartRepositoryClass {
       nextParts[index] = updated;
 
       try {
-        await this.commitToStorage(nextParts);
-        if (stagedAssets.length > 0 && isTauri()) {
-          await commitUIPartAssets(
-            stagedAssets.map((s) => ({
-              staging_path: s.stagingPath,
-              relative_path: s.relativePath,
-            })),
-          );
-          if (thumbnail) {
-            this.assetUrlCache.set(thumbnail, patch.preview?.thumbnail || "");
-          }
+        await this.commitToStorage(nextParts, stagedAssets);
+        if (thumbnail && patch.preview?.thumbnail) {
+          this.assetUrlCache.set(thumbnail, patch.preview.thumbnail);
         }
       } catch (err) {
         if (stagedAssets.length > 0 && isTauri()) {
@@ -914,7 +908,7 @@ export class UIPartRepositoryClass {
             );
           }
           if (isTauri()) {
-            const fileName = `${defaultName}.${parsedImage.ext}`;
+            const fileName = mediaFileNameHint(defaultName, parsedImage.ext);
             const staged = await stageUIPartAsset(partToInsert.id, fileName, dataUrl);
             if (!staged || !staged.staging_path) {
               throw new Error(`导入包媒体资产暂存失败 (${fileName}, part: ${partToInsert.id})`);
@@ -969,17 +963,9 @@ export class UIPartRepositoryClass {
         partToInsert.updatedAt = new Date().toISOString();
         const nextParts = [partToInsert, ...this.parts];
 
-        await this.commitToStorage(nextParts);
-        if (stagedAssets.length > 0 && isTauri()) {
-          await commitUIPartAssets(
-            stagedAssets.map((s) => ({
-              staging_path: s.stagingPath,
-              relative_path: s.relativePath,
-            })),
-          );
-          for (const s of stagedAssets) {
-            this.assetUrlCache.set(s.relativePath, s.dataUrl);
-          }
+        await this.commitToStorage(nextParts, stagedAssets);
+        for (const s of stagedAssets) {
+          this.assetUrlCache.set(s.relativePath, s.dataUrl);
         }
       } catch (err) {
         if (stagedAssets.length > 0 && isTauri()) {
@@ -998,6 +984,11 @@ export class UIPartRepositoryClass {
       await this.commitToStorage([...SEED_UI_PARTS]);
     });
   }
+}
+
+function mediaFileNameHint(baseName: string, ext: string): string {
+  // The backend owns allocation and returns the authoritative immutable asset path.
+  return `${baseName}.${ext}`;
 }
 
 function tagLower(q: string): string {

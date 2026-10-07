@@ -517,7 +517,7 @@ pub async fn run_install(
         created_at: plan_record.created_at,
     };
 
-    run_install_blocking(frozen_plan, state, window).await
+    run_install_blocking(frozen_plan, request.request_id, state, window).await
 }
 
 /// The event name every install progress update is emitted on.
@@ -528,44 +528,125 @@ fn emit_progress(window: &tauri::Window, step: &StepProgress) {
     let _ = window.emit(INSTALL_PROGRESS_EVENT, step);
 }
 
+fn observe_dynamic_session(frozen_plan: &FrozenPlan, session: &mut ExecutionSession) {
+    // This server-owned plan prefix and one-step shape are produced by build_dynamic_install_plan.
+    // The software enum may be a builtin ID; the package identity is the frozen source.
+    if !frozen_plan.plan_id.starts_with("dynamic-plan-") { return; }
+    let [step] = frozen_plan.steps.as_slice() else { return; };
+    let InstallSource::Winget { package_id } = &step.source else { return; };
+    session.package_observation = Some(if matches!(session.task_status, TaskStatus::NeedsAttention | TaskStatus::Interrupted) {
+        PackageObservation { provider: "winget".into(), package_id: package_id.clone(),
+            presence: PresenceStatus::Unknown, installed_version: None,
+            observed_at: detect::now_iso8601(), detail: Some("任务需要人工处理，本次未继续发起包观察".into()) }
+    } else { inventory::observe_winget_package(package_id) });
+    let doc = TaskDocumentV1 { schema_version: "task-document.v1".into(), task_id: session.id.clone(),
+        status: session.task_status.as_str().into(), frozen_plan: frozen_plan.clone(), session: session.clone(),
+        updated_at: detect::now_iso8601(), attention_reason: session.halted_reason.clone() };
+    if let Err(error) = install::save_task_document(&doc) {
+        session.task_status = TaskStatus::NeedsAttention;
+        let reason = format!("软件包观察及任务结果未能持久化：{error}");
+        session.halted_reason = Some(match session.halted_reason.take() {
+            Some(previous) => format!("{previous}；{reason}"), None => reason,
+        });
+    }
+}
+
 async fn run_install_blocking(
     frozen_plan: FrozenPlan,
+    request_id: Option<String>,
     state: State<'_, AppState>,
     window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
-    let catalog = catalog::Catalog::builtin();
-    let session = ExecutionSession::new(
-        format!("session-{}", detect::now_iso8601().replace([':', '.'], "-")),
-        frozen_plan.profile_id.clone().unwrap_or_default(),
-        detect::now_iso8601(),
-    );
+    use tauri::Emitter;
 
-    let (lease, flag) = state.begin_session(session).map_err(|reason| {
-        AppError::InstallFailed {
+    let (lease, flag, mut session) = state
+        .begin_session_with_request(
+            request_id.clone(),
+            frozen_plan.profile_id.as_deref().unwrap_or_default(),
+        )
+        .map_err(|reason| AppError::InstallFailed {
             id: "session".into(),
             reason,
-        }
-    })?;
+        })?;
 
+    let task_id = lease.task_id.clone();
+    let _ = window.emit(
+        "install://task-started",
+        serde_json::json!({
+            "requestId": request_id,
+            "taskId": task_id,
+        }),
+    );
+
+    let ctx = executor::ExecutionContext {
+        task_id: Some(task_id.clone()),
+        job_object: lease.job_object.clone(),
+        task_manager: Some(lease.manager.clone()),
+    };
+
+    let catalog = catalog::Catalog::builtin();
     let plan_clone = frozen_plan.clone();
-    let result = match tauri::async_runtime::spawn_blocking(move || {
-        install::execute_frozen_plan_observed(&catalog, &plan_clone, &flag, &|step| {
-            emit_progress(&window, step);
-        })
+    let window_clone = window.clone();
+    let flag_clone = flag.clone();
+    let ctx_clone = ctx.clone();
+
+    let mut result = match tauri::async_runtime::spawn_blocking(move || {
+        install::execute_frozen_plan_observed(
+            &catalog,
+            &plan_clone,
+            &mut session,
+            &flag_clone,
+            &|step| {
+                emit_progress(&window_clone, step);
+                if let (Some(manager), Some(task_id)) = (&ctx_clone.task_manager, &ctx_clone.task_id) {
+                    manager.emit_event(task_id, "system", &format!("{}：{}", step.name, step.stage));
+                }
+            },
+            Some(&ctx_clone),
+        );
+        session
     })
     .await
     {
         Ok(res) => res,
         Err(e) => {
-            lease.finish(crate::modules::task::TaskFinalStatus::Interrupted);
-            return Err(AppError::Internal(format!("安装线程异常结束：{e}")));
+            let reason = format!("安装线程异常结束：{e}");
+            state.tasks.set_anomaly_blocker(&task_id, &reason);
+            lease.finish(crate::model::TaskStatus::Interrupted);
+            return Err(AppError::Internal(reason));
         }
     };
 
-    executor::clean_downloads();
+    observe_dynamic_session(&frozen_plan, &mut result);
+
+    if result.task_status == crate::model::TaskStatus::NeedsAttention {
+        if let Some(ref r) = result.halted_reason {
+            state.tasks.set_anomaly_blocker(&task_id, r);
+        } else {
+            state.tasks.set_anomaly_blocker(&task_id, "安装暂停，需要人工介入处理");
+        }
+    }
+
+    if !matches!(result.task_status, TaskStatus::NeedsAttention | TaskStatus::Interrupted) {
+        executor::clean_downloads();
+    }
     install_log::log_session_failures(&result);
     state.finish_session(result.clone(), Some(lease));
     Ok(result)
+}
+
+fn record_resume_attention(state: &AppState, doc: &TaskDocumentV1, reason: &str) -> AppResult<()> {
+    let mut next = doc.clone();
+    next.status = "needsAttention".into();
+    next.session.task_status = TaskStatus::NeedsAttention;
+    next.session.halted_reason = Some(reason.into());
+    next.attention_reason = Some(reason.into());
+    next.updated_at = detect::now_iso8601();
+    state.tasks.set_anomaly_blocker(&doc.task_id, reason);
+    install::save_task_document(&next).map_err(|error| AppError::InstallFailed {
+        id: "task_document".into(),
+        reason: format!("{reason}；记录恢复阻塞原因失败，原始文件已保留：{error}"),
+    })
 }
 
 /// Continues an interrupted run from exactly the steps that still need doing.
@@ -573,6 +654,7 @@ async fn run_install_blocking(
 pub async fn resume_install(
     state: State<'_, AppState>,
     window: tauri::Window,
+    request_id: Option<String>,
 ) -> AppResult<ExecutionSession> {
     require_install_rights()?;
     let doc = install::load_task_document()
@@ -585,22 +667,23 @@ pub async fn resume_install(
             reason: "没有可以继续的安装任务。".into(),
         })?;
 
-    if !doc.session.is_resumable() {
+    if !doc.session.is_resumable() && !["needsAttention", "running", "interrupted"].contains(&doc.status.as_str()) {
         return Err(AppError::InstallFailed {
             id: "session".into(),
             reason: "该任务已无剩余可执行项或已被取消。".into(),
         });
     }
 
+    state.tasks.confirm_task_reclaimed(&doc.task_id).map_err(|reason| AppError::InstallFailed {
+        id: "process".into(), reason,
+    })?;
+
     // 1. 来源与 Profile 检查：自选模式不查 Profile；Profile 模式校验 Profile 是否存在
     if doc.frozen_plan.origin == PlanOrigin::Profile {
         if let Some(ref prof_id) = doc.frozen_plan.profile_id {
             if state.profiles.get(prof_id).is_err() {
                 let reason = format!("关联的 Profile '{prof_id}' 已不存在，无法继续。");
-                let mut d = doc.clone();
-                d.status = "needsAttention".into();
-                d.attention_reason = Some(reason.clone());
-                let _ = install::save_task_document(&d);
+                record_resume_attention(&state, &doc, &reason)?;
                 return Err(AppError::InstallFailed {
                     id: "profile".into(),
                     reason,
@@ -617,10 +700,7 @@ pub async fn resume_install(
                 let drive_path = drive.as_os_str();
                 if !std::path::Path::new(drive_path).exists() {
                     let reason = format!("存储路径目标磁盘已断开连接：{resolved_root}");
-                    let mut d = doc.clone();
-                    d.status = "needsAttention".into();
-                    d.attention_reason = Some(reason.clone());
-                    let _ = install::save_task_document(&d);
+                    record_resume_attention(&state, &doc, &reason)?;
                     return Err(AppError::InstallFailed {
                         id: "storage".into(),
                         reason,
@@ -645,10 +725,7 @@ pub async fn resume_install(
             };
             if step_source_changed {
                 let reason = format!("软件 {} 的安装来源已发生变更，与冻结方案不一致", step.name);
-                let mut d = doc.clone();
-                d.status = "needsAttention".into();
-                d.attention_reason = Some(reason.clone());
-                let _ = install::save_task_document(&d);
+                record_resume_attention(&state, &doc, &reason)?;
                 return Err(AppError::InstallFailed {
                     id: step.id.key().into(),
                     reason,
@@ -671,15 +748,19 @@ pub async fn resume_install(
         .map(|s| s.step_id)
         .collect();
     if !succeeded_ids.is_empty() {
-        let inv = inventory::scan(&catalog, &succeeded_ids);
+        let builtin_ids: Vec<SoftwareId> = succeeded_ids.iter().copied().filter(|id| *id != SoftwareId::Dynamic).collect();
+        let inv = inventory::scan(&catalog, &builtin_ids);
         for id in &succeeded_ids {
-            let is_present = inv.find(*id).is_some_and(|item| item.installed && item.version.is_some());
+            let is_present = if *id == SoftwareId::Dynamic {
+                doc.frozen_plan.steps.iter().find(|s| s.id == *id).is_some_and(|step| {
+                    if let InstallSource::Winget { package_id } = &step.source {
+                        inventory::observe_winget_package(package_id).presence == PresenceStatus::Present
+                    } else { false }
+                })
+            } else { inv.find(*id).is_some_and(|item| item.installed && item.version.is_some()) };
             if !is_present {
                 let reason = format!("先前已成功的软件 {} 现已不可用或已损坏", id.display_name());
-                let mut d = doc.clone();
-                d.status = "needsAttention".into();
-                d.attention_reason = Some(reason.clone());
-                let _ = install::save_task_document(&d);
+                record_resume_attention(&state, &doc, &reason)?;
                 return Err(AppError::InstallFailed {
                     id: id.key().into(),
                     reason,
@@ -688,30 +769,93 @@ pub async fn resume_install(
         }
     }
 
-    let (lease, flag) = state.begin_session(doc.session.clone()).map_err(|reason| {
-        AppError::InstallFailed {
-            id: "session".into(),
-            reason,
-        }
+    // 5. 确保旧任务进程已完全退出并清除异常阻塞标记
+    state.tasks.confirm_task_reclaimed(&doc.task_id).map_err(|reason| AppError::InstallFailed {
+        id: "process".into(), reason,
     })?;
+    let previous_blocker = state.tasks.has_anomaly_blocker();
+    let mut recovery_doc = doc.clone();
+    recovery_doc.status = "interrupted".into();
+    recovery_doc.session.task_status = crate::model::TaskStatus::Interrupted;
+    recovery_doc.attention_reason = None;
+    install::save_task_document(&recovery_doc).map_err(|reason| AppError::InstallFailed {
+        id: "task_document".into(), reason: format!("无法可靠记录旧执行已结束，异常保护未解除：{reason}"),
+    })?;
+    state.tasks.clear_anomaly_for(&doc.task_id).map_err(|reason| AppError::InstallFailed {
+        id: "session".into(), reason,
+    })?;
+    let (lease, flag) = match state.begin_session_for_request(doc.session.clone(), request_id.clone()) {
+        Ok(started) => started,
+        Err(reason) => {
+            if let Some(blocker) = previous_blocker {
+                state.tasks.set_anomaly_blocker(&blocker.task_id, &blocker.reason);
+            } else { state.tasks.set_anomaly_blocker(&doc.task_id, &reason); }
+            return Err(AppError::InstallFailed { id: "session".into(), reason });
+        }
+    };
 
+    let task_id = lease.task_id.clone();
+    let _ = window.emit(
+        "install://task-started",
+        serde_json::json!({
+            "requestId": request_id,
+            "taskId": task_id,
+        }),
+    );
+
+    let ctx = executor::ExecutionContext {
+        task_id: Some(task_id.clone()),
+        job_object: lease.job_object.clone(),
+        task_manager: Some(lease.manager.clone()),
+    };
+
+    let catalog = catalog::Catalog::builtin();
     let frozen_plan_clone = doc.frozen_plan.clone();
-    let previous_session = doc.session.clone();
-    let result = match tauri::async_runtime::spawn_blocking(move || {
-        install::resume_frozen_plan_observed(&catalog, &frozen_plan_clone, &previous_session, &flag, &|step| {
-            emit_progress(&window, step);
-        })
+    let mut session_to_resume = doc.session.clone();
+    session_to_resume.id = task_id.clone();
+    let window_clone = window.clone();
+    let flag_clone = flag.clone();
+    let ctx_clone = ctx.clone();
+
+    let mut result = match tauri::async_runtime::spawn_blocking(move || {
+        install::resume_frozen_plan_observed(
+            &catalog,
+            &frozen_plan_clone,
+            &mut session_to_resume,
+            &flag_clone,
+            &|step| {
+                emit_progress(&window_clone, step);
+                if let (Some(manager), Some(task_id)) = (&ctx_clone.task_manager, &ctx_clone.task_id) {
+                    manager.emit_event(task_id, "system", &format!("{}：{}", step.name, step.stage));
+                }
+            },
+            Some(&ctx_clone),
+        );
+        session_to_resume
     })
     .await
     {
         Ok(res) => res,
         Err(e) => {
-            lease.finish(crate::modules::task::TaskFinalStatus::Interrupted);
-            return Err(AppError::Internal(format!("安装恢复线程异常结束：{e}")));
+            let reason = format!("安装恢复线程异常结束：{e}");
+            state.tasks.set_anomaly_blocker(&task_id, &reason);
+            lease.finish(crate::model::TaskStatus::Interrupted);
+            return Err(AppError::Internal(reason));
         }
     };
 
-    executor::clean_downloads();
+    observe_dynamic_session(&doc.frozen_plan, &mut result);
+    if result.task_status == crate::model::TaskStatus::NeedsAttention {
+        if let Some(ref r) = result.halted_reason {
+            state.tasks.set_anomaly_blocker(&task_id, r);
+        } else {
+            state.tasks.set_anomaly_blocker(&task_id, "任务暂停，需要人工介入处理");
+        }
+    }
+
+    if !matches!(result.task_status, TaskStatus::NeedsAttention | TaskStatus::Interrupted) {
+        executor::clean_downloads();
+    }
     install_log::log_session_failures(&result);
     state.finish_session(result.clone(), Some(lease));
     Ok(result)
@@ -719,7 +863,7 @@ pub async fn resume_install(
 
 /// Asks the running installation to stop.
 #[tauri::command]
-pub fn cancel_install(state: State<'_, AppState>) -> bool {
+pub fn cancel_install(state: State<'_, AppState>) -> Result<bool, String> {
     state.cancel_active_session()
 }
 
@@ -727,7 +871,7 @@ pub fn cancel_install(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub fn resumable_install(state: State<'_, AppState>) -> Option<ExecutionSession> {
     if let Ok(Some(doc)) = install::load_task_document() {
-        if (doc.status == "interrupted" || doc.status == "failed") && doc.session.is_resumable() {
+        if doc.status == "needsAttention" || doc.status == "interrupted" || (doc.status == "failed" && doc.session.is_resumable()) {
             return Some(doc.session);
         }
     }

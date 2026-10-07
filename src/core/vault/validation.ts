@@ -345,7 +345,7 @@ export function validateCachedVaultData(input: unknown): ValidationResult<Cached
   }
   const obj = input as Record<string, unknown>;
 
-  if (typeof obj.syncedAt !== "string") {
+  if (typeof obj.syncedAt !== "string" || !Number.isFinite(Date.parse(obj.syncedAt))) {
     errors.push("Missing or invalid syncedAt in cache");
   }
   const manRes = validateManifest(obj.manifest);
@@ -363,6 +363,36 @@ export function validateCachedVaultData(input: unknown): ValidationResult<Cached
   }
   if (!Array.isArray(obj.patterns)) {
     errors.push("patterns in cache must be an array");
+  }
+  if (obj.skills !== undefined && !Array.isArray(obj.skills)) errors.push("skills in cache must be an array");
+
+  if (obj.styles && typeof obj.styles === "object" && !Array.isArray(obj.styles)) {
+    for (const [id, style] of Object.entries(obj.styles)) {
+      const result = validateStyleManifest(style);
+      errors.push(...result.errors.map((error) => `Cache style ${id}: ${error}`));
+      if (result.data && result.data.id !== id) errors.push(`Cache style key differs from ID: ${id}`);
+      if (result.data?.cssContent !== undefined && typeof result.data.cssContent !== "string") {
+        errors.push(`Cache style ${id}: cssContent must be a string`);
+      }
+    }
+  }
+  const collections: [string, unknown, (value: unknown) => ValidationResult<unknown>][] = [
+    ["resource", obj.resources, validateResourceItem],
+    ["template", obj.templates, validateTemplateItem],
+    ["pattern", obj.patterns, validatePatternItem],
+    ["skill", obj.skills, validateSkillItem],
+  ];
+  for (const [label, values, validate] of collections) {
+    if (!Array.isArray(values)) continue;
+    const ids = new Set<string>();
+    for (const value of values) {
+      const result = validate(value);
+      errors.push(...result.errors.map((error) => `Cache ${label}: ${error}`));
+      if (value && typeof value.id === "string") {
+        if (ids.has(value.id)) errors.push(`Duplicate cache ${label} ID: ${value.id}`);
+        ids.add(value.id);
+      }
+    }
   }
 
   if (errors.length > 0) {

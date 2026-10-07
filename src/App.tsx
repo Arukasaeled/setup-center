@@ -54,6 +54,7 @@ import { VaultSync } from "./core/vault";
 import { CommandPalette } from "./components/CommandPalette";
 import { useModalStack } from "./components/ModalProvider";
 import { isHotkeyAllowed } from "./lib/keyboard";
+import { PersonalStateManager } from "./core/transfer/personalState";
 
 /**
  * The wizard's steps.
@@ -147,6 +148,20 @@ export default function App() {
   const [forcedGate, setForcedGate] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const { hasOpenModal } = useModalStack();
+
+  const shownPersonalStateReasons = useRef(new Set<string>());
+  useEffect(() => {
+    const showReadOnlyReason = () => {
+      if (!PersonalStateManager.isReadOnly()) return;
+      const reason = PersonalStateManager.getReadOnlyReason() || "本地记录无法安全读写";
+      if (shownPersonalStateReasons.current.has(reason)) return;
+      shownPersonalStateReasons.current.add(reason);
+      useApp.setState({ notice: `个人数据已进入只读保护，原始记录保留。${reason}` });
+    };
+    const unsubscribe = PersonalStateManager.subscribe(showReadOnlyReason);
+    showReadOnlyReason();
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

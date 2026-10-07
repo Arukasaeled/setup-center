@@ -8,7 +8,7 @@
  */
 
 import type { DiscoveryItem } from "../discovery/types";
-import type { AvailabilityEvidence } from "../../lib/types";
+import type { AvailabilityEvidence, PackageObservation } from "../../lib/types";
 import { PersonalStateManager } from "./personalState";
 
 export interface DynamicSoftware {
@@ -29,6 +29,7 @@ export interface DynamicSoftware {
   discoveredAt: string;
   lastVerifiedAt?: string;
   availabilityEvidence?: AvailabilityEvidence;
+  packageObservation?: PackageObservation;
   actionOutcome?: string;
 }
 

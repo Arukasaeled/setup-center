@@ -1115,8 +1115,7 @@ export function AwardAtlas({ onNotice }: { onNotice?: (msg: string) => void }) {
           onClose={() => setSelectedCaseId(null)}
           titleId="award-case-title"
           dataProtectedUi={true}
-          maxWidth="max-w-3xl"
-          panelClassName="relative z-10 flex h-full max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
+          contentClassName="flex h-full max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
         >
           {/* Modal Header */}
           <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/80 px-6 py-4">

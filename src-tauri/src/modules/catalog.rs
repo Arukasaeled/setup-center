@@ -375,7 +375,8 @@ impl Catalog {
     /// should surface immediately rather than produce a silently empty result.
     pub fn entry(&self, id: SoftwareId) -> &CatalogEntry {
         if id == SoftwareId::Dynamic {
-            static DYNAMIC_ENTRY: std::sync::LazyLock<CatalogEntry> = std::sync::LazyLock::new(|| CatalogEntry {
+            static DYNAMIC_ENTRY: std::sync::OnceLock<CatalogEntry> = std::sync::OnceLock::new();
+            return DYNAMIC_ENTRY.get_or_init(|| CatalogEntry {
                 id: SoftwareId::Dynamic,
                 install_location: InstallLocationSupport::DefaultOnly,
                 storage_subdir: None,
@@ -389,7 +390,6 @@ impl Catalog {
                 version_via_shim: false,
                 install: &[],
             });
-            return &DYNAMIC_ENTRY;
         }
         self.entries
             .iter()

@@ -59,7 +59,13 @@ pub fn run() {
                 .ok()
                 .filter(|dir| dir.join("profiles").is_dir());
 
-            app.manage(AppState::new(resource_dir));
+            let state = AppState::new(resource_dir);
+            let event_app = app.handle().clone();
+            state.tasks.set_event_sink(move |event| {
+                use tauri::Emitter;
+                let _ = event_app.emit("task-event", event);
+            });
+            app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -142,6 +148,7 @@ pub fn run() {
             commands::save_uipart_asset,
             commands::stage_uipart_asset,
             commands::commit_uipart_assets,
+            commands::commit_uipart_transaction,
             commands::discard_uipart_assets,
             commands::read_uipart_asset,
             commands::delete_uipart_assets,

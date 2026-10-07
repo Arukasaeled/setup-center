@@ -27,13 +27,13 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 20
           cache: npm
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@e67f08d017be7b270a6c6e1db78e1b6f005a9094 # stable
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           targets: x86_64-pc-windows-msvc
 
@@ -82,7 +82,7 @@ jobs:
         run: npm run build
 
       - name: Build Tauri Desktop Binary & NSIS Installer
-        uses: tauri-apps/tauri-action@03bf7d1c68e98ec71ec3d272186ee943809aaefc # v0.5.15
+        uses: tauri-apps/tauri-action@8c3e0753aa015d00d03631d6d4f64ad59489251d # v0.5.15
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

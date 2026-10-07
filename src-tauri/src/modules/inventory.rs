@@ -536,12 +536,61 @@ fn non_empty_str(value: String) -> Option<String> {
     }
 }
 
+/// Probes winget inventory for a specific package ID and returns authentic PackageObservation.
+pub fn observe_winget_package(package_id: &str) -> PackageObservation {
+    let now = crate::modules::detect::now_iso8601();
+    match winget_list() {
+        Ok(rows) => {
+            let clean = package_id.trim();
+            if let Some(row) = rows.iter().find(|r| r.id.eq_ignore_ascii_case(clean)) {
+                PackageObservation {
+                    provider: "winget".to_string(),
+                    package_id: package_id.to_string(),
+                    presence: PresenceStatus::Present,
+                    installed_version: row.version.clone(),
+                    observed_at: now,
+                    detail: Some(format!("winget 已确认存在软件包 {}", row.id)),
+                }
+            } else {
+                if rows.iter().any(|row| row.id.is_empty() || row.id.contains('…')
+                    || row.id.ends_with("...") || row.id.chars().any(char::is_whitespace)) {
+                    return PackageObservation {
+                        provider: "winget".into(), package_id: package_id.into(),
+                        presence: PresenceStatus::Unknown, installed_version: None, observed_at: now,
+                        detail: Some("软件列表包含无法完整辨识的包 ID，不能据此认定软件未安装".into()),
+                    };
+                }
+                PackageObservation {
+                    provider: "winget".to_string(),
+                    package_id: package_id.to_string(),
+                    presence: PresenceStatus::Absent,
+                    installed_version: None,
+                    observed_at: now,
+                    detail: Some(format!("winget list 表中未找到软件包 {}", package_id)),
+                }
+            }
+        }
+        Err(e) => PackageObservation {
+            provider: "winget".to_string(),
+            package_id: package_id.to_string(),
+            presence: PresenceStatus::Unknown,
+            installed_version: None,
+            observed_at: now,
+            detail: Some(format!("winget list 检测失败：{e}")),
+        },
+    }
+}
+
 /// Runs `winget list` and parses it into rows.
 pub fn winget_list() -> Result<Vec<WingetRow>, String> {
-    let raw = super::detect::run_capture("winget", &["list", "--disable-interactivity"])
-        .map_err(|e| format!("无法运行 winget：{e}"))?;
-
-    parse_winget_table(&raw)
+    let spec = super::process::ProcessSpec::new("winget", &["list", "--disable-interactivity"])
+        .with_timeout(std::time::Duration::from_secs(10));
+    let output = super::process::execute_process(&spec)?;
+    if output.exit_code != Some(0) || output.termination_reason != super::process::TerminationReason::ExitSuccess
+        || output.truncated || output.encoding_warning.is_some() {
+        return Err("winget 列表未完整正常返回，不能确认本机包状态".into());
+    }
+    parse_winget_table(&output.stdout)
 }
 
 /// Splits a captured `winget list` capture into rows.

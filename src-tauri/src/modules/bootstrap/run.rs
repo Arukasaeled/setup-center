@@ -387,8 +387,9 @@ fn run_through_executor(
 
     progress.status = match last_outcome {
         AttemptOutcome::Succeeded | AttemptOutcome::Skipped => StepStatus::Succeeded,
+        AttemptOutcome::SucceededWithWarning => StepStatus::SucceededWithWarning,
         AttemptOutcome::Cancelled => StepStatus::Cancelled,
-        AttemptOutcome::PermissionDenied => StepStatus::Failed,
+        AttemptOutcome::PermissionDenied | AttemptOutcome::NeedsAttention => StepStatus::Failed,
         AttemptOutcome::Failed | AttemptOutcome::Unavailable => StepStatus::Failed,
     };
     progress.stage_label = match last_outcome {

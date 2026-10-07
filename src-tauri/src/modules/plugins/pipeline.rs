@@ -675,7 +675,58 @@ pub fn take_backup_v2(
     Ok(manifest)
 }
 
-pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
+fn restore_directory_safe(from: &Path, to: &Path) -> Result<(), String> {
+    if !from.is_dir() {
+        return Err(format!("备份源不存在或非目录: {}", from.display()));
+    }
+    let parent = to.parent().ok_or_else(|| format!("无法确定目标父目录: {}", to.display()))?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("创建目标父目录失败 {}: {e}", parent.display()))?;
+
+    let file_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("dir");
+    let nonce = format!("{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos(), std::process::id());
+    let staging = parent.join(format!(".{file_name}.restore_staging_{nonce}"));
+
+    // 1. 复制到同级准备目录
+    if let Err(e) = copy_dir(from, &staging) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(format!("复制备份到准备目录失败: {e}"));
+    }
+
+    // 2. 准备目录就绪后，如果有当前目录，先 rename 到唯一保留目录
+    if to.exists() {
+        let preserve = parent.join(format!(".{file_name}.restore_preserve_{nonce}"));
+        if let Err(e) = std::fs::rename(to, &preserve) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(format!("保留当前目录失败: {e}"));
+        }
+
+        // 3. 将准备目录 rename 到目标
+        if let Err(rename_err) = std::fs::rename(&staging, to) {
+            // 第二次失败则把保留目录恢复原位
+            if let Err(rollback_err) = std::fs::rename(&preserve, to) {
+                // 回退也失败时保留所有文件并报告各路径，禁止删除保留目录
+                return Err(format!(
+                    "严重错误：还原准备目录失败 ({rename_err})，且回退保留目录失败 ({rollback_err})！原目录保留在 {}，准备目录保留在 {}",
+                    preserve.display(),
+                    staging.display()
+                ));
+            } else {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(format!("替换目标目录失败，已回退恢复当前目录: {rename_err}"));
+            }
+        }
+        // 当前数据保留目录本轮不自动递归删除（保护用户数据）
+    } else {
+        if let Err(e) = std::fs::rename(&staging, to) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(format!("移动准备目录到目标失败: {e}"));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn restore_v2(dest: &Path, _version: Option<&str>) -> (bool, Vec<String>) {
     let manifest_path = dest.join("manifest.json");
     let text = match std::fs::read_to_string(&manifest_path) {
         Ok(t) => t,
@@ -684,13 +735,28 @@ pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
 
     // 优先尝试 V2 事务清单格式
     if let Ok(mut manifest) = serde_json::from_str::<TransactionManifestV2>(&text) {
-        // Pre-flight check: 确保每个安装前存在的文件/目录，其备份均完好存在
+        // Pre-flight check: 确保每个安装前存在的文件/目录，其备份均完好存在、类型正确且能读取
         for entry in &manifest.entries {
             if entry.existed_before {
                 if let Some(backup_sub) = &entry.backup_file_or_dir {
                     let from = dest.join(backup_sub);
                     if !from.exists() {
                         return (false, vec![format!("备份损坏或缺失，拒绝破坏性操作: {}", from.display())]);
+                    }
+                    if entry.kind == ManifestEntryKind::Directory {
+                        if !from.is_dir() {
+                            return (false, vec![format!("备份类型错误（非目录）: {}", from.display())]);
+                        }
+                        if std::fs::read_dir(&from).is_err() {
+                            return (false, vec![format!("备份目录无法读取: {}", from.display())]);
+                        }
+                    } else {
+                        if !from.is_file() {
+                            return (false, vec![format!("备份类型错误（非文件）: {}", from.display())]);
+                        }
+                        if std::fs::File::open(&from).is_err() {
+                            return (false, vec![format!("备份文件无法读取: {}", from.display())]);
+                        }
                     }
                 } else {
                     return (false, vec![format!("备份记录异常，存在标记但无备份文件: {}", entry.relative_path)]);
@@ -699,13 +765,21 @@ pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
         }
 
         let mut errors = Vec::new();
+        let backup_version = manifest.claude_version.as_deref();
 
         // 逆序回滚写入
         for entry in manifest.entries.iter_mut().rev() {
-            let root = match resolve_plugin_root(entry.root_id, version) {
+            if entry.root_id == PluginRootId::DesktopResources && backup_version.is_none() {
+                let err = "备份清单缺少 claude_version 记录，无法确定原始目标版本目录".to_string();
+                entry.error = Some(err.clone());
+                errors.push(err);
+                continue;
+            }
+
+            let root = match resolve_plugin_root(entry.root_id, backup_version) {
                 Some(r) => r,
                 None => {
-                    let err = format!("无法定位根目录 {:?}", entry.root_id);
+                    let err = format!("无法定位根目录 {:?}（版本: {:?}）", entry.root_id, backup_version);
                     entry.error = Some(err.clone());
                     errors.push(err);
                     continue;
@@ -725,21 +799,15 @@ pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
             if entry.existed_before {
                 let from = dest.join(entry.backup_file_or_dir.as_ref().unwrap());
                 let res = if entry.kind == ManifestEntryKind::Directory {
-                    let _ = std::fs::remove_dir_all(&to);
-                    copy_dir(&from, &to)
+                    restore_directory_safe(&from, &to)
                 } else {
                     if let Some(parent) = to.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
                     match std::fs::read(&from) {
-                        Ok(bytes) => {
-                            crate::modules::atomic_file::write_atomic(&to, &bytes)
-                                .map_err(|e| e.to_string())
-                                .or_else(|_| {
-                                    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
-                                })
-                        }
-                        Err(e) => Err(format!("读取备份文件失败: {e}")),
+                        Ok(bytes) => crate::modules::atomic_file::write_atomic(&to, &bytes)
+                            .map_err(|e| format!("原子写入文件 {} 失败: {e}", to.display())),
+                        Err(e) => Err(format!("读取备份文件 {} 失败: {e}", from.display())),
                     }
                 };
 
@@ -781,7 +849,9 @@ pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
             }
         }
 
-        let _ = save_manifest_v2(dest, &manifest);
+        if let Err(e) = save_manifest_v2(dest, &manifest) {
+            errors.push(format!("保存回滚记录清单失败: {e}"));
+        }
         return (errors.is_empty(), errors);
     }
 
@@ -794,23 +864,31 @@ pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
                 (Some(n), Some(p)) => (n.as_str().unwrap_or_default(), p.as_str().unwrap_or_default()),
                 _ => continue,
             };
+            if path.trim().is_empty() {
+                errors.push(format!("Legacy 备份项缺少有效目标路径: {name}"));
+                continue;
+            }
             let from = dest.join(name);
             let to = PathBuf::from(path);
             if !from.exists() {
+                errors.push(format!("Legacy 备份文件不存在: {}", from.display()));
                 continue;
             }
             let res = if from.is_dir() {
-                let _ = std::fs::remove_dir_all(&to);
-                copy_dir(&from, &to)
+                restore_directory_safe(&from, &to)
             } else {
                 if let Some(parent) = to.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+                match std::fs::read(&from) {
+                    Ok(bytes) => crate::modules::atomic_file::write_atomic(&to, &bytes)
+                        .map_err(|e| format!("Legacy 原子写入文件失败 {}: {e}", to.display())),
+                    Err(e) => Err(format!("Legacy 读取备份文件失败 {}: {e}", from.display())),
+                }
             };
             match res {
                 Ok(()) => any = true,
-                Err(e) => errors.push(format!("Legacy 还原 {} 失败: {e}", to.display())),
+                Err(e) => errors.push(e),
             }
         }
         return (any && errors.is_empty(), errors);

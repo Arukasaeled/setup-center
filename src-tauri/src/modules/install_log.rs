@@ -90,6 +90,7 @@ pub enum FailureKind {
     /// the installer exited 0, which is why it has its own variant rather than
     /// being folded into `NonZeroExit`.
     VerifyFailed,
+    NeedsAttention,
 }
 
 impl FailureKind {
@@ -103,6 +104,7 @@ impl FailureKind {
             FailureKind::PermissionDenied => "permission-denied",
             FailureKind::Cancelled => "cancelled",
             FailureKind::VerifyFailed => "verify-failed",
+            FailureKind::NeedsAttention => "needs-attention",
         }
     }
 
@@ -114,6 +116,7 @@ impl FailureKind {
             FailureKind::PermissionDenied => "安装需要管理员权限",
             FailureKind::Cancelled => "用户主动取消",
             FailureKind::VerifyFailed => "安装执行完成，但是未检测到命令",
+            FailureKind::NeedsAttention => "执行资源或任务状态需要人工处理",
         }
     }
 
@@ -123,11 +126,12 @@ impl FailureKind {
     /// this only names it for the log.
     pub fn from_outcome(outcome: AttemptOutcome) -> Option<Self> {
         match outcome {
-            AttemptOutcome::Succeeded | AttemptOutcome::Skipped => None,
+            AttemptOutcome::Succeeded | AttemptOutcome::SucceededWithWarning | AttemptOutcome::Skipped => None,
             AttemptOutcome::Failed => Some(FailureKind::NonZeroExit),
             AttemptOutcome::Unavailable => Some(FailureKind::Unavailable),
             AttemptOutcome::PermissionDenied => Some(FailureKind::PermissionDenied),
             AttemptOutcome::Cancelled => Some(FailureKind::Cancelled),
+            AttemptOutcome::NeedsAttention => Some(FailureKind::NeedsAttention),
         }
     }
 
@@ -142,6 +146,7 @@ impl FailureKind {
             FailureKind::PermissionDenied => "右键以管理员身份重新运行本程序",
             FailureKind::Cancelled => "重新点击「开始安装」可以继续未完成的步骤",
             FailureKind::VerifyFailed => "命令可能在新的终端窗口中才生效，请重启本程序后再试",
+            FailureKind::NeedsAttention => "处理尚未结束的进程或存储问题，再恢复任务；不要重复启动安装",
         }
     }
 }

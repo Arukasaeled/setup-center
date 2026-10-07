@@ -1475,6 +1475,8 @@ pub enum AttemptOutcome {
     Skipped,
     /// Killed because the user cancelled, or the session was interrupted.
     Cancelled,
+    /// Execution resources or durable state require intervention; never retry automatically.
+    NeedsAttention,
 }
 
 impl AttemptOutcome {
@@ -1553,6 +1555,55 @@ pub struct ActionRecord {
     pub final_attempt: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Interrupted,
+    NeedsAttention,
+}
+
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskStatus::Running => "running",
+            TaskStatus::Succeeded => "succeeded",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+            TaskStatus::Interrupted => "interrupted",
+            TaskStatus::NeedsAttention => "needsAttention",
+        }
+    }
+}
+
+fn default_task_status() -> TaskStatus {
+    TaskStatus::NeedsAttention
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PresenceStatus {
+    Present,
+    Absent,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageObservation {
+    pub provider: String,
+    pub package_id: String,
+    pub presence: PresenceStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
+    pub observed_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 /// The record of one installation run.
 ///
 /// Holds everything needed to answer "what happened" without re-running
@@ -1567,6 +1618,10 @@ pub struct ExecutionSession {
     pub started_at: String,
     /// `None` while running.
     pub finished_at: Option<String>,
+    #[serde(default = "default_task_status")]
+    pub task_status: TaskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_observation: Option<PackageObservation>,
     /// Every action attempted, in order.
     pub actions: Vec<ActionRecord>,
     /// Per-step results, which is what the UI renders.
@@ -1591,6 +1646,8 @@ impl ExecutionSession {
             profile_id,
             started_at,
             finished_at: None,
+            task_status: TaskStatus::Running,
+            package_observation: None,
             actions: Vec::new(),
             steps: Vec::new(),
             failed_steps: Vec::new(),

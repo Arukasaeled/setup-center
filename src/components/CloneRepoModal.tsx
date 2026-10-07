@@ -43,8 +43,7 @@ export function CloneRepoModal({
         onClose={onClose}
         titleId="clone-modal-title"
         dataProtectedUi={true}
-        maxWidth="max-w-lg"
-        panelClassName="relative w-full max-w-lg rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-6 text-[color:var(--text-primary)] shadow-2xl space-y-5"
+        contentClassName="w-full max-w-lg rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-6 text-[color:var(--text-primary)] shadow-2xl space-y-5"
       >
         <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] pb-3">
           <h3 id="clone-modal-title" className="text-[16px] font-bold text-[color:var(--text-strong)]">

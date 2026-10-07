@@ -103,7 +103,7 @@ export function AccessibleDialog({
       if (!isTopModal(dialogId)) return;
 
       // Ignore during IME composition (H04)
-      if (e.isComposing || (e.nativeEvent as any)?.isComposing || (e as any).keyCode === 229) {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
         return;
       }
 

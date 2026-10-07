@@ -21,12 +21,13 @@ import { CustomPacks, type CustomPack } from "../core/transfer/packs";
 import {
   nativeDownload,
   getDownloadsDir,
-  verifyFileSha256,
   buildDynamicInstallPlan,
   runInstall,
+  cancelTask,
   isTauri,
   type WingetPackageDetails,
 } from "../lib/ipc";
+import type { ExecutionSession, PackageObservation } from "../lib/types";
 import { openExternalUrl } from "../core/setup/executor";
 
 export interface DynamicSoftwareDetailModalProps {
@@ -46,6 +47,8 @@ export function DynamicSoftwareDetailModal({
   const [loading, setLoading] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [installTaskId, setInstallTaskId] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPackPicker, setShowPackPicker] = useState(false);
   const [packs, setPacks] = useState<CustomPack[]>(CustomPacks.getAll());
@@ -65,7 +68,8 @@ export function DynamicSoftwareDetailModal({
     }
 
     setIsBookmarked(Bookmarks.isBookmarked(item.id));
-    setIsSavedInCatalog(Boolean(PersonalCatalog.getSoftware(item.id)));
+    setIsSavedInCatalog(PersonalCatalog.getAllSoftware().some((software) =>
+      software.provider === "winget" && software.packageId.toLowerCase() === cleanPackageId.toLowerCase()));
     setPacks(CustomPacks.getAll());
 
     setLoading(true);
@@ -90,85 +94,79 @@ export function DynamicSoftwareDetailModal({
   };
 
   const handleSaveToPersonalCatalog = () => {
+    const previous = PersonalCatalog.getAllSoftware().find((sw) =>
+      sw.provider === "winget" && sw.packageId.toLowerCase() === cleanPackageId.toLowerCase());
     const sw: DynamicSoftware = {
-      id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
+      ...previous,
+      id: previous?.id || `winget:${cleanPackageId}`,
       packageId: cleanPackageId,
       provider: "winget",
       name: details?.name || item.title,
-      publisher: details?.publisher,
-      version: details?.version || item.subtitle?.split("·")?.[1]?.trim(),
-      description: details?.description || item.description,
-      homepage: details?.homepage,
-      license: details?.license,
-      installerType: details?.installerType,
-      installerUrl: details?.installerUrl,
-      installerSha256: details?.installerSha256,
-      installed: item.installed ?? false,
-      discoveredAt: new Date().toISOString(),
+      publisher: details?.publisher ?? previous?.publisher,
+      version: details?.version || previous?.version || item.subtitle?.split("·")?.[1]?.trim(),
+      description: details?.description || previous?.description || item.description,
+      homepage: details?.homepage ?? previous?.homepage,
+      license: details?.license ?? previous?.license,
+      installerType: details?.installerType ?? previous?.installerType,
+      installerUrl: details?.installerUrl ?? previous?.installerUrl,
+      installerSha256: details?.installerSha256 ?? previous?.installerSha256,
+      installed: previous?.installed ?? item.installed,
+      discoveredAt: previous?.discoveredAt || new Date().toISOString(),
     };
     PersonalCatalog.saveSoftware(sw);
     setIsSavedInCatalog(true);
     onNotice?.(`已将「${sw.name}」永久保存至个人资产`);
   };
 
-  const handleInstallSuccess = async (sessionSuccess: boolean = true) => {
+  const handleInstallSession = async (session: ExecutionSession) => {
     if (!item) return;
-    const cleanPackageId = item.id.replace(/^winget:/i, "");
-    const verified = sessionSuccess;
-    const verifiedVersion = details?.version;
-
-    if (verified) {
-      const sw: DynamicSoftware = {
-        id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
-        packageId: cleanPackageId,
-        provider: "winget",
-        name: details?.name || item.title,
-        publisher: details?.publisher,
-        version: verifiedVersion || details?.version,
-        description: details?.description || item.description,
-        homepage: details?.homepage,
-        installed: true,
-        installedVersion: verifiedVersion || details?.version,
-        discoveredAt: new Date().toISOString(),
-        lastVerifiedAt: new Date().toISOString(),
-        actionOutcome: "succeeded",
-        availabilityEvidence: {
-          kind: "gui",
-          status: "available",
-          version: verifiedVersion || details?.version,
-          evidenceSource: "run_install session",
-          observedAt: new Date().toISOString(),
-          detail: `✓ 本机状态验证通过: ${cleanPackageId} 已确认安装并在个人库纳管`,
-        },
+    const previous = PersonalCatalog.getAllSoftware().find((sw) =>
+      sw.provider === "winget" && sw.packageId.toLowerCase() === cleanPackageId.toLowerCase());
+    const candidate = session.packageObservation;
+    const observation: PackageObservation = candidate?.provider === "winget"
+      && candidate.packageId.toLowerCase() === cleanPackageId.toLowerCase() ? candidate : {
+        provider: "winget", packageId: cleanPackageId, presence: "unknown",
+        observedAt: new Date().toISOString(), detail: "本次任务未返回该软件包的可靠本机观察",
       };
+    const sw: DynamicSoftware = {
+      ...previous,
+      id: previous?.id || `winget:${cleanPackageId}`,
+      packageId: cleanPackageId, provider: "winget",
+      name: details?.name || previous?.name || item.title,
+      publisher: details?.publisher ?? previous?.publisher,
+      version: details?.version ?? previous?.version,
+      description: details?.description ?? previous?.description ?? item.description,
+      homepage: details?.homepage ?? previous?.homepage,
+      license: details?.license ?? previous?.license,
+      installerType: details?.installerType ?? previous?.installerType,
+      installerUrl: details?.installerUrl ?? previous?.installerUrl,
+      installerSha256: details?.installerSha256 ?? previous?.installerSha256,
+      discoveredAt: previous?.discoveredAt || new Date().toISOString(),
+      packageObservation: observation,
+      actionOutcome: session.taskStatus,
+    };
+    if (observation.presence === "present") {
+      sw.installed = true;
+      sw.installedVersion = observation.installedVersion?.trim() || previous?.installedVersion;
+      sw.lastVerifiedAt = observation.observedAt;
+    } else if (observation.presence === "absent") {
+      sw.installed = false;
+      sw.installedVersion = undefined;
+      sw.lastVerifiedAt = observation.observedAt;
+    }
+    // Unknown preserves previous installed/version/verification fields, independently of action outcome.
+    try {
       PersonalCatalog.saveSoftware(sw);
       setIsSavedInCatalog(true);
-      onNotice?.(`✓ 本机状态验证通过：「${sw.name}」已确认安装并在个人库纳管`);
-    } else {
-      const sw: DynamicSoftware = {
-        id: item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
-        packageId: cleanPackageId,
-        provider: "winget",
-        name: details?.name || item.title,
-        publisher: details?.publisher,
-        version: details?.version,
-        description: details?.description || item.description,
-        homepage: details?.homepage,
-        installed: false,
-        discoveredAt: new Date().toISOString(),
-        actionOutcome: "failed",
-        availabilityEvidence: {
-          kind: "gui",
-          status: "unavailable",
-          version: details?.version,
-          evidenceSource: "run_install session",
-          observedAt: new Date().toISOString(),
-          detail: `安装任务未成功完成，可用性未确认`,
-        },
-      };
-      PersonalCatalog.saveSoftware(sw);
-      onNotice?.(`⚠ 安装任务未成功完成（动作未就绪，可用性未确认）`);
+    } catch (error) {
+      onNotice?.(`任务已结束，但个人记录未能保存：${String(error)}`);
+      return;
     }
+    const action = session.taskStatus === "succeeded" ? "安装动作完成"
+      : session.taskStatus === "cancelled" ? "安装已取消"
+      : session.taskStatus === "needsAttention" ? "安装已暂停，需要人工处理" : "安装动作未成功";
+    onNotice?.(`${action}；${observation.presence === "present" ? "本机确认已安装"
+      : observation.presence === "absent" ? "本机未发现该软件包" : "本次状态未确认，已保留旧记录"}`);
   };
 
   const handleWingetInstall = async () => {
@@ -178,12 +176,9 @@ export function DynamicSoftwareDetailModal({
       onNotice?.(`正在验证软件包授权与依赖，生成可信安装计划…`);
       const plan = await buildDynamicInstallPlan(cleanPackageId);
       onNotice?.(`已生成可信安装计划，正在启动 Winget 安装…`);
-      const session = await runInstall({ planId: plan.id, plan });
-      if (session.status === "succeeded") {
-        await handleInstallSuccess(true);
-      } else {
-        await handleInstallSuccess(false);
-      }
+      const requestId = `dynamic-install-${cleanPackageId}-${Date.now()}`;
+      const session = await runInstall({ planId: plan.planId, requestId }, (payload) => setInstallTaskId(payload.taskId));
+      await handleInstallSession(session);
     } catch (err: unknown) {
       const msg = String(err);
       if (msg.includes("LicenseRequired") || msg.includes("Pro entitlement")) {
@@ -193,6 +188,8 @@ export function DynamicSoftwareDetailModal({
       }
     } finally {
       setIsInstalling(false);
+      setInstallTaskId(null);
+      setIsCancelling(false);
     }
   };
 
@@ -265,13 +262,15 @@ export function DynamicSoftwareDetailModal({
       const sep = downloadsFolder.endsWith("\\") || downloadsFolder.endsWith("/") ? "" : "\\";
       const dest = `${downloadsFolder}${sep}${filename}`;
 
-      await nativeDownload(details.installerUrl, dest);
+      const result = await nativeDownload({
+        url: details.installerUrl,
+        destinationPath: dest,
+        expectedSha256: details.installerSha256?.trim() || undefined,
+      });
+      if (!result.success) throw new Error("下载未完成，未保存可用的安装包");
 
-      // Verify SHA256 if available
       if (details.installerSha256 && details.installerSha256.trim()) {
-        onNotice?.("下载完成，正在进行 SHA256 完整性校验…");
-        const match = await verifyFileSha256(dest, details.installerSha256);
-        if (match) {
+        if (result.sha256Verified) {
           onNotice?.(`✓ 下载完成且 SHA256 校验通过: ${dest}`);
         } else {
           onNotice?.(`⚠ 警告: 文件已下载至 ${dest}，但 SHA256 校验不匹配，可能存在损坏或篡改`);
@@ -415,11 +414,11 @@ export function DynamicSoftwareDetailModal({
 
             {/* Installed & Availability Status Banner */}
             {(() => {
-              const localSaved = PersonalCatalog.getSoftware(
-                item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
-              );
+              const localSaved = PersonalCatalog.getAllSoftware().find((software) =>
+                software.provider === "winget" && software.packageId.toLowerCase() === cleanPackageId.toLowerCase());
               if (!localSaved) return null;
               const avail = localSaved.availabilityEvidence;
+              const observation = localSaved.packageObservation;
               const outcome = localSaved.actionOutcome;
               return (
                 <div className="rounded-xl border border-zinc-800 bg-[#0e1218] p-3.5 space-y-1.5 text-[12.5px]">
@@ -428,14 +427,17 @@ export function DynamicSoftwareDetailModal({
                     <span
                       className={clsx(
                         "px-2 py-0.5 rounded text-[11px] font-bold",
-                        localSaved.installed && avail?.status === "available"
+                        (observation ? observation.presence === "present" : localSaved.installed && avail?.status === "available")
                           ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                           : avail?.status === "legacyUnverified"
                           ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
                           : "bg-zinc-800 text-zinc-400 border border-zinc-700",
                       )}
                     >
-                      {localSaved.installed && avail?.status === "available"
+                      {observation
+                        ? observation.presence === "present" ? "已安装 · 本机确认"
+                          : observation.presence === "absent" ? "本机未发现" : "本次未确认 · 保留旧记录"
+                        : localSaved.installed && avail?.status === "available"
                         ? "已安装 · 可用"
                         : avail?.status === "legacyUnverified"
                         ? "历史记录 · 待重新验证"
@@ -444,8 +446,8 @@ export function DynamicSoftwareDetailModal({
                         : "未就绪"}
                     </span>
                   </div>
-                  {avail?.detail && (
-                    <p className="text-[12px] text-zinc-400">{avail.detail}</p>
+                  {(observation?.detail || avail?.detail) && (
+                    <p className="text-[12px] text-zinc-400">{observation?.detail || avail?.detail}</p>
                   )}
                   {localSaved.lastVerifiedAt && (
                     <p className="text-[11px] font-mono text-zinc-500">
@@ -570,6 +572,19 @@ export function DynamicSoftwareDetailModal({
               >
                 {isInstalling ? "正在启动 Winget 安装…" : "一键 Winget 安装"}
               </button>
+              {isInstalling && installTaskId && (
+                <button type="button" disabled={isCancelling}
+                  className="min-h-[32px] rounded-lg border border-zinc-700 px-4 py-1.5 text-[12.5px] disabled:opacity-50"
+                  onClick={() => {
+                    setIsCancelling(true);
+                    void cancelTask(installTaskId).catch((error) => {
+                      onNotice?.(`取消未完成：${String(error)}`);
+                      setIsCancelling(false);
+                    });
+                  }}>
+                  {isCancelling ? "正在取消…" : "取消安装"}
+                </button>
+              )}
             </div>
           </footer>
     </AccessibleDialog>

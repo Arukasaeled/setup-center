@@ -84,7 +84,8 @@ export const BUNDLED_VAULT_SNAPSHOT: CachedVaultData = {
   manifest: BUNDLED_MANIFEST,
   syncedAt: "2026-10-04T03:13:10Z",
   styles: BUNDLED_STYLES,
-  resources: RESOURCE_CATALOG as unknown as Array<Record<string, unknown>>,
+  // Runtime registrations must not mutate the offline fallback snapshot.
+  resources: JSON.parse(JSON.stringify(RESOURCE_CATALOG)) as Array<Record<string, unknown>>,
   templates: BUNDLED_TEMPLATES,
   patterns: BUNDLED_PATTERNS,
   skills: BUNDLED_SKILLS,

@@ -63,7 +63,7 @@ export function ExecutionConsoleModal({
   legacyOutput,
 }: ExecutionConsoleModalProps) {
   const [status, setStatus] = useState<
-    "idle" | "running" | "success" | "failed" | "cancelled" | "interrupted"
+    "idle" | "running" | "success" | "failed" | "cancelled" | "interrupted" | "needsAttention" | "notFound"
   >("idle");
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [exitCode, setExitCode] = useState<number | null>(null);
@@ -77,6 +77,7 @@ export function ExecutionConsoleModal({
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
   const generationRef = useRef(0);
+  const hasTriggeredSuccessRef = useRef(false);
 
   // Probe available editors on mount
   useEffect(() => {
@@ -137,8 +138,11 @@ export function ExecutionConsoleModal({
       setExitCode(null);
       setSubscriptionError(null);
       setElapsed(0);
+      hasTriggeredSuccessRef.current = false;
       return;
     }
+
+    hasTriggeredSuccessRef.current = false;
 
     if (!taskId) {
       // Legacy read-only fallback display
@@ -165,6 +169,7 @@ export function ExecutionConsoleModal({
     setSubscriptionError(null);
     setLogs([]);
     setElapsed(0);
+    setIsCancelling(false);
 
     const timer = setInterval(() => {
       setElapsed((prev) => prev + 1);
@@ -192,14 +197,26 @@ export function ExecutionConsoleModal({
       if (payload.status) {
         const s = payload.status.toLowerCase();
         if (s === "succeeded" || s === "success") {
+          clearInterval(timer);
           setStatus("success");
-          onSuccess?.();
+          if (!hasTriggeredSuccessRef.current) {
+            hasTriggeredSuccessRef.current = true;
+            onSuccess?.();
+          }
         } else if (s === "failed" || s === "error") {
+          clearInterval(timer);
           setStatus("failed");
         } else if (s === "cancelled") {
+          clearInterval(timer);
           setStatus("cancelled");
         } else if (s === "interrupted") {
+          clearInterval(timer);
           setStatus("interrupted");
+        } else if (s === "needsattention") {
+          clearInterval(timer);
+          setStatus("needsAttention");
+        } else if (s === "notfound") {
+          setStatus("notFound");
         }
       }
 
@@ -238,21 +255,32 @@ export function ExecutionConsoleModal({
               .then((view) => {
                 if (disposed || generationRef.current !== currentGen) return;
                 const s = view.status.toLowerCase();
+                if (!["running", "queued"].includes(s)) clearInterval(timer);
                 if (s === "succeeded" || s === "success") {
                   setStatus("success");
-                  onSuccess?.();
+                  if (!hasTriggeredSuccessRef.current) {
+                    hasTriggeredSuccessRef.current = true;
+                    onSuccess?.();
+                  }
                 } else if (s === "failed") {
                   setStatus("failed");
                 } else if (s === "cancelled") {
                   setStatus("cancelled");
                 } else if (s === "interrupted") {
                   setStatus("interrupted");
+                } else if (s === "needsattention") {
+                  setStatus("needsAttention");
+                } else if (s === "notfound") {
+                  setStatus("notFound");
                 }
                 if (view.exitCode !== undefined && view.exitCode !== null) {
                   setExitCode(view.exitCode);
                 }
               })
-              .catch(() => {});
+              .catch((error) => {
+                if (disposed || generationRef.current !== currentGen) return;
+                setSubscriptionError(`读取任务状态失败: ${String(error)}`);
+              });
           })
           .catch((err) => {
             if (disposed || generationRef.current !== currentGen) return;
@@ -280,7 +308,6 @@ export function ExecutionConsoleModal({
     try {
       const ok = await cancelTask(taskId);
       if (ok) {
-        setStatus("cancelled");
         setActionNotice("已请求终止任务");
       } else {
         setActionNotice("任务已结束或无法终止");
@@ -348,6 +375,8 @@ export function ExecutionConsoleModal({
               status === "failed" && "bg-rose-500",
               status === "cancelled" && "bg-zinc-500",
               status === "interrupted" && "bg-amber-500",
+              status === "needsAttention" && "bg-orange-500",
+              status === "notFound" && "bg-zinc-600",
             )}
           />
           <h3 id="execution-console-title" className="text-[15px] font-bold text-white">
@@ -443,6 +472,18 @@ export function ExecutionConsoleModal({
           {status === "interrupted" && (
             <div className="rounded border border-amber-900/60 bg-amber-950/50 p-3 text-amber-300 font-bold text-[12px]">
               ⚠️ 任务被外部中断或上次运行未完成 (Task Interrupted)
+            </div>
+          )}
+
+          {status === "needsAttention" && (
+            <div className="rounded border border-orange-900/60 bg-orange-950/50 p-3 text-orange-300 font-bold text-[12px]">
+              ⚠️ 任务暂停，需要人工介入确认 (Needs Attention)
+            </div>
+          )}
+
+          {status === "notFound" && (
+            <div className="rounded border border-zinc-700 bg-zinc-800/60 p-3 text-zinc-400 font-bold text-[12px]">
+              ℹ️ 未找到指定任务记录 (Task Not Found)
             </div>
           )}
 

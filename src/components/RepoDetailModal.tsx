@@ -104,8 +104,7 @@ export function RepoDetailModal({
         onClose={onClose}
         titleId="repo-detail-title"
         dataProtectedUi={true}
-        maxWidth="max-w-2xl"
-        panelClassName="relative z-10 flex h-full w-full max-h-[88vh] max-w-2xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
+        contentClassName="flex h-full w-full max-h-[88vh] max-w-2xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
       >
         {/* Header */}
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/80 px-6 py-4">

@@ -306,11 +306,44 @@ export const previewInstall = (plan: InstallPlan) =>
  * the caller must show progress and offer cancellation — `cancelInstall` is how
  * the run is stopped, not by dropping this promise.
  */
-export const runInstall = (request: StartInstallRequest) =>
-  call<ExecutionSession>("run_install", { request });
+export interface InstallTaskStartedPayload {
+  requestId: string | null;
+  taskId: string;
+}
+
+export async function onInstallTaskStarted(handler: (payload: InstallTaskStartedPayload) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisten = await listen<InstallTaskStartedPayload>("install://task-started", (event) => handler(event.payload));
+  let detached = false;
+  return () => {
+    if (detached) return;
+    detached = true;
+    void Promise.resolve().then(() => unlisten()).catch(() => {});
+  };
+}
+
+function installRequestId(): string {
+  return `install-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function runInstall(request: StartInstallRequest, onStarted?: (payload: InstallTaskStartedPayload) => void): Promise<ExecutionSession> {
+  const requestId = request.requestId || installRequestId();
+  const detach = await onInstallTaskStarted((payload) => {
+    if (payload.requestId === requestId) onStarted?.(payload);
+  });
+  try { return await call<ExecutionSession>("run_install", { request: { ...request, requestId } }); }
+  finally { detach(); }
+}
 
 /** Continues an interrupted run, skipping everything already done. */
-export const resumeInstall = () => call<ExecutionSession>("resume_install");
+export async function resumeInstall(requestId = installRequestId(), onStarted?: (payload: InstallTaskStartedPayload) => void): Promise<ExecutionSession> {
+  const detach = await onInstallTaskStarted((payload) => {
+    if (payload.requestId === requestId) onStarted?.(payload);
+  });
+  try { return await call<ExecutionSession>("resume_install", { requestId }); }
+  finally { detach(); }
+}
 
 /** Asks the running installation to stop. Cooperative; returns immediately. */
 export const cancelInstall = () => call<boolean>("cancel_install");
@@ -542,9 +575,6 @@ export interface DetectedEditor {
 export const buildDynamicInstallPlan = (packageId: string) =>
   call<InstallPlan>("build_dynamic_install_plan", { packageId });
 
-/** Downloads a remote file to a destination path using native curl streaming */
-export const nativeDownload = (url: string, destinationPath: string) =>
-  call<void>("native_download", { url, destinationPath });
 
 /** Searches winget for packages matching query */
 export const wingetSearch = (query: string) =>
@@ -626,8 +656,8 @@ export async function onTaskEvent(
         .then(() => unlisten())
         .catch(() => {});
     };
-  } catch {
-    return () => {};
+  } catch (error) {
+    throw error;
   }
 }
 
@@ -828,6 +858,29 @@ export async function commitUIPartAssets(
   }
 }
 
+export interface UIPartTransactionResult {
+  success: boolean;
+  storagePath: string;
+  committedAssets: number;
+}
+
+/** Atomically commits uiparts index document and promotes all staged media assets in a single transaction. */
+export async function commitUIPartTransaction(
+  content: string,
+  stagedItems: UIPartAssetCommitItem[],
+): Promise<UIPartTransactionResult | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<UIPartTransactionResult>("commit_uipart_transaction", {
+      content,
+      stagedItems,
+    });
+  } catch (err) {
+    console.error("Failed to commit UI parts transaction via Tauri IPC:", err);
+    throw err;
+  }
+}
+
 /** Cleans up temporary staged media assets if a transaction is aborted. */
 export async function discardUIPartAssets(
   stagingPaths: string[],
@@ -915,7 +968,13 @@ export interface NativeDownloadOptions {
 export async function nativeDownload(
   options: NativeDownloadOptions,
 ): Promise<NativeDownloadResult> {
-  return await call<NativeDownloadResult>("native_download", options as unknown as Record<string, unknown>);
+  return await call<NativeDownloadResult>("native_download", {
+    url: options.url,
+    filename: options.filename,
+    destinationDir: options.destinationDir,
+    destinationPath: options.destinationPath,
+    expectedSha256: options.expectedSha256,
+  });
 }
 
 

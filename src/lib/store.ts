@@ -470,6 +470,7 @@ interface AppStore {
    * worked, without the UI having to sort by `index`.
    */
   liveProgress: Map<SoftwareId, StepProgress>;
+  activeInstallTaskId: string | null;
   /**
    * Attaches the progress listener and returns its detach function.
    *
@@ -1362,6 +1363,7 @@ export const useApp = create<AppStore>((set, get) => ({
   canResume: false,
   chosenSteps: null,
   liveProgress: new Map<SoftwareId, StepProgress>(),
+  activeInstallTaskId: null,
 
   setChosenSteps: (ids) => {
     set({ chosenSteps: ids === null ? null : new Set(ids) });
@@ -1427,48 +1429,56 @@ export const useApp = create<AppStore>((set, get) => ({
       return;
     }
 
-    set({ installing: true, executionError: null });
+    set({ installing: true, executionError: null, activeInstallTaskId: null });
     try {
       const session = await ipc.runInstall({
         planId: plan.planId,
         selectedStepIds,
-      });
+      }, (payload) => set({ activeInstallTaskId: payload.taskId }));
       set({
         session,
         installing: false,
+        activeInstallTaskId: null,
         // The run just decided whether there is work left. Refreshing this here
         // rather than relying on the launch-time check is what makes the
         // "继续安装" button appear the moment a run ends incomplete; without it
         // the offer only ever shows up after a restart, which is precisely when
         // it is least useful.
-        canResume: session.remaining.length > 0 && !session.cancelledByUser,
+        canResume: session.taskStatus === "needsAttention" || (session.remaining.length > 0 && !session.cancelledByUser),
       });
-      await get().scanInstalled(plan.steps.map((s) => s.id));
+      if (session.taskStatus !== "needsAttention" && session.taskStatus !== "interrupted") {
+        await get().scanInstalled(plan.steps.map((s) => s.id));
+      }
     } catch (err) {
-      set({ installing: false, ...refusalOrError(err) });
+      set({ installing: false, activeInstallTaskId: null, ...refusalOrError(err) });
     }
   },
 
   resumeInstall: async () => {
     if (get().installing) return;
-    set({ installing: true, executionError: null });
+    set({ installing: true, executionError: null, activeInstallTaskId: null });
     try {
-      const session = await ipc.resumeInstall();
+      const session = await ipc.resumeInstall(undefined, (payload) => set({ activeInstallTaskId: payload.taskId }));
       set({
         session,
         installing: false,
-        canResume: session.remaining.length > 0 && !session.cancelledByUser,
+        activeInstallTaskId: null,
+        canResume: session.taskStatus === "needsAttention" || (session.remaining.length > 0 && !session.cancelledByUser),
       });
       const plan = get().plan;
-      if (plan) await get().scanInstalled(plan.steps.map((s) => s.id));
+      if (plan && session.taskStatus !== "needsAttention" && session.taskStatus !== "interrupted") {
+        await get().scanInstalled(plan.steps.map((s) => s.id));
+      }
     } catch (err) {
-      set({ installing: false, ...refusalOrError(err) });
+      set({ installing: false, activeInstallTaskId: null, ...refusalOrError(err) });
     }
   },
 
   cancelInstall: async () => {
     try {
-      await ipc.cancelInstall();
+      const taskId = get().activeInstallTaskId;
+      if (taskId) await ipc.cancelTask(taskId);
+      else await ipc.cancelInstall();
       // Not `installing: false` here. The engine stops at the next safe point,
       // which may be a download boundary a few hundred milliseconds away;
       // clearing the flag now would re-enable the button while a process is

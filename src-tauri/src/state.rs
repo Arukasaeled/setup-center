@@ -5,7 +5,8 @@
 //! anything cached here is only cached to avoid redundant *probing*, never to
 //! avoid recomputation.
 
-use crate::model::{EnvironmentReport, ExecutionSession, SoftwareId, SoftwareInventory, SoftwareScan};
+use crate::model::{AvailabilityEvidence, AvailabilityKind, AvailabilityStatus, AttemptOutcome,
+    EnvironmentReport, ExecutionSession, SoftwareId, SoftwareInventory, SoftwareScan, StepStatus, TaskStatus};
 use crate::modules::bootstrap::run::BootstrapSession;
 use crate::modules::executor::CancelFlag;
 use crate::modules::task::TaskManager;
@@ -71,17 +72,25 @@ impl AppState {
         let plugins_dir = resource_dir.as_ref().map(|d| d.join("plugins"));
 
         let cache = Mutex::new(Cache::default());
+        let tasks = Arc::new(TaskManager::new());
 
         // 启动检测 active_task.json：running/queued 改 interrupted，绝不自动续跑
-        if let Ok(Some(mut doc)) = crate::modules::install::load_task_document() {
+        let persisted = crate::modules::install::load_task_document();
+        if let Err(error) = &persisted {
+            tasks.set_anomaly_blocker("task-document", &format!("任务记录无法读取，原始文件已保留：{error}"));
+        }
+        if let Ok(Some(mut doc)) = persisted {
             if doc.status == "running" || doc.status == "queued" {
                 doc.status = "interrupted".to_string();
+                doc.session.task_status = TaskStatus::Interrupted;
+                doc.session.halted_reason = Some("上次任务异常中断，请从恢复入口处理".into());
+                doc.attention_reason = doc.session.halted_reason.clone();
                 for step in doc.session.steps.iter_mut() {
                     if step.status == StepStatus::Running {
                         step.status = StepStatus::Failed;
                         step.stage = "上次结果不确定".into();
                         step.detail = Some("进程在运行中异常中断，结果未经验证".into());
-                        step.action_outcome = Some(AttemptOutcome::Cancelled);
+                        step.action_outcome = Some(AttemptOutcome::NeedsAttention);
                         step.availability = Some(AvailabilityEvidence {
                             kind: AvailabilityKind::Cli,
                             status: AvailabilityStatus::Unknown,
@@ -92,8 +101,23 @@ impl AppState {
                         });
                     }
                 }
+                for step in &doc.session.steps {
+                    if matches!(step.status, StepStatus::Pending | StepStatus::Failed | StepStatus::Cancelled)
+                        && !doc.session.remaining.contains(&step.step_id) {
+                        doc.session.remaining.push(step.step_id);
+                    }
+                }
                 doc.updated_at = crate::modules::detect::now_iso8601();
-                let _ = crate::modules::install::save_task_document(&doc);
+                if let Err(error) = crate::modules::install::save_task_document(&doc) {
+                    doc.status = "needsAttention".into();
+                    doc.session.task_status = TaskStatus::NeedsAttention;
+                    doc.session.halted_reason = Some(format!("无法记录上次中断状态，原始任务记录已保留：{error}"));
+                    doc.attention_reason = doc.session.halted_reason.clone();
+                }
+            }
+            if doc.status == "needsAttention" || doc.status == "interrupted" {
+                doc.session.task_status = if doc.status == "needsAttention" { TaskStatus::NeedsAttention } else { TaskStatus::Interrupted };
+                tasks.set_anomaly_blocker(&doc.task_id, doc.attention_reason.as_deref().unwrap_or("上次任务需要恢复处理"));
             }
             if let Ok(mut c) = cache.lock() {
                 c.session = Some(doc.session);
@@ -107,7 +131,7 @@ impl AppState {
             // 目录缺席时是空目录而非错误 —— `cargo test` 下资源本就不在，这条
             // 与 profiles/knowledge 的既有约定一致，不能让单测依赖打包产物。
             plugins: plugins::PluginCatalog::load(&plugins_dir.unwrap_or_default()),
-            tasks: Arc::new(TaskManager::new()),
+            tasks,
             cache,
             plans: Mutex::new(std::collections::HashMap::new()),
             winget_cache: Mutex::new(std::collections::HashMap::new()),
@@ -191,15 +215,48 @@ impl AppState {
         &self,
         session: ExecutionSession,
     ) -> Result<(crate::modules::task::MutationLease, CancelFlag), String> {
+        self.begin_session_for_request(session, None)
+    }
+
+    pub fn begin_session_for_request(
+        &self,
+        mut session: ExecutionSession,
+        request_id: Option<String>,
+    ) -> Result<(crate::modules::task::MutationLease, CancelFlag), String> {
         let lease = self
             .tasks
-            .try_begin_mutation(crate::modules::task::MutationKind::Install, None)
+            .try_begin_mutation(crate::modules::task::MutationKind::Install, request_id)
             .map_err(|e| e.message)?;
         let flag = lease.cancel_flag().clone();
+        session.id = lease.task_id.clone();
+        session.task_status = crate::model::TaskStatus::Running;
         if let Ok(mut cache) = self.cache.lock() {
             cache.session = Some(session);
         }
         Ok((lease, flag))
+    }
+
+    /// Begins an install session with explicit request_id, acquiring a MutationLease
+    /// and instantiating an ExecutionSession with lease.task_id.
+    pub fn begin_session_with_request(
+        &self,
+        request_id: Option<String>,
+        profile_id: &str,
+    ) -> Result<(crate::modules::task::MutationLease, CancelFlag, ExecutionSession), String> {
+        let lease = self
+            .tasks
+            .try_begin_mutation(crate::modules::task::MutationKind::Install, request_id)
+            .map_err(|e| e.message)?;
+        let flag = lease.cancel_flag().clone();
+        let session = ExecutionSession::new(
+            lease.task_id.clone(),
+            profile_id.to_string(),
+            crate::modules::detect::now_iso8601(),
+        );
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.session = Some(session.clone());
+        }
+        Ok((lease, flag, session))
     }
 
     pub fn finish_session(
@@ -208,12 +265,21 @@ impl AppState {
         lease: Option<crate::modules::task::MutationLease>,
     ) {
         if let Some(l) = lease {
-            let status = if session.is_success() {
-                crate::modules::task::TaskFinalStatus::Succeeded
-            } else if session.is_cancelled() {
-                crate::modules::task::TaskFinalStatus::Cancelled
-            } else {
-                crate::modules::task::TaskFinalStatus::Failed
+            let status = match session.task_status {
+                crate::model::TaskStatus::Succeeded => crate::model::TaskStatus::Succeeded,
+                crate::model::TaskStatus::Cancelled => crate::model::TaskStatus::Cancelled,
+                crate::model::TaskStatus::NeedsAttention => crate::model::TaskStatus::NeedsAttention,
+                crate::model::TaskStatus::Interrupted => crate::model::TaskStatus::Interrupted,
+                crate::model::TaskStatus::Failed => crate::model::TaskStatus::Failed,
+                _ => {
+                    if session.is_success() {
+                        crate::model::TaskStatus::Succeeded
+                    } else if session.is_cancelled() {
+                        crate::model::TaskStatus::Cancelled
+                    } else {
+                        crate::model::TaskStatus::Failed
+                    }
+                }
             };
             l.finish(status);
         }
@@ -228,11 +294,11 @@ impl AppState {
     }
 
     /// Requests cancellation of the in-flight run.
-    pub fn cancel_active_session(&self) -> bool {
-        if let Some(active_id) = self.tasks.active_task_id() {
-            self.tasks.cancel_task(&active_id).unwrap_or(false)
+    pub fn cancel_active_session(&self) -> Result<bool, String> {
+        if let Some(active_id) = self.tasks.active_task_id_for(crate::modules::task::MutationKind::Install) {
+            self.tasks.cancel_task(&active_id)
         } else {
-            false
+            Ok(false)
         }
     }
 

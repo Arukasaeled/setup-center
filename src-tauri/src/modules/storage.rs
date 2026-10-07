@@ -599,8 +599,8 @@ pub fn clean_downloads_with_manifest(
 }
 
 /// Cleans downloads using the given policy.
-pub fn clean_downloads_with_policy(policy: &StoragePolicy) {
-    clean_downloads_with_manifest(policy, &[]);
+pub fn clean_downloads_with_policy(policy: &StoragePolicy) -> CleanupResult {
+    clean_downloads_with_manifest(policy, &[])
 }
 
 // ---------------------------------------------------------------------------

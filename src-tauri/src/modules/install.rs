@@ -19,7 +19,7 @@ use crate::model::*;
 
 use super::catalog::{Catalog, StrategySource};
 use super::detect::now_iso8601;
-use super::executor::{execute_source, execute_source_with_policy, CancelFlag};
+use super::executor::{execute_source, execute_source_with_policy, execute_source_with_context, ExecutionContext, CancelFlag};
 use serde::{Deserialize, Serialize};
 
 /// One link in a fallback chain.
@@ -362,7 +362,13 @@ pub fn execute_plan(
     cancel: &CancelFlag,
 ) -> ExecutionSession {
     let frozen_plan = freeze_plan(catalog, plan);
-    execute_frozen_plan_observed(catalog, &frozen_plan, cancel, &no_progress)
+    let mut session = ExecutionSession::new(
+        format!("session-{}", plan_timestamp().replace([':', '.'], "-")),
+        frozen_plan.profile_id.clone().unwrap_or_default(),
+        plan_timestamp(),
+    );
+    execute_frozen_plan_observed(catalog, &frozen_plan, &mut session, cancel, &no_progress, None);
+    session
 }
 
 pub fn execute_plan_observed(
@@ -372,29 +378,32 @@ pub fn execute_plan_observed(
     sink: ProgressSink<'_>,
 ) -> ExecutionSession {
     let frozen_plan = freeze_plan(catalog, plan);
-    execute_frozen_plan_observed(catalog, &frozen_plan, cancel, sink)
-}
-
-pub fn execute_frozen_plan_observed(
-    catalog: &Catalog,
-    frozen_plan: &FrozenPlan,
-    cancel: &CancelFlag,
-    sink: ProgressSink<'_>,
-) -> ExecutionSession {
     let mut session = ExecutionSession::new(
         format!("session-{}", plan_timestamp().replace([':', '.'], "-")),
         frozen_plan.profile_id.clone().unwrap_or_default(),
         plan_timestamp(),
     );
+    execute_frozen_plan_observed(catalog, &frozen_plan, &mut session, cancel, sink, None);
+    session
+}
+
+pub fn execute_frozen_plan_observed(
+    catalog: &Catalog,
+    frozen_plan: &FrozenPlan,
+    session: &mut ExecutionSession,
+    cancel: &CancelFlag,
+    sink: ProgressSink<'_>,
+    ctx: Option<&ExecutionContext>,
+) {
     execute_frozen_steps(
         catalog,
         frozen_plan,
-        &mut session,
+        session,
         cancel,
         &frozen_plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
         sink,
+        ctx,
     );
-    session
 }
 
 /// Observer for per-step progress, called as each step's state changes.
@@ -410,7 +419,9 @@ pub fn resume_plan(
     cancel: &CancelFlag,
 ) -> ExecutionSession {
     let frozen_plan = freeze_plan(catalog, plan);
-    resume_frozen_plan_observed(catalog, &frozen_plan, previous, cancel, &no_progress)
+    let mut session = previous.clone();
+    resume_frozen_plan_observed(catalog, &frozen_plan, &mut session, cancel, &no_progress, None);
+    session
 }
 
 pub fn resume_plan_observed(
@@ -421,216 +432,162 @@ pub fn resume_plan_observed(
     sink: ProgressSink<'_>,
 ) -> ExecutionSession {
     let frozen_plan = freeze_plan(catalog, plan);
-    resume_frozen_plan_observed(catalog, &frozen_plan, previous, cancel, sink)
+    let mut session = previous.clone();
+    resume_frozen_plan_observed(catalog, &frozen_plan, &mut session, cancel, sink, None);
+    session
 }
 
 pub fn resume_frozen_plan_observed(
     catalog: &Catalog,
     frozen_plan: &FrozenPlan,
-    previous: &ExecutionSession,
+    session: &mut ExecutionSession,
     cancel: &CancelFlag,
     sink: ProgressSink<'_>,
-) -> ExecutionSession {
-    let mut session = ExecutionSession::new(
-        previous.id.clone(),
-        previous.profile_id.clone(),
-        previous.started_at.clone(),
-    );
-    session.actions = previous.actions.clone();
-
-    let remaining = previous.remaining.clone();
-    execute_frozen_steps(catalog, frozen_plan, &mut session, cancel, &remaining, sink);
-    session
+    ctx: Option<&ExecutionContext>,
+) {
+    let remaining: Vec<SoftwareId> = frozen_plan.steps.iter().filter(|step| {
+        session.remaining.contains(&step.id) || session.failed_steps.contains(&step.id)
+            || !session.steps.iter().rev().find(|p| p.step_id == step.id).is_some_and(|p| {
+                matches!(p.status, StepStatus::Succeeded | StepStatus::SucceededWithWarning | StepStatus::Skipped)
+            })
+    }).map(|step| step.id).collect();
+    execute_frozen_steps(catalog, frozen_plan, session, cancel, &remaining, sink, ctx);
 }
 
 fn execute_frozen_steps(
-    catalog: &Catalog,
-    frozen_plan: &FrozenPlan,
-    session: &mut ExecutionSession,
-    cancel: &CancelFlag,
-    todo: &[SoftwareId],
-    sink: ProgressSink<'_>,
+    catalog: &Catalog, frozen_plan: &FrozenPlan, session: &mut ExecutionSession,
+    cancel: &CancelFlag, todo: &[SoftwareId], sink: ProgressSink<'_>,
+    ctx: Option<&ExecutionContext>,
 ) {
     let total = frozen_plan.steps.len() as u32;
-    let frozen_policy = frozen_plan
-        .storage_policy
-        .clone()
-        .unwrap_or_else(super::storage::load_effective_policy);
-
-    let announce = |session: &ExecutionSession| {
-        if let Some(step) = session.steps.last() {
-            sink(step);
+    let frozen_policy = frozen_plan.storage_policy.clone().unwrap_or_else(super::storage::load_effective_policy);
+    let previous = std::mem::take(&mut session.steps);
+    session.steps = frozen_plan.steps.iter().enumerate().map(|(index, step)| {
+        let mut progress = previous.iter().rev().find(|p| p.step_id == step.id).cloned().unwrap_or(StepProgress {
+            step_id: step.id, name: step.name.clone(), status: StepStatus::Pending,
+            index: index as u32, total, stage: "等待开始".into(), fraction: None,
+            detail: None, availability: None, action_outcome: None,
+        });
+        progress.index = index as u32;
+        progress.total = total;
+        if todo.contains(&step.id) {
+            progress.status = StepStatus::Pending;
+            progress.stage = "等待继续安装".into();
+            progress.fraction = None;
+            progress.detail = None;
+            progress.action_outcome = None;
         }
+        progress
+    }).collect();
+    session.failed_steps.clear();
+    session.cancelled_steps.clear();
+    session.remaining.clear();
+    session.verified = None;
+    session.cancelled_by_user = false;
+    session.halted_reason = None;
+    session.finished_at = None;
+    session.started_at = plan_timestamp();
+    session.task_status = TaskStatus::Running;
+
+    let document = |session: &ExecutionSession| TaskDocumentV1 {
+        schema_version: "task-document.v1".into(), task_id: session.id.clone(),
+        status: session.task_status.as_str().into(), frozen_plan: frozen_plan.clone(),
+        session: session.clone(), updated_at: plan_timestamp(),
+        attention_reason: session.halted_reason.clone(),
     };
 
     for (index, step) in frozen_plan.steps.iter().enumerate() {
-        let mut progress = StepProgress {
-            step_id: step.id,
-            name: step.name.clone(),
-            status: StepStatus::Pending,
-            index: index as u32,
-            total,
-            stage: "等待开始".into(),
-            fraction: None,
-            detail: None,
-            availability: None,
-            action_outcome: None,
-        };
-
         if !todo.contains(&step.id) {
-            let resumed_elsewhere = !frozen_plan.steps[index].satisfied;
-            progress.status = if step.satisfied {
-                StepStatus::Skipped
-            } else {
-                StepStatus::Cancelled
-            };
-            progress.stage = if step.satisfied {
-                "已检测到，无需安装".into()
-            } else {
-                "等待继续安装".into()
-            };
-            if !step.satisfied && resumed_elsewhere {
-                session.remaining.push(step.id);
-            }
-            session.steps.push(progress);
-            announce(session);
+            // Keep the verified current result of a previous successful attempt.
+            sink(&session.steps[index]);
             continue;
         }
-
         if step.satisfied {
-            progress.status = StepStatus::Skipped;
-            progress.stage = "已检测到，无需安装".into();
-            session.steps.push(progress);
-            announce(session);
+            session.steps[index].status = StepStatus::Skipped;
+            session.steps[index].stage = "已检测到，无需安装".into();
+            session.steps[index].action_outcome = Some(AttemptOutcome::Skipped);
+            sink(&session.steps[index]);
             continue;
         }
+        if cancel.is_cancelled() { break; }
+        session.steps[index].status = StepStatus::Running;
+        session.steps[index].stage = "正在安装".into();
+        sink(&session.steps[index]);
+        if let Err(error) = save_task_document(&document(session)) {
+            session.task_status = TaskStatus::NeedsAttention;
+            session.halted_reason = Some(format!("保存执行前状态失败，已停止安装：{error}"));
+            session.steps[index].status = StepStatus::Failed;
+            session.steps[index].stage = "保存状态失败，已停止安装".into();
+            session.steps[index].action_outcome = Some(AttemptOutcome::NeedsAttention);
+            session.steps[index].detail = session.halted_reason.clone();
+            sink(&session.steps[index]);
+            break;
+        }
+        run_chain(catalog, step, &mut session.actions, &mut session.steps[index], cancel, &frozen_policy, ctx);
+        sink(&session.steps[index]);
+        if session.steps[index].action_outcome == Some(AttemptOutcome::NeedsAttention) {
+            session.task_status = TaskStatus::NeedsAttention;
+            session.halted_reason = session.steps[index].detail.clone().or_else(|| Some("执行资源未确认回收，需要人工介入".into()));
+        }
+        if let Err(error) = save_task_document(&document(session)) {
+            session.task_status = TaskStatus::NeedsAttention;
+            let reason = format!("保存步骤完成状态失败，已停止安装：{error}");
+            session.halted_reason = Some(match session.halted_reason.take() {
+                Some(previous) => format!("{previous}；{reason}"), None => reason,
+            });
+            break;
+        }
+        if session.task_status == TaskStatus::NeedsAttention { break; }
+        if session.steps[index].action_outcome == Some(AttemptOutcome::PermissionDenied) {
+            session.halted_reason = Some("安装需要管理员权限。请以管理员身份重新运行程序，再继续安装。".into());
+            break;
+        }
+    }
 
-        if cancel.is_cancelled() {
+    session.cancelled_by_user = cancel.is_cancelled();
+    for progress in &mut session.steps {
+        if matches!(progress.status, StepStatus::Pending | StepStatus::Running) {
             progress.status = StepStatus::Cancelled;
-            progress.stage = "已取消".into();
-            session.remaining.push(step.id);
-            session.steps.push(progress);
-            announce(session);
-            continue;
+            progress.stage = if session.cancelled_by_user { "已取消" } else { "等待继续安装" }.into();
+            if session.cancelled_by_user { progress.action_outcome = Some(AttemptOutcome::Cancelled); }
+            sink(progress);
         }
-
-        progress.status = StepStatus::Running;
-        session.steps.push(progress);
-        let position = session.steps.len() - 1;
-        announce(session);
-
-        // Persist state to active_task.json before running command
-        let pre_doc = TaskDocumentV1 {
-            schema_version: "task-document.v1".to_string(),
-            task_id: session.id.clone(),
-            status: "running".to_string(),
-            frozen_plan: frozen_plan.clone(),
-            session: session.clone(),
-            updated_at: plan_timestamp(),
-            attention_reason: None,
-        };
-        if let Err(e) = save_task_document(&pre_doc) {
-            session.halted_reason = Some(format!("保存任务状态失败，已安全暂停：{e}"));
-            session.steps[position].status = StepStatus::Failed;
-            session.steps[position].detail = Some(format!("状态持久化失败：{e}"));
-            let attention_doc = TaskDocumentV1 {
-                schema_version: "task-document.v1".to_string(),
-                task_id: session.id.clone(),
-                status: "needsAttention".to_string(),
-                frozen_plan: frozen_plan.clone(),
-                session: session.clone(),
-                updated_at: plan_timestamp(),
-                attention_reason: Some(format!("保存任务状态失败：{e}")),
-            };
-            let _ = save_task_document(&attention_doc);
-            break;
-        }
-
-        run_chain(catalog, step, &mut session.actions, &mut session.steps[position], cancel, &frozen_policy);
-
-        sink(&session.steps[position]);
-
-        let status = session.steps[position].status;
-        match status {
-            StepStatus::Failed => session.failed_steps.push(step.id),
-            StepStatus::Cancelled => session.remaining.push(step.id),
-            _ => {}
-        }
-
-        // Persist state to active_task.json after step completes
-        let post_doc = TaskDocumentV1 {
-            schema_version: "task-document.v1".to_string(),
-            task_id: session.id.clone(),
-            status: if cancel.is_cancelled() { "cancelled".into() } else { "running".into() },
-            frozen_plan: frozen_plan.clone(),
-            session: session.clone(),
-            updated_at: plan_timestamp(),
-            attention_reason: None,
-        };
-        if let Err(e) = save_task_document(&post_doc) {
-            session.halted_reason = Some(format!("保存步骤完成状态失败，已安全暂停：{e}"));
-            break;
-        }
-
-        if session.steps[position]
-            .detail
-            .as_deref()
-            .is_some_and(|d| d.contains("管理员权限"))
-        {
-            session.halted_reason = Some(
-                "安装需要管理员权限。请右键以管理员身份重新运行本程序，然后点击「继续安装」。".into(),
-            );
-            for later in frozen_plan.steps.iter().skip(index + 1) {
-                session.remaining.push(later.id);
+        if progress.status == StepStatus::Failed { session.failed_steps.push(progress.step_id); }
+        if progress.status == StepStatus::Cancelled { session.cancelled_steps.push(progress.step_id); }
+        if matches!(progress.status, StepStatus::Failed | StepStatus::Cancelled) { session.remaining.push(progress.step_id); }
+    }
+    if let Some(context) = ctx {
+        if let (Some(manager), Some(task_id)) = (&context.task_manager, &context.task_id) {
+            if let Some(blocker) = manager.has_anomaly_blocker().filter(|blocker| &blocker.task_id == task_id) {
+                session.task_status = TaskStatus::NeedsAttention;
+                session.halted_reason.get_or_insert(blocker.reason);
             }
-            break;
         }
     }
+    if !matches!(session.task_status, TaskStatus::NeedsAttention | TaskStatus::Interrupted) {
+        finalize_frozen_session(catalog, frozen_plan, session);
+    }
+    session.finished_at = Some(plan_timestamp());
+    session.task_status = if matches!(session.task_status, TaskStatus::NeedsAttention | TaskStatus::Interrupted) {
+        session.task_status
+    } else if session.is_cancelled() { TaskStatus::Cancelled }
+    else if session.is_success() { TaskStatus::Succeeded } else { TaskStatus::Failed };
 
-    for step in frozen_plan.steps.iter().skip(session.steps.len()) {
-        session.steps.push(StepProgress {
-            step_id: step.id,
-            name: step.name.clone(),
-            status: StepStatus::Cancelled,
-            index: session.steps.len() as u32,
-            total,
-            stage: "等待继续安装".into(),
-            fraction: None,
-            detail: None,
-            availability: None,
-            action_outcome: Some(AttemptOutcome::Cancelled),
+    if let Err(error) = save_task_document(&document(session)) {
+        session.task_status = TaskStatus::NeedsAttention;
+        let reason = format!("最终任务状态持久化失败，需要人工介入：{error}");
+        session.halted_reason = Some(match session.halted_reason.take() {
+            Some(previous) => format!("{previous}；{reason}"), None => reason,
         });
-        announce(session);
-        if !session.remaining.contains(&step.id) {
-            session.remaining.push(step.id);
+    }
+    if session.task_status == TaskStatus::NeedsAttention {
+        if let Some(context) = ctx {
+            if let (Some(manager), Some(task_id)) = (&context.task_manager, &context.task_id) {
+                manager.set_anomaly_blocker(task_id, session.halted_reason.as_deref().unwrap_or("任务需人工介入"));
+            }
         }
     }
-
-    finalize_frozen_session(catalog, frozen_plan, session);
-
-    let final_status = if session.is_cancelled() {
-        "cancelled"
-    } else if session.is_success() {
-        "succeeded"
-    } else {
-        "failed"
-    };
-    let final_doc = TaskDocumentV1 {
-        schema_version: "task-document.v1".to_string(),
-        task_id: session.id.clone(),
-        status: final_status.to_string(),
-        frozen_plan: frozen_plan.clone(),
-        session: session.clone(),
-        updated_at: plan_timestamp(),
-        attention_reason: session.halted_reason.clone(),
-    };
-    let _ = save_task_document(&final_doc);
-
-    for step in session.steps.iter() {
-        if step.status == StepStatus::SucceededWithWarning {
-            sink(step);
-        }
-    }
+    for progress in &session.steps { sink(progress); }
 }
 
 /// Walks one step's fallback chain, recording every attempt.
@@ -641,6 +598,7 @@ fn run_chain(
     progress: &mut StepProgress,
     cancel: &CancelFlag,
     policy: &crate::modules::storage::StoragePolicy,
+    ctx: Option<&ExecutionContext>,
 ) {
     let spec = spec_from(catalog, step.id);
 
@@ -686,7 +644,7 @@ fn run_chain(
         };
         progress.fraction = Some((attempt as f32) / (chain.len() as f32 + 1.0));
 
-        let mut record = execute_source_with_policy(step.id, &link.source, attempt as u32, cancel, policy);
+        let mut record = execute_source_with_context(step.id, &link.source, attempt as u32, cancel, policy, ctx);
         last_outcome = record.outcome;
         last_error = record.error.clone();
 
@@ -709,7 +667,7 @@ fn run_chain(
         AttemptOutcome::Succeeded | AttemptOutcome::Skipped => StepStatus::Succeeded,
         AttemptOutcome::SucceededWithWarning => StepStatus::SucceededWithWarning,
         AttemptOutcome::Cancelled => StepStatus::Cancelled,
-        AttemptOutcome::PermissionDenied => StepStatus::Failed,
+        AttemptOutcome::PermissionDenied | AttemptOutcome::NeedsAttention => StepStatus::Failed,
         AttemptOutcome::Failed | AttemptOutcome::Unavailable => StepStatus::Failed,
     };
     progress.stage = match last_outcome {
@@ -718,6 +676,7 @@ fn run_chain(
         AttemptOutcome::Skipped => "已存在，无需安装".into(),
         AttemptOutcome::Cancelled => "已取消".into(),
         AttemptOutcome::PermissionDenied => "需要管理员权限".into(),
+        AttemptOutcome::NeedsAttention => "需要人工介入，已停止后续操作".into(),
         AttemptOutcome::Failed | AttemptOutcome::Unavailable => {
             "安装未能完成".into()
         }
@@ -735,11 +694,15 @@ fn run_chain(
 /// because a failed attempt can still have changed the machine, and the only way
 /// to know what a student now has is to look.
 fn finalize_frozen_session(catalog: &Catalog, frozen_plan: &FrozenPlan, session: &mut ExecutionSession) {
-    let ids: Vec<SoftwareId> = frozen_plan.steps.iter().map(|s| s.id).collect();
+    let ids: Vec<SoftwareId> = frozen_plan.steps.iter().map(|s| s.id).filter(|id| *id != SoftwareId::Dynamic).collect();
+    if ids.is_empty() { return; }
     let inventory = crate::modules::inventory::scan(catalog, &ids);
 
     // Reconcile the execution outcome with operational availability.
     for step in session.steps.iter_mut() {
+        // Dynamic package identity is observed from the frozen Winget source by the command.
+        // Its placeholder catalog entry cannot establish this package's operational availability.
+        if step.step_id == SoftwareId::Dynamic { continue; }
         let entry = catalog.entry(step.step_id);
         let is_gui = entry.version_args.is_none() || step.step_id.category() == SoftwareCategory::AiCreative;
         let item_opt = inventory.find(step.step_id);
@@ -791,6 +754,7 @@ fn finalize_frozen_session(catalog: &Catalog, frozen_plan: &FrozenPlan, session:
 
     // A program that is genuinely present and available must not be re-installed on resume.
     session.remaining.retain(|id| {
+        if *id == SoftwareId::Dynamic { return true; }
         let entry = catalog.entry(*id);
         let is_gui = entry.version_args.is_none() || id.category() == SoftwareCategory::AiCreative;
         let is_avail = if is_gui {

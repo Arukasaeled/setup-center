@@ -126,10 +126,20 @@ class PersonalStateManagerService {
   private document: PersonalStateDocumentV2;
   private listeners: Set<StateChangeListener> = new Set();
   private initialized = false;
+  private readOnly = false;
+  private readOnlyReason: string | null = null;
 
   constructor() {
     this.document = this.loadAndMigrate();
     this.initialized = true;
+  }
+
+  public isReadOnly(): boolean {
+    return this.readOnly;
+  }
+
+  public getReadOnlyReason(): string | null {
+    return this.readOnlyReason;
   }
 
   public subscribe(listener: StateChangeListener): () => void {
@@ -138,7 +148,7 @@ class PersonalStateManagerService {
   }
 
   public get(): Readonly<PersonalStateDocumentV2> {
-    return this.document;
+    return JSON.parse(JSON.stringify(this.document));
   }
 
   private notify(): void {
@@ -158,6 +168,12 @@ class PersonalStateManagerService {
    * is rolled back and an explicit PersonalStatePersistenceError is thrown.
    */
   public update<T>(mutator: (draft: PersonalStateDocumentV2) => T): T {
+    if (this.readOnly) {
+      throw new PersonalStatePersistenceError(
+        `个人状态处于只读保护模式 (${this.readOnlyReason || "文档损坏或数据异常"})，已拒绝写入以防止覆盖或损坏原始数据`
+      );
+    }
+
     // Deep clone prior state for rollback guarantee
     const rollbackState: PersonalStateDocumentV2 = JSON.parse(JSON.stringify(this.document));
     const draft: PersonalStateDocumentV2 = JSON.parse(JSON.stringify(this.document));
@@ -187,6 +203,9 @@ class PersonalStateManagerService {
       // Rollback to prior valid state
       this.document = rollbackState;
       const msg = storageErr instanceof Error ? storageErr.message : String(storageErr);
+      this.readOnly = true;
+      this.readOnlyReason = `写入本地存储失败，原始记录已保留：${msg}`;
+      this.notify();
       throw new PersonalStatePersistenceError(`个人状态写入本地存储失败 (已回滚事务): ${msg}`, storageErr);
     }
   }
@@ -199,136 +218,207 @@ class PersonalStateManagerService {
       return createEmptyPersonalState();
     }
 
+    let rawV2: string | null = null;
     try {
-      const rawV2 = localStorage.getItem(PERSONAL_STATE_STORAGE_KEY);
-      if (rawV2) {
-        const parsed = JSON.parse(rawV2);
-        if (validatePersonalStateDocument(parsed)) {
-          return parsed;
-        }
-        console.warn("[PersonalState] Existing V2 document failed validation, attempting repair");
-      }
-    } catch (err) {
-      console.warn("[PersonalState] Failed to read V2 storage document:", err);
+      rawV2 = localStorage.getItem(PERSONAL_STATE_STORAGE_KEY);
+    } catch (readErr) {
+      this.readOnly = true;
+      this.readOnlyReason = `读取本地存储失败: ${readErr instanceof Error ? readErr.message : String(readErr)}`;
+      console.warn("[PersonalState] " + this.readOnlyReason);
+      return createEmptyPersonalState();
     }
 
-    // Migrate from legacy v1 fragmented keys
+    // 1. Separate V2 states: Valid vs Corrupt vs Missing
+    if (rawV2 !== null) {
+      try {
+        const parsed = JSON.parse(rawV2);
+        if (validatePersonalStateDocument(parsed)) {
+          // Valid V2 document
+          return parsed;
+        }
+        // Corrupt / failed validation: DO NOT overwrite with default document, DO NOT auto-repair!
+        this.readOnly = true;
+        this.readOnlyReason = "个人状态 V2 文档校验失败（可能已损坏），已开启只读保护以保留原始字节，拒绝覆盖写入";
+        console.warn("[PersonalState] " + this.readOnlyReason);
+        return this.extractBestEffortDocument(parsed);
+      } catch (parseErr) {
+        // Corrupt JSON: retain original raw bytes, DO NOT overwrite!
+        this.readOnly = true;
+        this.readOnlyReason = `个人状态 V2 文档 JSON 解析失败，已开启只读保护以保留原始数据: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`;
+        console.warn("[PersonalState] " + this.readOnlyReason);
+        return createEmptyPersonalState();
+      }
+    }
+
+    // 2. V2 is missing: read 8 legacy keys and migrate
+    return this.migrateFromLegacy();
+  }
+
+  private extractBestEffortDocument(rawObj: unknown): PersonalStateDocumentV2 {
+    const fallback = createEmptyPersonalState();
+    if (!rawObj || typeof rawObj !== "object" || Array.isArray(rawObj)) {
+      return fallback;
+    }
+    const d = rawObj as Record<string, unknown>;
+    return {
+      schemaVersion: "2.0",
+      updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : fallback.updatedAt,
+      catalogItems:
+        d.catalogItems && typeof d.catalogItems === "object" && !Array.isArray(d.catalogItems)
+          ? (d.catalogItems as Record<string, DiscoveryItem>)
+          : {},
+      dynamicSoftware:
+        d.dynamicSoftware && typeof d.dynamicSoftware === "object" && !Array.isArray(d.dynamicSoftware)
+          ? (d.dynamicSoftware as Record<string, DynamicSoftware>)
+          : {},
+      customPacks: Array.isArray(d.customPacks) ? (d.customPacks as CustomPack[]) : fallback.customPacks,
+      bookmarks: Array.isArray(d.bookmarks) ? (d.bookmarks as string[]) : [],
+      inbox: Array.isArray(d.inbox) ? (d.inbox as TransferInboxItem[]) : [],
+      history: Array.isArray(d.history) ? (d.history as TransferHistoryEntry[]) : [],
+      recent: Array.isArray(d.recent) ? (d.recent as RecentItem[]) : [],
+      notes:
+        d.notes && typeof d.notes === "object" && !Array.isArray(d.notes)
+          ? (d.notes as Record<string, string>)
+          : {},
+    };
+  }
+
+  private migrateFromLegacy(): PersonalStateDocumentV2 {
     const initial = createEmptyPersonalState();
-    let migratedAny = false;
 
-    // 1. Catalog items
     try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.CATALOG_ITEMS);
-      if (raw) {
-        const arr = JSON.parse(raw) as DiscoveryItem[];
-        if (Array.isArray(arr)) {
-          for (const item of arr) {
-            if (item && item.id) initial.catalogItems[item.id] = item;
+      // 1. Catalog items
+      const rawCatalog = localStorage.getItem(LEGACY_STORAGE_KEYS.CATALOG_ITEMS);
+      if (rawCatalog !== null) {
+        const arr = JSON.parse(rawCatalog);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版目录条目数据格式错误 (不是数组)");
+        }
+        for (const item of arr) {
+          if (!item || typeof item !== "object" || typeof item.id !== "string") {
+            throw new Error("旧版目录条目元素缺失有效 id");
           }
-          migratedAny = true;
+          initial.catalogItems[item.id] = item as DiscoveryItem;
         }
       }
-    } catch {}
 
-    // 2. Catalog software
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.CATALOG_SOFTWARE);
-      if (raw) {
-        const arr = JSON.parse(raw) as DynamicSoftware[];
-        if (Array.isArray(arr)) {
-          for (const sw of arr) {
-            if (sw && sw.id) initial.dynamicSoftware[sw.id] = sw;
+      // 2. Catalog software
+      const rawSoftware = localStorage.getItem(LEGACY_STORAGE_KEYS.CATALOG_SOFTWARE);
+      if (rawSoftware !== null) {
+        const arr = JSON.parse(rawSoftware);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版软件目录数据格式错误 (不是数组)");
+        }
+        for (const sw of arr) {
+          if (!sw || typeof sw !== "object" || typeof sw.id !== "string") {
+            throw new Error("旧版软件条目元素缺失有效 id");
           }
-          migratedAny = true;
+          initial.dynamicSoftware[sw.id] = sw as DynamicSoftware;
         }
       }
-    } catch {}
 
-    // 3. Custom packs
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.CUSTOM_PACKS);
-      if (raw) {
-        const arr = JSON.parse(raw) as CustomPack[];
-        if (Array.isArray(arr) && arr.length > 0) {
-          initial.customPacks = arr;
-          migratedAny = true;
+      // 3. Custom packs (distinguish [] from missing)
+      const rawPacks = localStorage.getItem(LEGACY_STORAGE_KEYS.CUSTOM_PACKS);
+      if (rawPacks !== null) {
+        const arr = JSON.parse(rawPacks);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版自定义包数据格式错误 (不是数组)");
         }
-      }
-    } catch {}
-
-    // 4. Bookmarks
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.BOOKMARKS);
-      if (raw) {
-        const arr = JSON.parse(raw) as string[];
-        if (Array.isArray(arr)) {
-          initial.bookmarks = arr;
-          migratedAny = true;
+        for (const p of arr) {
+          if (!p || typeof p !== "object" || typeof p.id !== "string" || typeof p.title !== "string") {
+            throw new Error("旧版自定义包元素格式不合规");
+          }
         }
+        // Valid array: preserve empty array if [], do not reinsert default pack
+        initial.customPacks = arr as CustomPack[];
       }
-    } catch {}
 
-    // 5. Inbox
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.INBOX);
-      if (raw) {
-        const arr = JSON.parse(raw) as TransferInboxItem[];
-        if (Array.isArray(arr)) {
-          initial.inbox = arr;
-          migratedAny = true;
+      // 4. Bookmarks
+      const rawBookmarks = localStorage.getItem(LEGACY_STORAGE_KEYS.BOOKMARKS);
+      if (rawBookmarks !== null) {
+        const arr = JSON.parse(rawBookmarks);
+        if (!Array.isArray(arr) || !arr.every((x) => typeof x === "string")) {
+          throw new Error("旧版收藏条目格式错误");
         }
+        initial.bookmarks = arr;
       }
-    } catch {}
 
-    // 6. History
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.HISTORY);
-      if (raw) {
-        const arr = JSON.parse(raw) as TransferHistoryEntry[];
-        if (Array.isArray(arr)) {
-          initial.history = arr;
-          migratedAny = true;
+      // 5. Inbox
+      const rawInbox = localStorage.getItem(LEGACY_STORAGE_KEYS.INBOX);
+      if (rawInbox !== null) {
+        const arr = JSON.parse(rawInbox);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版收件箱格式错误 (不是数组)");
         }
-      }
-    } catch {}
-
-    // 7. Recent
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.RECENT);
-      if (raw) {
-        const arr = JSON.parse(raw) as RecentItem[];
-        if (Array.isArray(arr)) {
-          initial.recent = arr;
-          migratedAny = true;
+        for (const item of arr) {
+          if (!item || typeof item !== "object" || typeof item.id !== "string") {
+            throw new Error("旧版收件箱条目元素格式不合规");
+          }
         }
+        initial.inbox = arr as TransferInboxItem[];
       }
-    } catch {}
 
-    // 8. Notes
-    try {
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEYS.NOTES);
-      if (raw) {
-        const obj = JSON.parse(raw) as Record<string, string>;
-        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-          initial.notes = obj;
-          migratedAny = true;
+      // 6. History
+      const rawHistory = localStorage.getItem(LEGACY_STORAGE_KEYS.HISTORY);
+      if (rawHistory !== null) {
+        const arr = JSON.parse(rawHistory);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版流转历史格式错误 (不是数组)");
         }
+        for (const item of arr) {
+          if (!item || typeof item !== "object" || typeof item.id !== "string") {
+            throw new Error("旧版流转历史条目格式不合规");
+          }
+        }
+        initial.history = arr as TransferHistoryEntry[];
       }
-    } catch {}
 
-    // Persist migrated single document
+      // 7. Recent
+      const rawRecent = localStorage.getItem(LEGACY_STORAGE_KEYS.RECENT);
+      if (rawRecent !== null) {
+        const arr = JSON.parse(rawRecent);
+        if (!Array.isArray(arr)) {
+          throw new Error("旧版最近浏览格式错误 (不是数组)");
+        }
+        for (const item of arr) {
+          if (!item || typeof item !== "object" || typeof item.id !== "string") {
+            throw new Error("旧版最近浏览条目格式不合规");
+          }
+        }
+        initial.recent = arr as RecentItem[];
+      }
+
+      // 8. Notes
+      const rawNotes = localStorage.getItem(LEGACY_STORAGE_KEYS.NOTES);
+      if (rawNotes !== null) {
+        const obj = JSON.parse(rawNotes);
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+          throw new Error("旧版笔记数据格式错误 (不是对象)");
+        }
+        for (const [k, v] of Object.entries(obj)) {
+          if (typeof v !== "string") {
+            throw new Error(`旧版笔记条目内容非字符串: ${k}`);
+          }
+        }
+        initial.notes = obj as Record<string, string>;
+      }
+    } catch (migrationErr) {
+      // Abort migration on structural error, preserve all legacy keys
+      this.readOnly = true;
+      this.readOnlyReason = `旧版数据结构异常，已中止迁移并开启只读保护，保留全部原始旧 key: ${migrationErr instanceof Error ? migrationErr.message : String(migrationErr)}`;
+      console.warn("[PersonalState] " + this.readOnlyReason);
+      return initial;
+    }
+
+    // Persist single V2 document once all existing records converted successfully
+    // Do NOT delete legacy keys, keep them as pre-migration backup!
     try {
       localStorage.setItem(PERSONAL_STATE_STORAGE_KEY, JSON.stringify(initial));
-      if (migratedAny) {
-        // Clean up legacy keys
-        for (const legacyKey of Object.values(LEGACY_STORAGE_KEYS)) {
-          try {
-            localStorage.removeItem(legacyKey);
-          } catch {}
-        }
-      }
     } catch (saveErr) {
-      console.warn("[PersonalState] Failed to persist initial migrated document:", saveErr);
+      this.readOnly = true;
+      this.readOnlyReason = `持久化已迁移的 V2 个人状态文档失败: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`;
+      console.warn("[PersonalState] " + this.readOnlyReason);
+      return initial;
     }
 
     return initial;
