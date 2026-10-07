@@ -14,12 +14,13 @@ import {
   type DownloadTask,
 } from "../core/transfer";
 import { VaultSync, type VaultSyncStatus, type VaultSyncResult } from "../core/vault";
-import { ScaffoldModal } from "../components/ScaffoldModal";
+import { ScaffoldModal, type ScaffoldTemplateDefinition } from "../components/ScaffoldModal";
 import { TransferInboxDrawer } from "../components/TransferInboxDrawer";
 import { DetailShell } from "../components/DetailShell";
 import { SetupActionButton } from "../components/SetupActionButton";
 import { resolveSetupAction } from "../core/setup";
 import { useApp } from "../lib/store";
+import { BUNDLED_TEMPLATES } from "../core/vault/baseline/templates";
 
 /**
  * Identity handed to the executor so TransferHistory records the *content* that
@@ -60,32 +61,43 @@ export function ResourceSection() {
   }, []);
 
   // Modals state
-  const [scaffoldTemplate, setScaffoldTemplate] = useState<{
-    id: string;
-    name: string;
-    description: string;
-    command?: string;
-    defaultDir?: string;
-    postInstallNotice?: string;
-  } | null>(null);
+  const [scaffoldTemplate, setScaffoldTemplate] = useState<ScaffoldTemplateDefinition | null>(null);
 
   const [showInbox, setShowInbox] = useState(false);
 
   /**
    * The scaffold action is a `scaffold` Setup Action, and executing one
    * dispatches `setup:open-scaffold` with the template id. This is the single
-   * listener for that event, which is why the card no longer needs a
-   * `category === "templates"` branch of its own.
-   *
-   * The command is derived from the repository rather than left to the modal's
-   * fallback. The fallback is a Tauri-specific command, so before this the
-   * "创建工程" button on *every* template in the catalogue offered to scaffold a
-   * Tauri app, regardless of which template the user clicked.
+   * listener for that event.
    */
   useEffect(() => {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<{ templateId?: string }>).detail;
-      const item = RESOURCE_CATALOG.find((r) => r.id === detail?.templateId);
+      const tid = detail?.templateId;
+      if (!tid) return;
+
+      // 1. Check bundled templates first (Issue E07)
+      const tpl = BUNDLED_TEMPLATES.find((t) => t.id === tid || t.id.replace(/^tpl:/, "") === tid);
+      if (tpl) {
+        setScaffoldTemplate({
+          id: tpl.id,
+          name: tpl.name,
+          description: tpl.description,
+          command: tpl.scaffold.command,
+          defaultDir: tpl.scaffold.defaultDir,
+          postInstallNotice: tpl.scaffold.postInstallNotice,
+          steps: tpl.scaffold.steps,
+          supportedPackageManagers: tpl.scaffold.supportedPackageManagers,
+          defaultPackageManager: tpl.scaffold.defaultPackageManager,
+          requiredCapabilities: tpl.scaffold.requiredCapabilities,
+          requirements: tpl.requirements,
+          preparedOnly: tpl.scaffold.preparedOnly,
+        });
+        return;
+      }
+
+      // 2. Fallback to resource catalog
+      const item = RESOURCE_CATALOG.find((r) => r.id === tid);
       if (!item) return;
       setScaffoldTemplate({
         id: item.id,
@@ -94,6 +106,8 @@ export function ResourceSection() {
         command: item.repository ? `git clone ${item.repository} {{projectName}}` : undefined,
         defaultDir: item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
         postInstallNotice: item.homepage ? `项目文档：${item.homepage}` : undefined,
+        supportedPackageManagers: ["pnpm", "npm", "yarn"],
+        preparedOnly: true,
       });
     };
     window.addEventListener("setup:open-scaffold", onOpen);
@@ -560,7 +574,9 @@ export function ResourceSection() {
                   />
                   {downloadTask?.status === "downloading" && (
                     <span className="tnum shrink-0 text-[10.5px] font-mono text-[color:var(--text-quiet)]">
-                      {downloadTask.progress}%
+                      {typeof downloadTask.progress === "number"
+                        ? `${downloadTask.progress}%`
+                        : `${Math.round((downloadTask.downloadedBytes || 0) / 1024)} KB`}
                     </span>
                   )}
                 </div>

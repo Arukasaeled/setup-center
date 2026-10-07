@@ -19,7 +19,7 @@ use crate::model::*;
 
 use super::catalog::{Catalog, StrategySource};
 use super::detect::now_iso8601;
-use super::executor::{execute_source, CancelFlag};
+use super::executor::{execute_source, execute_source_with_policy, CancelFlag};
 use serde::{Deserialize, Serialize};
 
 /// One link in a fallback chain.
@@ -55,20 +55,24 @@ pub fn spec_from(catalog: &Catalog, id: SoftwareId) -> InstallerSpec {
             .install
             .iter()
             .map(|strategy| Fallback {
-                source: match strategy.source {
+                source: match &strategy.source {
                     StrategySource::Winget(package_id) => InstallSource::Winget {
                         package_id: package_id.to_string(),
                     },
-                    StrategySource::OfficialInstaller(url) => InstallSource::OfficialInstaller {
+                    StrategySource::OfficialInstaller { url, kind, vendor_id } => InstallSource::OfficialInstaller {
                         url: url.to_string(),
                         // No pinned digest: these are vendor "latest" endpoints,
                         // where a hard-coded hash would be wrong within days. The
                         // field exists so a pinned build can be added later
                         // without a schema change.
                         sha256: None,
+                        kind: Some(*kind),
+                        vendor_id: Some(vendor_id.to_string()),
                     },
-                    StrategySource::Command(command) => InstallSource::Script {
+                    StrategySource::Command { command, program_kind, args } => InstallSource::Script {
                         command: command.to_string(),
+                        program_kind: Some(*program_kind),
+                        args: Some(args.iter().map(|s| s.to_string()).collect()),
                     },
                 },
                 rationale: strategy.rationale.to_string(),
@@ -119,6 +123,7 @@ pub fn build_plan_with(
     existing: &SoftwareScan,
 ) -> InstallPlan {
     let mut steps: Vec<InstallStep> = Vec::new();
+    let frozen_policy = super::storage::load_effective_policy();
 
     for id in ids {
         let spec = spec_from(catalog, *id);
@@ -168,9 +173,8 @@ pub fn build_plan_with(
 
         let entry = catalog.entry(*id);
         let location_support = Some(entry.install_location);
-        let policy = super::storage::load_effective_policy();
         let expected_location = if entry.install_location == InstallLocationSupport::WingetLocation {
-            policy.resolved_root.as_ref().map(|root| {
+            frozen_policy.resolved_root.as_ref().map(|root| {
                 if let Some(sub) = entry.storage_subdir {
                     let clean = root.trim_end_matches(['\\', '/']);
                     format!("{clean}\\{sub}")
@@ -202,6 +206,7 @@ pub fn build_plan_with(
         ready_count,
         satisfied_count,
         estimated_minutes,
+        storage_policy: Some(frozen_policy),
     }
 }
 
@@ -232,6 +237,8 @@ pub fn simulate_plan(plan: &InstallPlan) -> Vec<StepProgress> {
                 stage,
                 fraction: None,
                 detail: Some(format!("首选方式：{}", describe_source(&step.source))),
+                availability: None,
+                action_outcome: None,
             }
         })
         .collect()
@@ -241,7 +248,7 @@ pub fn describe_source(source: &InstallSource) -> String {
     match source {
         InstallSource::Winget { package_id } => format!("winget install --id {package_id}"),
         InstallSource::OfficialInstaller { url, .. } => format!("官方安装包 {url}"),
-        InstallSource::Script { command } => command.clone(),
+        InstallSource::Script { command, .. } => command.clone(),
         InstallSource::ConfigurationOnly => "仅写入配置".to_string(),
     }
 }
@@ -300,107 +307,112 @@ pub fn winget_available() -> Result<String, AppError> {
 /// not mean the program is usable: it may have installed somewhere not on PATH,
 /// or installed a different Python next to the existing one. Only re-probing all
 /// three providers can tell the student what they actually have.
+pub fn task_document_path() -> std::path::PathBuf {
+    super::detect::work_directory().join("tasks").join("active_task.json")
+}
+
+pub fn save_task_document(doc: &TaskDocumentV1) -> Result<(), String> {
+    let path = task_document_path();
+    let json = serde_json::to_vec_pretty(doc).map_err(|e| format!("序列化任务文档失败：{e}"))?;
+    super::atomic_file::write_atomic(&path, &json).map_err(|e| format!("原子写入任务文档失败：{e}"))
+}
+
+pub fn load_task_document() -> Result<Option<TaskDocumentV1>, String> {
+    let path = task_document_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取任务文档失败：{e}"))?;
+    serde_json::from_slice::<TaskDocumentV1>(&bytes)
+        .map(Some)
+        .map_err(|e| format!("解析任务文档失败：{e}"))
+}
+
+pub fn freeze_plan(catalog: &Catalog, plan: &InstallPlan) -> FrozenPlan {
+    let origin = if plan.profile_id.is_empty() {
+        PlanOrigin::Selection
+    } else {
+        PlanOrigin::Profile
+    };
+    let profile_id = if plan.profile_id.is_empty() {
+        None
+    } else {
+        Some(plan.profile_id.clone())
+    };
+    let frozen_policy = plan
+        .storage_policy
+        .clone()
+        .unwrap_or_else(super::storage::load_effective_policy);
+    let revision = frozen_policy.revision;
+    FrozenPlan {
+        plan_id: format!("plan-{}", plan_timestamp().replace([':', '.'], "-")),
+        origin,
+        profile_id,
+        catalog_revision: catalog.revision().to_string(),
+        steps: plan.steps.clone(),
+        storage_policy: Some(frozen_policy),
+        storage_revision: revision,
+        created_at: plan_timestamp(),
+    }
+}
+
 pub fn execute_plan(
     catalog: &Catalog,
     plan: &InstallPlan,
     cancel: &CancelFlag,
 ) -> ExecutionSession {
-    let mut session = ExecutionSession::new(
-        format!("session-{}", plan_timestamp().replace([':', '.'], "-")),
-        plan.profile_id.clone(),
-        plan_timestamp(),
-    );
-    execute_steps(
-        catalog,
-        plan,
-        &mut session,
-        cancel,
-        &plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
-        &no_progress,
-    );
-    session
+    let frozen_plan = freeze_plan(catalog, plan);
+    execute_frozen_plan_observed(catalog, &frozen_plan, cancel, &no_progress)
 }
 
-/// Like [`execute_plan`], but reports each step change to `sink` as it happens.
-///
-/// This is the entry point the Tauri command uses. It exists alongside
-/// `execute_plan` rather than replacing it so the engine keeps a plain
-/// no-observer form for its own tests — the observed run and the unobserved run
-/// are the *same* `execute_steps`, differing only in the sink.
 pub fn execute_plan_observed(
     catalog: &Catalog,
     plan: &InstallPlan,
     cancel: &CancelFlag,
     sink: ProgressSink<'_>,
 ) -> ExecutionSession {
+    let frozen_plan = freeze_plan(catalog, plan);
+    execute_frozen_plan_observed(catalog, &frozen_plan, cancel, sink)
+}
+
+pub fn execute_frozen_plan_observed(
+    catalog: &Catalog,
+    frozen_plan: &FrozenPlan,
+    cancel: &CancelFlag,
+    sink: ProgressSink<'_>,
+) -> ExecutionSession {
     let mut session = ExecutionSession::new(
         format!("session-{}", plan_timestamp().replace([':', '.'], "-")),
-        plan.profile_id.clone(),
+        frozen_plan.profile_id.clone().unwrap_or_default(),
         plan_timestamp(),
     );
-    execute_steps(
+    execute_frozen_steps(
         catalog,
-        plan,
+        frozen_plan,
         &mut session,
         cancel,
-        &plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
+        &frozen_plan.steps.iter().map(|s| s.id).collect::<Vec<_>>(),
         sink,
     );
     session
 }
 
 /// Observer for per-step progress, called as each step's state changes.
-///
-/// ## Why a callback rather than a channel
-///
-/// The engine is deliberately free of Tauri: `install.rs` knows nothing about
-/// webviews, and its tests drive it directly. A callback keeps that property —
-/// the command layer supplies a closure that emits to the frontend, and the
-/// engine stays a plain function a unit test can call with [`no_progress`].
-///
-/// ## Why it is called at every mutation
-///
-/// The 0.1.1 complaint was "点安装以后等待很久，但不知道发生了什么": the UI had no
-/// idea what the engine was doing. `StepProgress` was already computed for every
-/// step, but only ever handed back *after* the whole run finished. Calling this
-/// at each state change is what turns a silent multi-minute wait into a
-/// sequence the student can watch.
-///
-/// The sink receives `&StepProgress` and must copy what it needs: the engine
-/// mutates its own value immediately afterwards, so holding the reference past
-/// the call would read a later state.
 pub type ProgressSink<'a> = &'a (dyn Fn(&StepProgress) + 'a);
 
 /// A sink that discards everything, for callers with no observer.
 pub fn no_progress(_: &StepProgress) {}
 
-/// Continues an interrupted session.
-///
-/// Resumption is not a replay: it re-probes each unfinished program first, so a
-/// step that actually completed before the interruption (or was installed by a
-/// failed attempt) is recognised and skipped rather than installed twice.
 pub fn resume_plan(
     catalog: &Catalog,
     plan: &InstallPlan,
     previous: &ExecutionSession,
     cancel: &CancelFlag,
 ) -> ExecutionSession {
-    let mut session = ExecutionSession::new(
-        previous.id.clone(),
-        previous.profile_id.clone(),
-        previous.started_at.clone(),
-    );
-    // Carry the earlier trace forward. A resumed run whose log started over
-    // would lose the failure that caused the interruption — the single most
-    // important thing to keep.
-    session.actions = previous.actions.clone();
-
-    let remaining = previous.remaining.clone();
-    execute_steps(catalog, plan, &mut session, cancel, &remaining, &no_progress);
-    session
+    let frozen_plan = freeze_plan(catalog, plan);
+    resume_frozen_plan_observed(catalog, &frozen_plan, previous, cancel, &no_progress)
 }
 
-/// Like [`resume_plan`], but reports each step change to `sink` as it happens.
 pub fn resume_plan_observed(
     catalog: &Catalog,
     plan: &InstallPlan,
@@ -408,6 +420,17 @@ pub fn resume_plan_observed(
     cancel: &CancelFlag,
     sink: ProgressSink<'_>,
 ) -> ExecutionSession {
+    let frozen_plan = freeze_plan(catalog, plan);
+    resume_frozen_plan_observed(catalog, &frozen_plan, previous, cancel, sink)
+}
+
+pub fn resume_frozen_plan_observed(
+    catalog: &Catalog,
+    frozen_plan: &FrozenPlan,
+    previous: &ExecutionSession,
+    cancel: &CancelFlag,
+    sink: ProgressSink<'_>,
+) -> ExecutionSession {
     let mut session = ExecutionSession::new(
         previous.id.clone(),
         previous.profile_id.clone(),
@@ -416,38 +439,31 @@ pub fn resume_plan_observed(
     session.actions = previous.actions.clone();
 
     let remaining = previous.remaining.clone();
-    execute_steps(catalog, plan, &mut session, cancel, &remaining, sink);
+    execute_frozen_steps(catalog, frozen_plan, &mut session, cancel, &remaining, sink);
     session
 }
 
-/// The shared body of a fresh run and a resume.
-fn execute_steps(
+fn execute_frozen_steps(
     catalog: &Catalog,
-    plan: &InstallPlan,
+    frozen_plan: &FrozenPlan,
     session: &mut ExecutionSession,
     cancel: &CancelFlag,
     todo: &[SoftwareId],
     sink: ProgressSink<'_>,
 ) {
-    let total = plan.steps.len() as u32;
+    let total = frozen_plan.steps.len() as u32;
+    let frozen_policy = frozen_plan
+        .storage_policy
+        .clone()
+        .unwrap_or_else(super::storage::load_effective_policy);
 
-    // A step is announced the moment the engine commits to running it, before
-    // its first command runs. This is the update that unblocks the UI: it tells
-    // the student which program is being worked on and how many remain, which is
-    // all they need to know the run is alive. Without it the screen would sit on
-    // whatever it showed before the click for the length of the whole run.
-    //
-    // Every push to `session.steps` is paired with a `sink` call, and they are
-    // kept adjacent on purpose: a step the engine recorded but never announced
-    // would render as a row that never leaves "等待开始", which is precisely the
-    // class of lie this phase exists to remove.
     let announce = |session: &ExecutionSession| {
         if let Some(step) = session.steps.last() {
             sink(step);
         }
     };
 
-    for (index, step) in plan.steps.iter().enumerate() {
+    for (index, step) in frozen_plan.steps.iter().enumerate() {
         let mut progress = StepProgress {
             step_id: step.id,
             name: step.name.clone(),
@@ -457,13 +473,12 @@ fn execute_steps(
             stage: "等待开始".into(),
             fraction: None,
             detail: None,
+            availability: None,
+            action_outcome: None,
         };
 
-        // Not scheduled this pass: either already present, or not in the resume
-        // set. `Cancelled` rather than `Skipped` for the latter, because it means
-        // "not attempted yet" and is what makes the session resumable.
         if !todo.contains(&step.id) {
-            let resumed_elsewhere = !plan.steps[index].satisfied;
+            let resumed_elsewhere = !frozen_plan.steps[index].satisfied;
             progress.status = if step.satisfied {
                 StepStatus::Skipped
             } else {
@@ -482,10 +497,6 @@ fn execute_steps(
             continue;
         }
 
-        // A satisfied step is never executed. This is the one place the engine
-        // trusts the inventory over the plan, and it is worth stating why: the
-        // plan is a snapshot from before the run, while the inventory is a live
-        // read. On a resumed session they can legitimately disagree.
         if step.satisfied {
             progress.status = StepStatus::Skipped;
             progress.stage = "已检测到，无需安装".into();
@@ -508,13 +519,35 @@ fn execute_steps(
         let position = session.steps.len() - 1;
         announce(session);
 
-        run_chain(catalog, step, &mut session.actions, &mut session.steps[position], cancel);
+        // Persist state to active_task.json before running command
+        let pre_doc = TaskDocumentV1 {
+            schema_version: "task-document.v1".to_string(),
+            task_id: session.id.clone(),
+            status: "running".to_string(),
+            frozen_plan: frozen_plan.clone(),
+            session: session.clone(),
+            updated_at: plan_timestamp(),
+            attention_reason: None,
+        };
+        if let Err(e) = save_task_document(&pre_doc) {
+            session.halted_reason = Some(format!("保存任务状态失败，已安全暂停：{e}"));
+            session.steps[position].status = StepStatus::Failed;
+            session.steps[position].detail = Some(format!("状态持久化失败：{e}"));
+            let attention_doc = TaskDocumentV1 {
+                schema_version: "task-document.v1".to_string(),
+                task_id: session.id.clone(),
+                status: "needsAttention".to_string(),
+                frozen_plan: frozen_plan.clone(),
+                session: session.clone(),
+                updated_at: plan_timestamp(),
+                attention_reason: Some(format!("保存任务状态失败：{e}")),
+            };
+            let _ = save_task_document(&attention_doc);
+            break;
+        }
 
-        // The step's final state, now that the chain has been walked and the
-        // completion rule applied. Announced before the post-run verification
-        // pass below, which may upgrade a `Failed` step to
-        // `SucceededWithWarning` — that upgrade is announced separately so the
-        // student sees "安装未完成" turn into "已安装".
+        run_chain(catalog, step, &mut session.actions, &mut session.steps[position], cancel, &frozen_policy);
+
         sink(&session.steps[position]);
 
         let status = session.steps[position].status;
@@ -524,11 +557,21 @@ fn execute_steps(
             _ => {}
         }
 
-        // A permission failure is the one outcome that stops the whole run.
-        // Every remaining step would hit the same wall under the same token, so
-        // continuing would produce a list of identical failures and leave the
-        // student waiting. Stopping here, with the reason stated once, is both
-        // faster and clearer.
+        // Persist state to active_task.json after step completes
+        let post_doc = TaskDocumentV1 {
+            schema_version: "task-document.v1".to_string(),
+            task_id: session.id.clone(),
+            status: if cancel.is_cancelled() { "cancelled".into() } else { "running".into() },
+            frozen_plan: frozen_plan.clone(),
+            session: session.clone(),
+            updated_at: plan_timestamp(),
+            attention_reason: None,
+        };
+        if let Err(e) = save_task_document(&post_doc) {
+            session.halted_reason = Some(format!("保存步骤完成状态失败，已安全暂停：{e}"));
+            break;
+        }
+
         if session.steps[position]
             .detail
             .as_deref()
@@ -537,16 +580,14 @@ fn execute_steps(
             session.halted_reason = Some(
                 "安装需要管理员权限。请右键以管理员身份重新运行本程序，然后点击「继续安装」。".into(),
             );
-            for later in plan.steps.iter().skip(index + 1) {
+            for later in frozen_plan.steps.iter().skip(index + 1) {
                 session.remaining.push(later.id);
             }
             break;
         }
     }
 
-    // Fill in the steps that were never reached at all (halted run), so the UI
-    // renders a complete list rather than a truncated one.
-    for step in plan.steps.iter().skip(session.steps.len()) {
+    for step in frozen_plan.steps.iter().skip(session.steps.len()) {
         session.steps.push(StepProgress {
             step_id: step.id,
             name: step.name.clone(),
@@ -556,6 +597,8 @@ fn execute_steps(
             stage: "等待继续安装".into(),
             fraction: None,
             detail: None,
+            availability: None,
+            action_outcome: Some(AttemptOutcome::Cancelled),
         });
         announce(session);
         if !session.remaining.contains(&step.id) {
@@ -563,12 +606,26 @@ fn execute_steps(
         }
     }
 
-    finalize_session(catalog, plan, session);
+    finalize_frozen_session(catalog, frozen_plan, session);
 
-    // The verification pass can reclassify a step (a `Failed` install whose
-    // program the re-scan now finds). Those steps were announced once already,
-    // so the corrected state is announced again — otherwise the student would be
-    // told the install failed and never told it actually succeeded.
+    let final_status = if session.is_cancelled() {
+        "cancelled"
+    } else if session.is_success() {
+        "succeeded"
+    } else {
+        "failed"
+    };
+    let final_doc = TaskDocumentV1 {
+        schema_version: "task-document.v1".to_string(),
+        task_id: session.id.clone(),
+        status: final_status.to_string(),
+        frozen_plan: frozen_plan.clone(),
+        session: session.clone(),
+        updated_at: plan_timestamp(),
+        attention_reason: session.halted_reason.clone(),
+    };
+    let _ = save_task_document(&final_doc);
+
     for step in session.steps.iter() {
         if step.status == StepStatus::SucceededWithWarning {
             sink(step);
@@ -583,6 +640,7 @@ fn run_chain(
     actions: &mut Vec<ActionRecord>,
     progress: &mut StepProgress,
     cancel: &CancelFlag,
+    policy: &crate::modules::storage::StoragePolicy,
 ) {
     let spec = spec_from(catalog, step.id);
 
@@ -628,7 +686,7 @@ fn run_chain(
         };
         progress.fraction = Some((attempt as f32) / (chain.len() as f32 + 1.0));
 
-        let mut record = execute_source(step.id, &link.source, attempt as u32, cancel);
+        let mut record = execute_source_with_policy(step.id, &link.source, attempt as u32, cancel, policy);
         last_outcome = record.outcome;
         last_error = record.error.clone();
 
@@ -649,12 +707,14 @@ fn run_chain(
     progress.fraction = Some(1.0);
     progress.status = match last_outcome {
         AttemptOutcome::Succeeded | AttemptOutcome::Skipped => StepStatus::Succeeded,
+        AttemptOutcome::SucceededWithWarning => StepStatus::SucceededWithWarning,
         AttemptOutcome::Cancelled => StepStatus::Cancelled,
         AttemptOutcome::PermissionDenied => StepStatus::Failed,
         AttemptOutcome::Failed | AttemptOutcome::Unavailable => StepStatus::Failed,
     };
     progress.stage = match last_outcome {
         AttemptOutcome::Succeeded => "安装完成".into(),
+        AttemptOutcome::SucceededWithWarning => "安装完成（需重启系统）".into(),
         AttemptOutcome::Skipped => "已存在，无需安装".into(),
         AttemptOutcome::Cancelled => "已取消".into(),
         AttemptOutcome::PermissionDenied => "需要管理员权限".into(),
@@ -665,6 +725,7 @@ fn run_chain(
     // Only the last attempt's error is shown: it is the one that explains the
     // final state. The earlier ones are still in the trace behind 高级模式.
     progress.detail = last_error;
+    progress.action_outcome = Some(last_outcome);
 }
 
 /// Re-probes the machine and attaches the result to the session.
@@ -673,25 +734,47 @@ fn run_chain(
 /// 验证". It runs unconditionally — including for a run where every step failed —
 /// because a failed attempt can still have changed the machine, and the only way
 /// to know what a student now has is to look.
-fn finalize_session(catalog: &Catalog, plan: &InstallPlan, session: &mut ExecutionSession) {
-    let ids: Vec<SoftwareId> = plan.steps.iter().map(|s| s.id).collect();
+fn finalize_frozen_session(catalog: &Catalog, frozen_plan: &FrozenPlan, session: &mut ExecutionSession) {
+    let ids: Vec<SoftwareId> = frozen_plan.steps.iter().map(|s| s.id).collect();
     let inventory = crate::modules::inventory::scan(catalog, &ids);
 
-    // Reconcile the outcome with what is actually on the machine. A step that
-    // reported failure but whose program is now present is a success: the
-    // installer may have finished the work and then exited non-zero, which is
-    // common with MSI-based installers and with winget's own retry paths.
+    // Reconcile the execution outcome with operational availability.
     for step in session.steps.iter_mut() {
-        if step.status != StepStatus::Failed {
-            continue;
-        }
-        let verified = inventory.find(step.step_id).is_some_and(|item| {
-            item.installed && item.on_path && item.version.is_some()
-        });
-        if verified {
-            step.status = StepStatus::SucceededWithWarning;
-            step.stage = "已安装（安装程序返回了错误码，但检测确认可用）".into();
-            session.failed_steps.retain(|id| *id != step.step_id);
+        let entry = catalog.entry(step.step_id);
+        let is_gui = entry.version_args.is_none() || step.step_id.category() == SoftwareCategory::AiCreative;
+        let item_opt = inventory.find(step.step_id);
+
+        let is_available = if is_gui {
+            item_opt.is_some_and(|item| item.installed)
+        } else {
+            item_opt.is_some_and(|item| item.installed && item.on_path && item.version.is_some())
+        };
+
+        let is_installed_but_unreachable = !is_gui && item_opt.is_some_and(|item| item.installed && !item.on_path);
+        let is_completely_missing = item_opt.map(|item| !item.installed).unwrap_or(true);
+
+        step.availability = item_opt.and_then(|item| item.availability.clone());
+
+        if step.status == StepStatus::Succeeded {
+            if is_completely_missing {
+                // Command finished (e.g. exit 0) but binary/registration missing: downgrade to warning
+                step.status = StepStatus::SucceededWithWarning;
+                step.stage = "安装程序已退出，但未检测到程序文件，可能需要重启或手动完成配置".into();
+                if !session.failed_steps.contains(&step.step_id) {
+                    session.failed_steps.push(step.step_id);
+                }
+            } else if is_installed_but_unreachable {
+                // CLI installed but not in current PATH
+                step.status = StepStatus::SucceededWithWarning;
+                step.stage = "已安装，但当前终端 PATH 尚未生效，需重启终端或配置 PATH".into();
+            }
+        } else if step.status == StepStatus::Failed {
+            if is_available {
+                // Installer reported non-zero, but post-scan confirmed healthy and available
+                step.status = StepStatus::SucceededWithWarning;
+                step.stage = "安装程序返回了非零状态，但检测确认程序已可用".into();
+                session.failed_steps.retain(|id| *id != step.step_id);
+            }
         }
     }
 
@@ -706,13 +789,16 @@ fn finalize_session(catalog: &Catalog, plan: &InstallPlan, session: &mut Executi
         })
     });
 
-    // A program that is genuinely present must not be re-installed on resume.
-    // The plan's `satisfied` flag is a pre-run snapshot; the post-run inventory
-    // is the live answer.
+    // A program that is genuinely present and available must not be re-installed on resume.
     session.remaining.retain(|id| {
-        !inventory
-            .find(*id)
-            .is_some_and(|item| item.installed && item.on_path)
+        let entry = catalog.entry(*id);
+        let is_gui = entry.version_args.is_none() || id.category() == SoftwareCategory::AiCreative;
+        let is_avail = if is_gui {
+            inventory.find(*id).is_some_and(|item| item.installed)
+        } else {
+            inventory.find(*id).is_some_and(|item| item.installed && item.on_path)
+        };
+        !is_avail
     });
 
     session.verified = Some(inventory);
@@ -721,6 +807,12 @@ fn finalize_session(catalog: &Catalog, plan: &InstallPlan, session: &mut Executi
     if session.remaining.is_empty() {
         session.halted_reason = None;
     }
+}
+
+#[allow(dead_code)]
+pub fn finalize_session(catalog: &Catalog, plan: &InstallPlan, session: &mut ExecutionSession) {
+    let frozen_plan = freeze_plan(catalog, plan);
+    finalize_frozen_session(catalog, &frozen_plan, session);
 }
 
 /// Lists the programs the machine has, in catalog order, for the UI's status
@@ -793,6 +885,7 @@ mod tests {
                     sources: vec![],
                     evidence: vec![],
                     hints: vec![],
+                    availability: None,
                 }],
                 scanned_at: String::new(),
                 providers: vec![],
@@ -940,9 +1033,11 @@ mod tests {
             stage: String::new(),
             fraction: None,
             detail: None,
+            availability: None,
+            action_outcome: None,
         };
         let cancel = CancelFlag::new();
-        run_chain(&cat, step, &mut actions, &mut progress, &cancel);
+        run_chain(&cat, step, &mut actions, &mut progress, &cancel, &super::storage::load_effective_policy());
 
         assert!(
             !actions.is_empty(),
@@ -982,6 +1077,7 @@ mod tests {
                     sources: vec![],
                     evidence: vec![],
                     hints: vec![],
+                    availability: None,
                 }],
                 scanned_at: String::new(),
                 providers: vec![],

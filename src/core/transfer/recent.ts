@@ -1,12 +1,13 @@
 /**
- * Setup Center — Recently Viewed Tracker
+ * Setup Center — Recently Viewed Tracker (Issues F09, K06)
  *
  * Tracks user inspection across Software, Repos, Resources, and Templates
  * to provide a frictionless "pick up where you left off" experience.
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  */
 
-import { PersonalCatalog } from "./catalog";
 import type { DiscoveryItem } from "../discovery/types";
+import { PersonalStateManager } from "./personalState";
 
 export interface RecentItem {
   id: string;
@@ -17,40 +18,21 @@ export interface RecentItem {
   visitedAt: string;
 }
 
-const RECENT_STORAGE_KEY = "setup-center.recent-viewed.v1";
 const MAX_RECENT_ITEMS = 30;
 
 type RecentListener = (items: RecentItem[]) => void;
 
 class RecentManager {
-  private items: RecentItem[] = [];
   private listeners: Set<RecentListener> = new Set();
 
   constructor() {
-    this.load();
+    PersonalStateManager.subscribe((doc) => {
+      this.notify(doc.recent);
+    });
   }
 
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(RECENT_STORAGE_KEY);
-      if (raw) {
-        this.items = JSON.parse(raw);
-      }
-    } catch {
-      this.items = [];
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(this.items));
-    } catch {
-      // ignore
-    }
-  }
-
-  private notify(): void {
-    const list = this.getAll();
+  private notify(items?: RecentItem[]): void {
+    const list = items || this.getAll();
     for (const l of this.listeners) {
       try {
         l(list);
@@ -66,32 +48,32 @@ class RecentManager {
   }
 
   public getAll(): RecentItem[] {
-    return [...this.items];
+    return [...PersonalStateManager.get().recent];
   }
 
   public record(item: Omit<RecentItem, "visitedAt">, snapshot?: DiscoveryItem): void {
     const now = new Date().toISOString();
-    // Remove if already exists
-    this.items = this.items.filter((i) => i.id !== item.id);
-    // Add to front
-    this.items.unshift({
+    const fullRecent: RecentItem = {
       ...item,
       visitedAt: now,
+    };
+
+    PersonalStateManager.update((doc) => {
+      doc.recent = doc.recent.filter((i) => i.id !== item.id);
+      doc.recent.unshift(fullRecent);
+      if (doc.recent.length > MAX_RECENT_ITEMS) {
+        doc.recent = doc.recent.slice(0, MAX_RECENT_ITEMS);
+      }
+      if (snapshot && snapshot.id) {
+        doc.catalogItems[snapshot.id] = snapshot;
+      }
     });
-    if (this.items.length > MAX_RECENT_ITEMS) {
-      this.items = this.items.slice(0, MAX_RECENT_ITEMS);
-    }
-    if (snapshot) {
-      PersonalCatalog.saveItem(snapshot);
-    }
-    this.save();
-    this.notify();
   }
 
   public clear(): void {
-    this.items = [];
-    this.save();
-    this.notify();
+    PersonalStateManager.update((doc) => {
+      doc.recent = [];
+    });
   }
 }
 

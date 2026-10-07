@@ -76,6 +76,18 @@ export interface StoragePolicy {
   systemDrive?: string | null;
   downloadRoot?: string | null;
   fallbackReason?: string | null;
+  revision?: number;
+  checkedAt?: string | null;
+  availableBytes?: number | null;
+  spaceAssessment?: string | null;
+}
+
+export interface CleanupResult {
+  deletedCount: number;
+  skippedCount: number;
+  freedBytes: number;
+  errors: string[];
+  legacyUnmanagedRetained: number;
 }
 
 export interface PathValidationResult {
@@ -254,7 +266,8 @@ export type SoftwareId =
   | "comfyui"
   // Gemini's desktop app — the entry this revision adds. Distinct from
   // `gemini` above, which is the CLI.
-  | "gemini_desktop";
+  | "gemini_desktop"
+  | "dynamic";
 
 /**
  * Runtime mirror of the union above, in the same order.
@@ -330,6 +343,24 @@ export interface EvidenceView {
   detail: string | null;
 }
 
+export type AvailabilityKind = "cli" | "gui" | "config";
+
+export type AvailabilityStatus =
+  | "available"
+  | "unavailable"
+  | "unknown"
+  | "notApplicable"
+  | "legacyUnverified";
+
+export interface AvailabilityEvidence {
+  kind: AvailabilityKind;
+  status: AvailabilityStatus;
+  version?: string | null;
+  evidenceSource: string;
+  observedAt: string;
+  detail?: string | null;
+}
+
 /**
  * The answer to "is this on the machine, and how sure are we?".
  *
@@ -351,6 +382,7 @@ export interface SoftwareInfo {
   /** The full per-source audit trail, including negative answers. */
   evidence: EvidenceView[];
   hints: string[];
+  availability?: AvailabilityEvidence | null;
 }
 
 export interface SoftwareInventory {
@@ -408,9 +440,16 @@ export interface GitBootstrap {
   configure: boolean;
 }
 
+export type McpTransport = "stdio" | "http";
+
 export interface McpBootstrap {
   name: string;
-  spec: string;
+  executable?: string;
+  args?: string[];
+  transport?: McpTransport;
+  url?: string | null;
+  envNames?: string[];
+  spec?: string;
 }
 
 export interface Profile {
@@ -439,10 +478,39 @@ export interface Profile {
 // Plan and progress
 // ---------------------------------------------------------------------------
 
+export type InstallerKind =
+  | "exe"
+  | "msi"
+  | "ps1"
+  | "cmd"
+  | "bat"
+  | "unsupported";
+
+export type ScriptProgramKind =
+  | "npm"
+  | "npx"
+  | "pip"
+  | "python"
+  | "powerShell"
+  | "cmd";
+
 export type InstallSource =
   | { winget: { packageId: string } }
-  | { officialInstaller: { url: string; sha256: string | null } }
-  | { script: { command: string } }
+  | {
+      officialInstaller: {
+        url: string;
+        sha256?: string | null;
+        kind?: InstallerKind | null;
+        vendorId?: string | null;
+      };
+    }
+  | {
+      script: {
+        command: string;
+        programKind?: ScriptProgramKind | null;
+        args?: string[] | null;
+      };
+    }
   | "configurationOnly";
 
 export interface InstallStep {
@@ -455,26 +523,27 @@ export interface InstallStep {
   expectedLocation?: string | null;
 }
 
-export interface InstallPlan {
-  /**
-   * The scenario the student started from, or `""` when they built the plan by
-   * picking programs directly.
-   *
-   * Nothing in the engine branches on it; it is carried so the session and the
-   * report can say where the run came from.
-   */
+export type PlanOrigin =
+  | { profile: { profileId: string } }
+  | "selection";
+
+export interface PlanView {
+  planId: string;
   profileId: string;
+  origin: PlanOrigin;
   steps: InstallStep[];
   readyCount: number;
   satisfiedCount: number;
-  /**
-   * `null` when no profile supplied a figure.
-   *
-   * Optional rather than defaulted to a number, because an estimate is a
-   * promise: with no profile to quote, any number here would be invented, and
-   * the run would then have to break it.
-   */
   estimatedMinutes: number | null;
+  storagePolicy?: StoragePolicy | null;
+}
+
+export type InstallPlan = PlanView;
+
+export interface StartInstallRequest {
+  planId: string;
+  selectedStepIds?: SoftwareId[];
+  requestId?: string;
 }
 
 export type StepStatus =
@@ -495,6 +564,8 @@ export interface StepProgress {
   stage: string;
   fraction: number | null;
   detail: string | null;
+  availability?: AvailabilityEvidence | null;
+  actionOutcome?: AttemptOutcome | null;
 }
 
 /**
@@ -570,6 +641,8 @@ export interface PostInstallCheck {
   requestedLocation?: string | null;
   actualLocation?: string | null;
   locationStatus?: string | null;
+  availability?: AvailabilityEvidence | null;
+  actionOutcome?: AttemptOutcome | null;
 }
 
 /** The result of verifying an install that has just finished. */
@@ -600,15 +673,20 @@ export interface PostInstallReport {
  */
 export type AttemptOutcome =
   | "succeeded"
+  | "succeededWithWarning"
   | "failed"
   | "unavailable"
   | "permissionDenied"
   | "skipped"
   | "cancelled";
 
+export type SubjectKind = "software" | "config" | "plugin" | "skill";
+
 /** One executed action. The trace that makes a run auditable after the fact. */
 export interface ActionRecord {
-  id: SoftwareId;
+  id?: SoftwareId | null;
+  subjectKind?: SubjectKind;
+  subjectId?: string;
   source: InstallSource;
   /** Human-readable command, shown in advanced mode. */
   command: string;
@@ -686,6 +764,7 @@ export interface PackageVerification {
   onPath: CheckResult;
   version: CheckResult;
   passed: boolean;
+  availability?: AvailabilityEvidence | null;
 }
 
 export interface VerificationReport {
@@ -1127,6 +1206,64 @@ export interface KnowledgeStatus {
  * it — a locked install button with tier `free` is only intelligible if the UI
  * can say that this build enforces tiers.
  */
+export type LicenseState =
+  | "inactive"
+  | "active"
+  | "device_mismatch"
+  | "needs_attention"
+  | "unreadable"
+  | "corrupt"
+  | "invalid";
+
+export type LicenseLoadStatus =
+  | "absent"
+  | "valid"
+  | "unreadable"
+  | "decrypt_failed"
+  | "corrupt"
+  | "invalid";
+
+export type DeviceComponentKind =
+  | "systemUuid"
+  | "machineGuid"
+  | "systemDiskSerial"
+  | "cpuModel"
+  | "boardModel";
+
+export type ComponentStatus =
+  | "available"
+  | "missing"
+  | "permissionDenied"
+  | "weakDefaultValue"
+  | "queryFailed";
+
+export interface DeviceComponentV2 {
+  kind: DeviceComponentKind;
+  value?: string | null;
+  status: ComponentStatus;
+  isStrong: boolean;
+}
+
+export interface DeviceEvidenceV2 {
+  version: number;
+  components: DeviceComponentV2[];
+  observedAt: string;
+}
+
+export type DeviceMatchVerdict = "matched" | "mismatch" | "needs_attention";
+
+/**
+ * What this build is allowed to do, and why.
+ *
+ * `tierLabel` and `reason` arrive from Rust rather than being derived here: the
+ * free/pro wording and the explanation for a locked button are one decision, and
+ * deriving either in the frontend would let two screens describe the same state
+ * differently.
+ *
+ * `enforced` is the field that explains a build behaving unlike the one beside
+ * it — a locked install button with tier `free` is only intelligible if the UI
+ * can say that this build enforces tiers.
+ */
 export interface Entitlements {
   tier: "free" | "pro";
   tierLabel: string;
@@ -1145,14 +1282,9 @@ export interface Entitlements {
    * **Snake case, and that is load-bearing.** `LicenseState` in
    * `modules/license/mod.rs` carries its own `#[serde(rename_all = "snake_case")]`,
    * which applies to the *values* even though the enclosing `Entitlements` struct
-   * camelCases its field *names*. Writing `deviceMismatch` here (as this type did
-   * until it was corrected) type-checks and reads plausibly, while every
-   * comparison against it is false at run time — which is exactly how the
-   * mismatch branch stayed dead: the type said one thing, the binary sent
-   * another, and a hand-written fixture with the wrong casing agreed with the
-   * type rather than with the binary.
+   * camelCases its field *names*.
    */
-  state: "inactive" | "active" | "device_mismatch";
+  state: LicenseState;
   /** ISO-8601 activation time, for display. `null` when inactive. */
   activatedAt: string | null;
   /**
@@ -1163,6 +1295,8 @@ export interface Entitlements {
    */
   deviceReliable: boolean;
   reason: string;
+  loadStatus: LicenseLoadStatus;
+  loadError: string | null;
 }
 
 /**
@@ -1181,7 +1315,8 @@ export interface LicenseDeviceView {
   reliable: boolean;
   boundHere: boolean;
   /** Snake case, for the same reason as `Entitlements.state` above. */
-  state: "inactive" | "active" | "device_mismatch";
+  state: LicenseState;
+  evidenceV2?: DeviceEvidenceV2 | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1217,7 +1352,7 @@ export type CodeLayer = "plugin" | "hook" | "config" | "cliPatch";
 
 export type PluginRunMode = "dryRun" | "install" | "verify" | "rollback" | "adopt";
 
-export type PluginRunStatus = "succeeded" | "refused" | "failed";
+export type PluginRunStatus = "succeeded" | "refused" | "failed" | "rollbackPartial";
 
 /**
  * Upstream's verified versions, matched by prefix — the same granularity the
@@ -1283,6 +1418,7 @@ export interface PluginRun {
   restored: boolean;
   /** Whether the UI should offer "重新检测" after a failure or refusal. */
   offerRetry: boolean;
+  transactionId?: string | null;
 }
 
 /** One Claude target as installed on this machine (brief item 12's status line). */

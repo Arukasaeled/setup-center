@@ -1300,6 +1300,8 @@ pub fn merge(cat: &catalog::Catalog, table: &EvidenceTable, scanned_at: &str) ->
             .map(|(_, value)| resolves_from_path(value))
             .unwrap_or(false);
 
+        let is_gui = entry.version_args.is_none() || id.category() == SoftwareCategory::AiCreative;
+
         let mut hints: Vec<String> = Vec::new();
         if !installed {
             for e in &errored {
@@ -1308,7 +1310,7 @@ pub fn merge(cat: &catalog::Catalog, table: &EvidenceTable, scanned_at: &str) ->
                 }
             }
         }
-        if installed && !on_path {
+        if installed && !on_path && !is_gui {
             hints.push(
                 "已安装，但当前终端可能无法直接调用。重开一次终端通常即可；若仍无效，需要修复 PATH。"
                     .into(),
@@ -1321,6 +1323,64 @@ pub fn merge(cat: &catalog::Catalog, table: &EvidenceTable, scanned_at: &str) ->
         let mut ranked_sources: Vec<ProbeSource> =
             present.iter().map(|e| e.source.clone()).collect();
         ranked_sources.sort();
+
+        let availability_kind = if is_gui {
+            AvailabilityKind::Gui
+        } else {
+            AvailabilityKind::Cli
+        };
+
+        let (availability_status, availability_detail) = if installed {
+            if is_gui {
+                (
+                    AvailabilityStatus::Available,
+                    Some(format!(
+                        "桌面应用程序已安装并注册（由 {} 确认）",
+                        ranked_sources.first().map(|s| s.display_name()).unwrap_or("注册表")
+                    )),
+                )
+            } else if on_path && version.is_some() {
+                (
+                    AvailabilityStatus::Available,
+                    Some("命令行工具已在 PATH 中就绪，版本调用正常".to_string()),
+                )
+            } else if confirmed_path.is_some() {
+                (
+                    AvailabilityStatus::Unavailable,
+                    Some(format!(
+                        "已定位到程序文件 ({})，但未在当前系统 PATH 中生效，需重启终端或配置 PATH",
+                        confirmed_path.as_ref().map(|(_, p)| p.as_str()).unwrap_or_default()
+                    )),
+                )
+            } else {
+                (
+                    AvailabilityStatus::Unavailable,
+                    Some("已登记安装，但未找到可执行文件".to_string()),
+                )
+            }
+        } else if confidence == Confidence::Unknown {
+            (
+                AvailabilityStatus::Unknown,
+                Some("所有检测来源均未能完成检查，无法确认状态".to_string()),
+            )
+        } else {
+            (
+                AvailabilityStatus::Unavailable,
+                Some("未检测到此软件的安装事实".to_string()),
+            )
+        };
+
+        let availability = AvailabilityEvidence {
+            kind: availability_kind,
+            status: availability_status,
+            version: version.as_ref().map(|(_, v)| v.clone()),
+            evidence_source: ranked_sources
+                .first()
+                .map(|s| s.display_name().to_string())
+                .unwrap_or_else(|| "检测".to_string()),
+            observed_at: scanned_at.to_string(),
+            detail: availability_detail,
+        };
 
         items.push(SoftwareInfo {
             id,
@@ -1344,6 +1404,7 @@ pub fn merge(cat: &catalog::Catalog, table: &EvidenceTable, scanned_at: &str) ->
                 })
                 .collect(),
             hints,
+            availability: Some(availability),
         });
     }
 

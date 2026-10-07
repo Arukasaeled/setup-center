@@ -21,6 +21,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tauri::{Manager, State};
 
+pub mod storage;
+pub mod uipart;
+
+pub use storage::*;
+pub use uipart::*;
+
+
 /// Refuses an action that the current tier does not permit.
 ///
 /// Called at the *start* of the commands that change the machine — never inside
@@ -36,7 +43,7 @@ use tauri::{Manager, State};
 ///
 /// The check reads the live licence rather than a cached one, so deactivating in
 /// the licence screen takes effect on the very next attempt.
-fn require_install_rights() -> AppResult<()> {
+pub fn require_entitlement() -> AppResult<()> {
     let entitlements = license::Entitlements::of(&license::load(), license::enforcement_enabled());
     if entitlements.can_install {
         return Ok(());
@@ -44,6 +51,10 @@ fn require_install_rights() -> AppResult<()> {
     Err(AppError::LicenseRequired {
         reason: entitlements.reason,
     })
+}
+
+pub fn require_install_rights() -> AppResult<()> {
+    require_entitlement()
 }
 
 /// Full environment detection. Runs every probe; takes a few seconds because of
@@ -239,7 +250,7 @@ pub fn get_profile(state: State<'_, AppState>, id: String) -> AppResult<Profile>
 
 /// Builds the install plan for `profile_id` given what is already installed.
 #[tauri::command]
-pub fn build_install_plan(state: State<'_, AppState>, profile_id: String) -> AppResult<InstallPlan> {
+pub fn build_install_plan(state: State<'_, AppState>, profile_id: String) -> AppResult<PlanView> {
     let profile = state.profiles.get(&profile_id)?;
     // Reuse the cached inventory when it already covers every program in this
     // profile. Re-scanning on every screen transition would add a visible stall
@@ -255,11 +266,28 @@ pub fn build_install_plan(state: State<'_, AppState>, profile_id: String) -> App
             }
         }
     };
-    Ok(install::build_plan(
-        &catalog::Catalog::builtin(),
-        &profile,
-        &scan,
-    ))
+    let catalog = catalog::Catalog::builtin();
+    let plan = install::build_plan(&catalog, &profile, &scan);
+    let plan_id = format!("plan-{}", detect::now_iso8601().replace([':', '.'], "-"));
+    let frozen_policy = plan
+        .storage_policy
+        .clone()
+        .unwrap_or_else(storage::load_effective_policy);
+    let revision = frozen_policy.revision;
+    let record = PlanRecord {
+        plan_id,
+        origin: PlanOrigin::Profile,
+        profile_id: Some(profile_id),
+        steps: plan.steps,
+        ready_count: plan.ready_count,
+        satisfied_count: plan.satisfied_count,
+        estimated_minutes: plan.estimated_minutes,
+        storage_policy: Some(frozen_policy),
+        storage_revision: revision,
+        created_at: detect::now_iso8601(),
+    };
+    state.store_plan(record.clone());
+    Ok(record.to_view())
 }
 
 /// Strategies for an explicit list of programs.
@@ -342,9 +370,9 @@ pub fn install_strategies(profile_id: String, state: State<'_, AppState>) -> App
 #[tauri::command]
 pub fn build_install_plan_for(
     ids: Vec<SoftwareId>,
-    profile_id: String,
+    profile_id: Option<String>,
     state: State<'_, AppState>,
-) -> AppResult<InstallPlan> {
+) -> AppResult<PlanView> {
     // An empty selection is not a plan. Returning one would render an install
     // screen with no steps and a run button that installs nothing, which reads
     // as a silent failure — the same reason `startInstall` on the frontend
@@ -366,17 +394,47 @@ pub fn build_install_plan_for(
 
     let catalog = catalog::Catalog::builtin();
     let scan = scan_for(&state, &wanted);
-    Ok(install::build_plan_with(&catalog, &profile_id, None, &wanted, &scan))
+
+    let effective_profile_id = profile_id.filter(|s| !s.trim().is_empty());
+    let origin = if effective_profile_id.is_some() {
+        PlanOrigin::Profile
+    } else {
+        PlanOrigin::Selection
+    };
+
+    let plan = install::build_plan_with(
+        &catalog,
+        effective_profile_id.as_deref().unwrap_or(""),
+        None,
+        &wanted,
+        &scan,
+    );
+    let plan_id = format!("plan-{}", detect::now_iso8601().replace([':', '.'], "-"));
+    let frozen_policy = plan
+        .storage_policy
+        .clone()
+        .unwrap_or_else(storage::load_effective_policy);
+    let revision = frozen_policy.revision;
+    let record = PlanRecord {
+        plan_id,
+        origin,
+        profile_id: effective_profile_id,
+        steps: plan.steps,
+        ready_count: plan.ready_count,
+        satisfied_count: plan.satisfied_count,
+        estimated_minutes: plan.estimated_minutes,
+        storage_policy: Some(frozen_policy),
+        storage_revision: revision,
+        created_at: detect::now_iso8601(),
+    };
+    state.store_plan(record.clone());
+    Ok(record.to_view())
 }
 
 /// Stage 1: returns the dry-run progress stream. Does not install anything.
-///
-/// Kept after stage 3 because it is the honest "what would happen" preview the
-/// choice screen shows *before* the student commits, and it is now a genuine
-/// dry run of the same plan the engine will execute rather than a stand-in.
 #[tauri::command]
-pub fn preview_install(plan: InstallPlan) -> Vec<StepProgress> {
-    install::simulate_plan(&plan)
+pub fn preview_install(plan: PlanView) -> Vec<StepProgress> {
+    install::simulate_plan(&plan.to_install_plan())
 }
 
 // ---------------------------------------------------------------------------
@@ -384,18 +442,13 @@ pub fn preview_install(plan: InstallPlan) -> Vec<StepProgress> {
 // ---------------------------------------------------------------------------
 
 /// Whether this machine can start the plan, and what would need fixing.
-///
-/// Called before the run so the UI can explain an impossible plan up front
-/// instead of letting the student watch it fail one step at a time. Reports
-/// facts only — it never blocks: a missing winget is not a blocker when the
-/// program has a vendor-installer fallback.
 #[tauri::command]
 pub fn execution_readiness(
-    plan: InstallPlan,
+    plan: PlanView,
     state: State<'_, AppState>,
 ) -> ExecutionReadiness {
     let elevated = detect::probe_admin().is_elevated;
-    let mut readiness = install::readiness(&plan, &catalog::Catalog::builtin(), elevated);
+    let mut readiness = install::readiness(&plan.to_install_plan(), &catalog::Catalog::builtin(), elevated);
 
     // A run already in flight is the one blocker that is not about hardware or
     // permissions, and it is the one the student can act on immediately.
@@ -409,166 +462,262 @@ pub fn execution_readiness(
 }
 
 /// Executes the plan. This is the command that changes the machine.
-///
-/// Blocks until the run finishes, which is deliberate: the frontend gets a
-/// complete session object rather than a partial one it would have to poll for.
-/// The UI stays responsive because the command runs on Tauri's blocking thread
-/// pool, and cancellation is delivered through `cancel_install` rather than by
-/// dropping the promise.
 #[tauri::command]
 pub async fn run_install(
-    plan: InstallPlan,
+    request: StartInstallRequest,
     state: State<'_, AppState>,
     window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
-    // Before the session is opened and before a single byte is downloaded.
     require_install_rights()?;
-    run_install_blocking(plan, state, window).await
+    let plan_record = state.get_plan(&request.plan_id).ok_or_else(|| {
+        AppError::PlanNotFound {
+            id: request.plan_id.clone(),
+        }
+    })?;
+
+    let effective_steps: Vec<InstallStep> = if let Some(selected) = &request.selected_step_ids {
+        if selected.is_empty() {
+            return Err(AppError::InvalidRequest {
+                reason: "所选安装项不能为空".into(),
+            });
+        }
+        for step_id in selected {
+            if !plan_record.steps.iter().any(|s| s.id == *step_id) {
+                return Err(AppError::InvalidRequest {
+                    reason: format!(
+                        "请求的安装项 {} 不在方案 {} 中",
+                        step_id.display_name(),
+                        request.plan_id
+                    ),
+                });
+            }
+        }
+        plan_record
+            .steps
+            .into_iter()
+            .filter(|s| selected.contains(&s.id))
+            .collect()
+    } else {
+        plan_record.steps
+    };
+
+    let frozen_policy = plan_record
+        .storage_policy
+        .unwrap_or_else(storage::load_effective_policy);
+
+    let catalog = catalog::Catalog::builtin();
+    let frozen_plan = FrozenPlan {
+        plan_id: request.plan_id,
+        origin: plan_record.origin,
+        profile_id: plan_record.profile_id,
+        catalog_revision: catalog.revision().to_string(),
+        steps: effective_steps,
+        storage_policy: Some(frozen_policy),
+        storage_revision: plan_record.storage_revision,
+        created_at: plan_record.created_at,
+    };
+
+    run_install_blocking(frozen_plan, state, window).await
 }
 
 /// The event name every install progress update is emitted on.
-///
-/// One name for both a fresh run and a resume, because the UI renders the same
-/// thing either way and separate channels would be two listeners that could
-/// drift. The `://` makes it read as a sub-resource of the install run rather
-/// than another unrelated app event, which keeps it greppable.
 pub const INSTALL_PROGRESS_EVENT: &str = "install://progress";
 
-/// Emits one step update to the frontend.
-///
-/// A send failure is deliberately swallowed: a progress update that cannot be
-/// delivered is not a reason to abort an installation the student asked for.
-/// The run's real outcome still reaches them as the command's return value, so
-/// the worst case of a lost event is a screen that updates one step late —
-/// never a wrong result. This is also why the engine takes a callback rather
-/// than an `AppHandle`: deciding to ignore a failed send is a *transport*
-/// concern, and it belongs here instead of inside the installation logic.
 fn emit_progress(window: &tauri::Window, step: &StepProgress) {
     use tauri::Emitter;
     let _ = window.emit(INSTALL_PROGRESS_EVENT, step);
 }
 
-/// The actual work, kept separate so the async command stays a thin wrapper.
-///
-/// Uses `spawn_blocking` because the engine spawns processes and waits on them.
-/// Running that on the async runtime would occupy a reactor thread for the
-/// minutes an installation takes and stall every other command, including the
-/// one the UI uses to show progress.
 async fn run_install_blocking(
-    plan: InstallPlan,
+    frozen_plan: FrozenPlan,
     state: State<'_, AppState>,
     window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
     let catalog = catalog::Catalog::builtin();
     let session = ExecutionSession::new(
         format!("session-{}", detect::now_iso8601().replace([':', '.'], "-")),
-        plan.profile_id.clone(),
+        frozen_plan.profile_id.clone().unwrap_or_default(),
         detect::now_iso8601(),
     );
 
-    let (flag, started) = state.begin_session(session);
-    if !started {
-        return Err(AppError::InstallFailed {
+    let (lease, flag) = state.begin_session(session).map_err(|reason| {
+        AppError::InstallFailed {
             id: "session".into(),
-            reason: "已有安装任务正在进行中，请等待当前任务完成。".into(),
-        });
-    }
+            reason,
+        }
+    })?;
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        // The window is moved into the closure because it runs on another
-        // thread; a borrowed `&Window` could not outlive the awaited call.
-        install::execute_plan_observed(&catalog, &plan, &flag, &|step| {
+    let plan_clone = frozen_plan.clone();
+    let result = match tauri::async_runtime::spawn_blocking(move || {
+        install::execute_frozen_plan_observed(&catalog, &plan_clone, &flag, &|step| {
             emit_progress(&window, step);
         })
     })
     .await
-    .map_err(|e| AppError::Internal(format!("安装线程异常结束：{e}")))?;
+    {
+        Ok(res) => res,
+        Err(e) => {
+            lease.finish(crate::modules::task::TaskFinalStatus::Interrupted);
+            return Err(AppError::Internal(format!("安装线程异常结束：{e}")));
+        }
+    };
 
-    // Clean the downloaded payloads before returning: the session records what
-    // was fetched, and keeping the files would leave installers in the student's
-    // AppData with nothing referencing them.
     executor::clean_downloads();
-
-    // Persist what failed before handing the session back. Deliberately after
-    // `finish_session`'s data is complete and before the UI can show the result:
-    // if the student closes the window the moment they see the error, the log
-    // must already be on disk.
     install_log::log_session_failures(&result);
-    state.finish_session(result.clone());
+    state.finish_session(result.clone(), Some(lease));
     Ok(result)
 }
 
 /// Continues an interrupted run from exactly the steps that still need doing.
-///
-/// Returns the previous session unchanged when there is nothing to resume, so
-/// the UI cannot accidentally re-run a finished plan by pressing "继续".
 #[tauri::command]
 pub async fn resume_install(
     state: State<'_, AppState>,
     window: tauri::Window,
 ) -> AppResult<ExecutionSession> {
-    // Gated like a fresh run. A resumed install downloads and executes exactly
-    // the same steps, so leaving this open would make the licence a formality:
-    // interrupt once, then press 继续.
     require_install_rights()?;
-    let Some(previous) = state.resumable_session() else {
-        return state.last_session().ok_or_else(|| AppError::InstallFailed {
+    let doc = install::load_task_document()
+        .map_err(|e| AppError::InstallFailed {
+            id: "task_document".into(),
+            reason: format!("读取持久化任务失败：{e}"),
+        })?
+        .ok_or_else(|| AppError::InstallFailed {
             id: "session".into(),
             reason: "没有可以继续的安装任务。".into(),
-        });
-    };
+        })?;
 
-    let Some(profile) = state.profiles.get(&previous.profile_id).ok() else {
-        return Err(AppError::ProfileNotFound {
-            id: previous.profile_id.clone(),
-        });
-    };
-
-    let catalog = catalog::Catalog::builtin();
-
-    // Rebuild the plan from a *live* inventory rather than reusing the stored
-    // one. Between the interruption and now, the student may have installed
-    // something by hand, or the failed attempt may have half-succeeded; planning
-    // from a stale snapshot would either reinstall working software or skip
-    // software that is genuinely missing.
-    let inv = inventory::scan(&catalog, &profile.software);
-    state.cache_scan(&inv);
-    let scan = SoftwareScan {
-        scanned_at: inv.scanned_at.clone(),
-        inventory: inv,
-    };
-    let plan = install::build_plan(&catalog, &profile, &scan);
-
-    let (flag, started) = state.begin_session(previous.clone());
-    if !started {
+    if !doc.session.is_resumable() {
         return Err(AppError::InstallFailed {
             id: "session".into(),
-            reason: "已有安装任务正在进行中，请等待当前任务完成。".into(),
+            reason: "该任务已无剩余可执行项或已被取消。".into(),
         });
     }
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        install::resume_plan_observed(&catalog, &plan, &previous, &flag, &|step| {
+    // 1. 来源与 Profile 检查：自选模式不查 Profile；Profile 模式校验 Profile 是否存在
+    if doc.frozen_plan.origin == PlanOrigin::Profile {
+        if let Some(ref prof_id) = doc.frozen_plan.profile_id {
+            if state.profiles.get(prof_id).is_err() {
+                let reason = format!("关联的 Profile '{prof_id}' 已不存在，无法继续。");
+                let mut d = doc.clone();
+                d.status = "needsAttention".into();
+                d.attention_reason = Some(reason.clone());
+                let _ = install::save_task_document(&d);
+                return Err(AppError::InstallFailed {
+                    id: "profile".into(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    // 2. 存储策略有效性检查：如果指定了存储盘，确认盘符可达
+    if let Some(ref policy) = doc.frozen_plan.storage_policy {
+        if let Some(ref resolved_root) = policy.resolved_root {
+            let path = std::path::Path::new(resolved_root);
+            if let Some(drive) = path.components().next() {
+                let drive_path = drive.as_os_str();
+                if !std::path::Path::new(drive_path).exists() {
+                    let reason = format!("存储路径目标磁盘已断开连接：{resolved_root}");
+                    let mut d = doc.clone();
+                    d.status = "needsAttention".into();
+                    d.attention_reason = Some(reason.clone());
+                    let _ = install::save_task_document(&d);
+                    return Err(AppError::InstallFailed {
+                        id: "storage".into(),
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. 软件来源变化检查：对比冻结策略与当前目录
+    let catalog = catalog::Catalog::builtin();
+    if doc.frozen_plan.catalog_revision != catalog.revision() {
+        for step in &doc.frozen_plan.steps {
+            let current_spec = install::spec_from(&catalog, step.id);
+            let current_source = current_spec.chain.first().map(|f| &f.source);
+            let step_source_changed = match (&step.source, current_source) {
+                (InstallSource::Winget { package_id: a }, Some(InstallSource::Winget { package_id: b })) => a != b,
+                (InstallSource::OfficialInstaller { url: a, .. }, Some(InstallSource::OfficialInstaller { url: b, .. })) => a != b,
+                (InstallSource::Script { command: a }, Some(InstallSource::Script { command: b })) => a != b,
+                (InstallSource::ConfigurationOnly, Some(InstallSource::ConfigurationOnly)) => false,
+                _ => true,
+            };
+            if step_source_changed {
+                let reason = format!("软件 {} 的安装来源已发生变更，与冻结方案不一致", step.name);
+                let mut d = doc.clone();
+                d.status = "needsAttention".into();
+                d.attention_reason = Some(reason.clone());
+                let _ = install::save_task_document(&d);
+                return Err(AppError::InstallFailed {
+                    id: step.id.key().into(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    // 4. 只读可用性检查：检查此前已标记成功的步骤是否仍然可用
+    let succeeded_ids: Vec<SoftwareId> = doc
+        .session
+        .steps
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.status,
+                StepStatus::Succeeded | StepStatus::SucceededWithWarning
+            )
+        })
+        .map(|s| s.step_id)
+        .collect();
+    if !succeeded_ids.is_empty() {
+        let inv = inventory::scan(&catalog, &succeeded_ids);
+        for id in &succeeded_ids {
+            let is_present = inv.find(*id).is_some_and(|item| item.installed && item.version.is_some());
+            if !is_present {
+                let reason = format!("先前已成功的软件 {} 现已不可用或已损坏", id.display_name());
+                let mut d = doc.clone();
+                d.status = "needsAttention".into();
+                d.attention_reason = Some(reason.clone());
+                let _ = install::save_task_document(&d);
+                return Err(AppError::InstallFailed {
+                    id: id.key().into(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    let (lease, flag) = state.begin_session(doc.session.clone()).map_err(|reason| {
+        AppError::InstallFailed {
+            id: "session".into(),
+            reason,
+        }
+    })?;
+
+    let frozen_plan_clone = doc.frozen_plan.clone();
+    let previous_session = doc.session.clone();
+    let result = match tauri::async_runtime::spawn_blocking(move || {
+        install::resume_frozen_plan_observed(&catalog, &frozen_plan_clone, &previous_session, &flag, &|step| {
             emit_progress(&window, step);
         })
     })
     .await
-    .map_err(|e| AppError::Internal(format!("安装线程异常结束：{e}")))?;
+    {
+        Ok(res) => res,
+        Err(e) => {
+            lease.finish(crate::modules::task::TaskFinalStatus::Interrupted);
+            return Err(AppError::Internal(format!("安装恢复线程异常结束：{e}")));
+        }
+    };
 
     executor::clean_downloads();
-    // Same reason as the fresh-run path: the log must exist before the student
-    // can act on the failure.
     install_log::log_session_failures(&result);
-    state.finish_session(result.clone());
+    state.finish_session(result.clone(), Some(lease));
     Ok(result)
 }
 
 /// Asks the running installation to stop.
-///
-/// Cooperative, and it returns immediately. It does **not** kill the child
-/// process, because killing `winget` mid-install leaves a half-installed package
-/// and a locked MSI; the engine checks the flag between attempts and during
-/// downloads, so it stops at a point where nothing is in flight.
 #[tauri::command]
 pub fn cancel_install(state: State<'_, AppState>) -> bool {
     state.cancel_active_session()
@@ -577,12 +726,20 @@ pub fn cancel_install(state: State<'_, AppState>) -> bool {
 /// The session to offer "继续安装" for, if the last run was interrupted.
 #[tauri::command]
 pub fn resumable_install(state: State<'_, AppState>) -> Option<ExecutionSession> {
+    if let Ok(Some(doc)) = install::load_task_document() {
+        if (doc.status == "interrupted" || doc.status == "failed") && doc.session.is_resumable() {
+            return Some(doc.session);
+        }
+    }
     state.resumable_session()
 }
 
 /// The most recent session, for the report screen. Works after a restart.
 #[tauri::command]
 pub fn last_install_session(state: State<'_, AppState>) -> Option<ExecutionSession> {
+    if let Ok(Some(doc)) = install::load_task_document() {
+        return Some(doc.session);
+    }
     state.last_session()
 }
 
@@ -630,6 +787,10 @@ pub struct PostInstallCheck {
     pub actual_location: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<AvailabilityEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_outcome: Option<AttemptOutcome>,
 }
 
 /// What the install screen needs after a run: per-program verification, and
@@ -657,17 +818,18 @@ pub struct PostInstallReport {
 /// reported honestly rather than as a success.
 #[tauri::command]
 pub fn verify_install_result(
-    plan: InstallPlan,
+    plan: PlanView,
     state: State<'_, AppState>,
 ) -> PostInstallReport {
-    let ids: Vec<SoftwareId> = plan.steps.iter().map(|s| s.id).collect();
+    let install_plan = plan.to_install_plan();
+    let ids: Vec<SoftwareId> = install_plan.steps.iter().map(|s| s.id).collect();
     let inv = inventory::scan(&catalog::Catalog::builtin(), &ids);
     state.cache_scan(&inv);
     let scan = SoftwareScan {
         scanned_at: inv.scanned_at.clone(),
         inventory: inv,
     };
-    let report = verify::verify_plan(&plan, &scan);
+    let report = verify::verify_plan(&install_plan, &scan);
 
     let checks: Vec<PostInstallCheck> = report
         .packages
@@ -677,7 +839,7 @@ pub fn verify_install_result(
             let version_ok = package.version.confidence.is_ok();
             let ok = package.passed;
 
-            let step = plan.steps.iter().find(|s| s.id == package.id);
+            let step = install_plan.steps.iter().find(|s| s.id == package.id);
             let requested_location = step.and_then(|s| s.expected_location.clone());
             let actual_location = scan.inventory.find(package.id).and_then(|info| info.path.clone());
 
@@ -749,6 +911,8 @@ pub fn verify_install_result(
                 requested_location,
                 actual_location,
                 location_status,
+                availability: package.availability.clone(),
+                action_outcome: None,
             }
         })
         .collect();
@@ -763,7 +927,7 @@ pub fn verify_install_result(
     // program is still not usable. Recorded here rather than in the run's own
     // log pass because the verification outcome only exists now.
     for check in checks.iter().filter(|c| !c.ok) {
-        if let Some(step) = plan.steps.iter().find(|s| s.id == check.id) {
+        if let Some(step) = install_plan.steps.iter().find(|s| s.id == check.id) {
             install_log::log_verify_failure(
                 step.id.key(),
                 &check.name,
@@ -783,10 +947,11 @@ pub fn verify_install_result(
 /// Runs the verification pass over a plan.
 #[tauri::command]
 pub fn verify_installation(
-    plan: InstallPlan,
+    plan: PlanView,
     state: State<'_, AppState>,
 ) -> VerificationReport {
-    let ids: Vec<SoftwareId> = plan.steps.iter().map(|s| s.id).collect();
+    let install_plan = plan.to_install_plan();
+    let ids: Vec<SoftwareId> = install_plan.steps.iter().map(|s| s.id).collect();
     let scan = match state.cached_scan_covering(&ids) {
         Some(scan) => scan,
         None => {
@@ -798,7 +963,7 @@ pub fn verify_installation(
             }
         }
     };
-    verify::verify_plan(&plan, &scan)
+    verify::verify_plan(&install_plan, &scan)
 }
 
 /// Localisation and configuration actions implied by a profile.
@@ -886,481 +1051,9 @@ fn reports_dir() -> AppResult<std::path::PathBuf> {
     Ok(dir)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UIPartsLoadResult {
-    pub content: Option<String>,
-    pub storage_path: String,
-    pub is_corrupted: bool,
-    pub corrupted_backup: Option<String>,
-}
+// UIPart storage commands, types, and asset handlers are modularized into
+// `commands::uipart` and re-exported at module root (Issue K01).
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UIPartsSaveResult {
-    pub success: bool,
-    pub storage_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UIPartAssetSaveResult {
-    pub relative_path: String,
-    pub absolute_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UIPartsInfo {
-    pub storage_dir: String,
-    pub index_file: String,
-    pub assets_dir: String,
-}
-
-fn get_uiparts_base_dir(app: &tauri::AppHandle) -> AppResult<std::path::PathBuf> {
-    let local_data = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| AppError::Internal(format!("无法解析应用本地数据目录: {e}")))?;
-    let dir = local_data.join("uiparts");
-    std::fs::create_dir_all(&dir.join("assets"))
-        .map_err(|e| AppError::Internal(format!("无法创建 uiparts 目录: {e}")))?;
-    Ok(dir)
-}
-
-fn b64_decode(input: &str) -> Result<Vec<u8>, String> {
-    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut table = [255u8; 256];
-    for (i, &c) in B64_CHARS.iter().enumerate() {
-        table[c as usize] = i as u8;
-    }
-    let s = input.trim().trim_end_matches('=');
-    let mut out = Vec::with_capacity((s.len() * 3) / 4);
-    let bytes = s.as_bytes();
-    let mut buf = 0u32;
-    let mut bits = 0;
-    for &b in bytes {
-        if b.is_ascii_whitespace() {
-            continue;
-        }
-        let val = table[b as usize];
-        if val == 255 {
-            return Err("Invalid base64 character".into());
-        }
-        buf = (buf << 6) | (val as u32);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((buf >> bits) as u8);
-        }
-    }
-    Ok(out)
-}
-
-fn b64_encode(data: &[u8]) -> String {
-    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(((data.len() + 2) / 3) * 4);
-    let mut i = 0;
-    while i < data.len() {
-        let b0 = data[i];
-        let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
-        let b2 = if i + 2 < data.len() { data[i + 2] } else { 0 };
-
-        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
-        out.push(B64_CHARS[((triple >> 18) & 63) as usize] as char);
-        out.push(B64_CHARS[((triple >> 12) & 63) as usize] as char);
-        if i + 1 < data.len() {
-            out.push(B64_CHARS[((triple >> 6) & 63) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if i + 2 < data.len() {
-            out.push(B64_CHARS[(triple & 63) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        i += 3;
-    }
-    out
-}
-
-#[tauri::command]
-pub fn get_uiparts_info(app: tauri::AppHandle) -> AppResult<UIPartsInfo> {
-    let dir = get_uiparts_base_dir(&app)?;
-    Ok(UIPartsInfo {
-        storage_dir: dir.to_string_lossy().to_string(),
-        index_file: dir.join("index.json").to_string_lossy().to_string(),
-        assets_dir: dir.join("assets").to_string_lossy().to_string(),
-    })
-}
-
-#[tauri::command]
-pub fn load_user_uiparts(app: tauri::AppHandle) -> AppResult<UIPartsLoadResult> {
-    let dir = get_uiparts_base_dir(&app)?;
-    let index_path = dir.join("index.json");
-
-    // Check legacy migration if index.json doesn't exist yet
-    if !index_path.exists() {
-        let old_in_dir = dir.join("uiparts.json");
-        if old_in_dir.is_file() {
-            let _ = std::fs::copy(&old_in_dir, &index_path);
-        } else if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-            let legacy_path = std::path::PathBuf::from(local_app_data)
-                .join("Setup Center")
-                .join("uiparts.json");
-            if legacy_path.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&legacy_path) {
-                    let _ = std::fs::write(&index_path, content);
-                }
-            }
-        }
-    }
-
-    if !index_path.exists() {
-        return Ok(UIPartsLoadResult {
-            content: None,
-            storage_path: index_path.to_string_lossy().to_string(),
-            is_corrupted: false,
-            corrupted_backup: None,
-        });
-    }
-
-    let raw = std::fs::read_to_string(&index_path)
-        .map_err(|e| AppError::Internal(format!("读取 uiparts 索引文件失败: {e}")))?;
-
-    if raw.trim().is_empty() {
-        return Ok(UIPartsLoadResult {
-            content: None,
-            storage_path: index_path.to_string_lossy().to_string(),
-            is_corrupted: false,
-            corrupted_backup: None,
-        });
-    }
-
-    // Validate JSON parsing
-    match serde_json::from_str::<serde_json::Value>(&raw) {
-        Ok(_) => Ok(UIPartsLoadResult {
-            content: Some(raw),
-            storage_path: index_path.to_string_lossy().to_string(),
-            is_corrupted: false,
-            corrupted_backup: None,
-        }),
-        Err(_) => {
-            // Corruption detected! Preserve corrupted file
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let backup_name = format!("uiparts.corrupt.{}.json", timestamp);
-            let backup_path = dir.join(&backup_name);
-            let _ = std::fs::copy(&index_path, &backup_path);
-
-            Ok(UIPartsLoadResult {
-                content: None,
-                storage_path: index_path.to_string_lossy().to_string(),
-                is_corrupted: true,
-                corrupted_backup: Some(backup_path.to_string_lossy().to_string()),
-            })
-        }
-    }
-}
-
-#[cfg(windows)]
-fn atomic_replace_file(tmp: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let tmp_wide: Vec<u16> = tmp.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-
-    if target.exists() {
-        // Attempt ReplaceFileW first (atomic in-place replace, old file untouched on error)
-        let success = unsafe {
-            ReplaceFileW(
-                target_wide.as_ptr(),
-                tmp_wide.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        if success != 0 {
-            return Ok(());
-        }
-
-        // Secondary attempt: MoveFileExW with REPLACE_EXISTING
-        let move_res = unsafe {
-            MoveFileExW(
-                tmp_wide.as_ptr(),
-                target_wide.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        };
-        if move_res != 0 {
-            return Ok(());
-        }
-        return Err(std::io::Error::last_os_error());
-    }
-
-    // Target does not exist yet
-    let move_res = unsafe {
-        MoveFileExW(
-            tmp_wide.as_ptr(),
-            target_wide.as_ptr(),
-            MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if move_res != 0 {
-        Ok(())
-    } else {
-        std::fs::rename(tmp, target)
-    }
-}
-
-#[cfg(not(windows))]
-fn atomic_replace_file(tmp: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
-    std::fs::rename(tmp, target)
-}
-
-/// Validates a single path component (part_id or file_name).
-/// Rejects empty, '.', '..', path separators ('/' and '\\'), drive colons,
-/// control characters, and URL-encoded traversals.
-pub fn validate_safe_component(comp: &str) -> Result<&str, String> {
-    let trimmed = comp.trim();
-    if trimmed.is_empty() {
-        return Err("路径段不能为空".into());
-    }
-    if trimmed == "." || trimmed == ".." {
-        return Err("不允许父目录或当前目录指示符 ('.' 或 '..')".into());
-    }
-    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains(':') || trimmed.contains('\0') {
-        return Err("路径段包含非法字符 (分隔符、冒号或空字符)".into());
-    }
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") {
-        return Err("路径段包含 URL 编码的保留字符".into());
-    }
-    Ok(trimmed)
-}
-
-/// Resolves a relative asset path and strictly ensures containment within <AppLocalData>/uiparts/assets/.
-pub fn resolve_uipart_asset_path(base_dir: &std::path::Path, rel_path: &str) -> Result<std::path::PathBuf, String> {
-    let assets_root = base_dir.join("assets");
-    let trimmed = rel_path.trim();
-
-    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
-        return Err("不允许绝对路径".into());
-    }
-    if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' {
-        return Err("不允许包含驱动器号的绝对路径".into());
-    }
-
-    let normalized = trimmed.replace('\\', "/");
-    let segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
-
-    let (part_id, file_name) = match segments.as_slice() {
-        ["assets", p, f] => (*p, *f),
-        [p, f] => (*p, *f),
-        _ => return Err("资源相对路径格式必须为 'assets/<part-id>/<file-name>'".into()),
-    };
-
-    validate_safe_component(part_id)?;
-    validate_safe_component(file_name)?;
-
-    let target = assets_root.join(part_id).join(file_name);
-    if !target.starts_with(&assets_root) {
-        return Err("目标路径越界，不在 assets 目录内".into());
-    }
-    Ok(target)
-}
-
-/// Resolves a part directory inside assets/, ensuring containment.
-pub fn resolve_uipart_asset_dir(base_dir: &std::path::Path, part_id: &str) -> Result<std::path::PathBuf, String> {
-    let assets_root = base_dir.join("assets");
-    validate_safe_component(part_id)?;
-    let target = assets_root.join(part_id);
-    if !target.starts_with(&assets_root) {
-        return Err("目标零件目录越界，不在 assets 目录内".into());
-    }
-    Ok(target)
-}
-
-static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-/// Generates a unique temporary file path within the same directory as target:
-/// <file_name>.tmp.<pid>.<timestamp_nanos>.<counter>
-pub fn generate_unique_tmp_path(target: &std::path::Path) -> std::path::PathBuf {
-    let pid = std::process::id();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let count = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let file_name = target
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
-    let tmp_name = format!("{file_name}.tmp.{pid}.{now}.{count}");
-    target.with_file_name(tmp_name)
-}
-
-#[tauri::command]
-pub fn save_user_uiparts(app: tauri::AppHandle, content: String) -> AppResult<UIPartsSaveResult> {
-    let dir = get_uiparts_base_dir(&app)?;
-    let target = dir.join("index.json");
-    let tmp = generate_unique_tmp_path(&target);
-
-    let write_res = (|| -> Result<(), AppError> {
-        use std::io::Write;
-        let mut f = std::fs::File::create(&tmp)
-            .map_err(|e| AppError::Internal(format!("创建临时文件失败: {e}")))?;
-        f.write_all(content.as_bytes())
-            .map_err(|e| AppError::Internal(format!("写入临时文件失败: {e}")))?;
-        f.sync_all()
-            .map_err(|e| AppError::Internal(format!("同步临时文件失败: {e}")))?;
-        Ok(())
-    })();
-
-    if let Err(e) = write_res {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-
-    if let Err(e) = atomic_replace_file(&tmp, &target) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(AppError::Internal(format!("安全原子替换 index.json 失败: {e}")));
-    }
-
-    Ok(UIPartsSaveResult {
-        success: true,
-        storage_path: target.to_string_lossy().to_string(),
-    })
-}
-
-#[tauri::command]
-pub fn save_uipart_asset(
-    app: tauri::AppHandle,
-    part_id: String,
-    file_name: String,
-    base64_data: String,
-) -> AppResult<UIPartAssetSaveResult> {
-    let dir = get_uiparts_base_dir(&app)?;
-
-    validate_safe_component(&part_id).map_err(AppError::Internal)?;
-    validate_safe_component(&file_name).map_err(AppError::Internal)?;
-
-    let target_file = resolve_uipart_asset_path(&dir, &format!("assets/{part_id}/{file_name}"))
-        .map_err(AppError::Internal)?;
-    let parent_dir = target_file.parent().ok_or_else(|| AppError::Internal("无效的资源父目录".into()))?;
-    std::fs::create_dir_all(parent_dir)
-        .map_err(|e| AppError::Internal(format!("创建零件资源目录失败: {e}")))?;
-
-    let tmp_file = generate_unique_tmp_path(&target_file);
-
-    let (raw_b64, detected_ext) = if let Some(comma_pos) = base64_data.find(',') {
-        let prefix = &base64_data[..comma_pos];
-        let ext = if prefix.contains("image/png") {
-            "png"
-        } else if prefix.contains("image/jpeg") || prefix.contains("image/jpg") {
-            "jpg"
-        } else if prefix.contains("image/webp") {
-            "webp"
-        } else if prefix.contains("image/gif") {
-            "gif"
-        } else {
-            return Err(AppError::Internal("不支持的图片格式，仅支持 PNG, JPEG, WebP, GIF".into()));
-        };
-        (&base64_data[comma_pos + 1..], ext)
-    } else {
-        (base64_data.as_str(), "png")
-    };
-
-    // Verify file_name extension matches detected mime
-    let req_ext = std::path::Path::new(&file_name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if !req_ext.is_empty() && req_ext != detected_ext && !(req_ext == "jpeg" && detected_ext == "jpg") {
-        return Err(AppError::Internal(format!("文件扩展名 (.{req_ext}) 与数据类型 (.{detected_ext}) 不一致")));
-    }
-
-    let bytes = b64_decode(raw_b64).map_err(|e| AppError::Internal(format!("Base64 解码失败: {e}")))?;
-
-    if bytes.len() > 15 * 1024 * 1024 {
-        return Err(AppError::Internal("媒体资源大小超出最大限制 (15MB)".into()));
-    }
-
-    let write_res = (|| -> Result<(), AppError> {
-        use std::io::Write;
-        let mut f = std::fs::File::create(&tmp_file)
-            .map_err(|e| AppError::Internal(format!("创建资源临时文件失败: {e}")))?;
-        f.write_all(&bytes)
-            .map_err(|e| AppError::Internal(format!("写入资源临时文件失败: {e}")))?;
-        f.sync_all()
-            .map_err(|e| AppError::Internal(format!("同步资源临时文件失败: {e}")))?;
-        Ok(())
-    })();
-
-    if let Err(e) = write_res {
-        let _ = std::fs::remove_file(&tmp_file);
-        return Err(e);
-    }
-
-    if let Err(e) = atomic_replace_file(&tmp_file, &target_file) {
-        let _ = std::fs::remove_file(&tmp_file);
-        return Err(AppError::Internal(format!("安全原子保存资源文件失败: {e}")));
-    }
-
-    let rel = format!("assets/{part_id}/{file_name}");
-    Ok(UIPartAssetSaveResult {
-        relative_path: rel,
-        absolute_path: target_file.to_string_lossy().to_string(),
-    })
-}
-
-#[tauri::command]
-pub fn read_uipart_asset(app: tauri::AppHandle, relative_path: String) -> AppResult<String> {
-    let dir = get_uiparts_base_dir(&app)?;
-    let target = resolve_uipart_asset_path(&dir, &relative_path).map_err(AppError::Internal)?;
-
-    if !target.is_file() {
-        return Err(AppError::Internal(format!("资源文件不存在: {relative_path}")));
-    }
-
-    let bytes = std::fs::read(&target)
-        .map_err(|e| AppError::Internal(format!("读取资源文件失败: {e}")))?;
-
-    let ext = target
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("png")
-        .to_lowercase();
-    let mime = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        "svg" => "image/svg+xml",
-        _ => "application/octet-stream",
-    };
-
-    let b64 = b64_encode(&bytes);
-    Ok(format!("data:{mime};base64,{b64}"))
-}
-
-#[tauri::command]
-pub fn delete_uipart_assets(app: tauri::AppHandle, part_id: String) -> AppResult<bool> {
-    let dir = get_uiparts_base_dir(&app)?;
-    let part_dir = resolve_uipart_asset_dir(&dir, &part_id).map_err(AppError::Internal)?;
-
-    if part_dir.is_dir() {
-        std::fs::remove_dir_all(&part_dir)
-            .map_err(|e| AppError::Internal(format!("删除零件资源目录失败: {e}")))?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
 
 /// Diagnostics for the settings/advanced panel: proves which modules loaded
 /// from disk and which fell back to builtins.
@@ -1446,15 +1139,14 @@ pub async fn run_bootstrap(
         context.skills_root.clone(),
     );
 
-    let (flag, started) = state.begin_bootstrap(bootstrap_run::BootstrapSession::new_for(
+    let (lease, flag) = state.begin_bootstrap(bootstrap_run::BootstrapSession::new_for(
         plan.profile_id.clone(),
-    ));
-    if !started {
-        return Err(AppError::InstallFailed {
+    )).map_err(|reason| {
+        AppError::InstallFailed {
             id: "bootstrap".into(),
-            reason: "已有任务正在进行中，请等待当前任务完成。".into(),
-        });
-    }
+            reason,
+        }
+    })?;
 
     // The plan is shared with the verification pass *after* the run, so the
     // spawned closure gets a clone rather than the only copy. `BootstrapPlan` is
@@ -1462,11 +1154,17 @@ pub async fn run_bootstrap(
     // which would probe a machine the run has already changed and therefore
     // verify against a plan that describes a different starting state.
     let plan_for_run = plan.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = match tauri::async_runtime::spawn_blocking(move || {
         bootstrap_run::run_bootstrap(&plan_for_run, &run_context, &flag)
     })
     .await
-    .map_err(|e| AppError::Internal(format!("配置线程异常结束：{e}")))?;
+    {
+        Ok(res) => res,
+        Err(e) => {
+            lease.finish(crate::modules::task::TaskFinalStatus::Interrupted);
+            return Err(AppError::Internal(format!("配置线程异常结束：{e}")));
+        }
+    };
 
     // Verification is a *separate read* after the run, exactly as stage 3 does it
     // for installs. The evidence is gathered here rather than inside the runner so
@@ -1476,7 +1174,7 @@ pub async fn run_bootstrap(
     let verification = bootstrap_run::verify(&plan, &evidence);
     bootstrap_run::attach_verification(&mut session, verification);
 
-    state.finish_bootstrap(session.clone());
+    state.finish_bootstrap(session.clone(), Some(lease));
     Ok(BootstrapSessionView::from_session(&session, &plan))
 }
 
@@ -2236,7 +1934,8 @@ pub struct ConceptView {
 /// differently.
 #[tauri::command]
 pub fn license_status() -> license::Entitlements {
-    license::Entitlements::of(&license::load(), license::enforcement_enabled())
+    let res = license::load_result();
+    license::Entitlements::of_result(&res, license::enforcement_enabled())
 }
 
 /// Activates a key locally and returns the resulting entitlements.
@@ -2245,9 +1944,10 @@ pub fn license_status() -> license::Entitlements {
 /// can never render a stale tier between activating and re-reading.
 #[tauri::command]
 pub fn activate_license(key: String) -> AppResult<license::Entitlements> {
-    let file = license::activate(&key)?;
-    Ok(license::Entitlements::of(
-        &file,
+    let _file = license::activate(&key)?;
+    let res = license::load_result();
+    Ok(license::Entitlements::of_result(
+        &res,
         license::enforcement_enabled(),
     ))
 }
@@ -2255,29 +1955,19 @@ pub fn activate_license(key: String) -> AppResult<license::Entitlements> {
 /// Clears the activation and returns the machine to its default state.
 #[tauri::command]
 pub fn deactivate_license() -> AppResult<license::Entitlements> {
-    let file = license::deactivate()?;
-    Ok(license::Entitlements::of(
-        &file,
+    let res = license::deactivate()?;
+    Ok(license::Entitlements::of_result(
+        &res,
         license::enforcement_enabled(),
     ))
 }
 
 /// What the licence screen may show about this machine's binding.
-///
-/// Deliberately a *summary*, not the fingerprint's inputs. The screen needs to
-/// say "设备绑定：当前设备" and, when something looks wrong, whether the hardware
-/// probes were even readable — it has no use for the raw `MachineGuid`, and
-/// handing it over would put a stable machine identifier one screenshot away
-/// from being pasted somewhere public.
-///
-/// There is no command for reading the activation code back, and that is a
-/// design decision rather than an omission: see the brief's "用户不可查看". A
-/// `get_license_key` command would be the single most obvious thing to add here,
-/// and it is exactly what must not exist.
 #[tauri::command]
 pub fn license_device() -> LicenseDeviceView {
     let (hash, components) = license::device_summary();
-    let entitlements = license::Entitlements::of(&license::load(), license::enforcement_enabled());
+    let res = license::load_result();
+    let entitlements = license::Entitlements::of_result(&res, license::enforcement_enabled());
 
     LicenseDeviceView {
         // First 8 hex characters only. Enough that two machines are visibly
@@ -2287,6 +1977,7 @@ pub fn license_device() -> LicenseDeviceView {
         reliable: entitlements.device_reliable,
         bound_here: entitlements.state == license::LicenseState::Active,
         state: entitlements.state,
+        evidence_v2: Some(license::current_device_evidence_v2().clone()),
     }
 }
 
@@ -2303,6 +1994,8 @@ pub struct LicenseDeviceView {
     /// Whether the stored activation belongs to this machine.
     pub bound_here: bool,
     pub state: license::LicenseState,
+    #[serde(default)]
+    pub evidence_v2: Option<license::fingerprint::DeviceEvidenceV2>,
 }
 
 /// The plugin catalogue resolved against this machine.
@@ -2353,60 +2046,195 @@ pub async fn run_plugin(
         .plugins
         .get(&id)
         .ok_or_else(|| AppError::Internal(format!("plugin not in catalogue: {id}")))?;
+    let entry_clone = entry.clone();
+
     // Deliberately not gated by `require_install_rights`: `PluginEntry::free`
     // is documented as unrelated to the PRO tier, and no brief places the
     // plugin pipeline behind the licence. Gating it here would refuse paying
     // nothing for a free feature.
-    Ok(plugins::pipeline::run(
-        entry,
-        mode,
-        &plugins::pipeline::RunOptions {
-            allow_unverified,
-            ..Default::default()
+    let is_mutating = matches!(mode, plugins::RunMode::Install | plugins::RunMode::Rollback);
+    let maybe_lease = if is_mutating {
+        require_entitlement()?;
+        Some(
+            state
+                .tasks
+                .try_begin_mutation(crate::modules::task::MutationKind::Plugin, None)
+                .map_err(|e| AppError::InstallFailed {
+                    id: format!("plugin-{}", id),
+                    reason: e.message,
+                })?,
+        )
+    } else {
+        None
+    };
+
+    let opts = plugins::pipeline::RunOptions {
+        allow_unverified,
+        ..Default::default()
+    };
+
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        plugins::pipeline::run(&entry_clone, mode, &opts)
+    })
+    .await
+    .map_err(|e| {
+        if let Some(ref l) = maybe_lease {
+            l.finish(crate::modules::task::TaskFinalStatus::Interrupted);
+        }
+        AppError::Internal(format!("插件执行线程异常结束：{e}"))
+    })?;
+
+    if let Some(l) = maybe_lease {
+        let status = match res.status {
+            plugins::RunStatus::Succeeded => crate::modules::task::TaskFinalStatus::Succeeded,
+            _ => crate::modules::task::TaskFinalStatus::Failed,
+        };
+        l.finish(status);
+    }
+
+    Ok(res)
+}
+
+/// Builds an authoritative backend-owned install plan for a validated winget package id.
+///
+/// Ensures the package exists in the winget search/show backend cache with an exact ID match,
+/// constructs a PlanRecord with PlanOrigin::Selection, stores it in AppState.plans, and returns
+/// a typed PlanView. The actual execution must run through `run_install`, subjecting it to the
+/// exact same entitlement check (require_entitlement), storage policies, TaskDocumentV1 tracking,
+/// and post-install verification as all other installations (Issues A01, A02, A03, B16).
+#[tauri::command]
+pub fn build_dynamic_install_plan(
+    package_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<PlanView> {
+    let clean_id = package_id.trim();
+    if clean_id.is_empty() {
+        return Err(AppError::InvalidRequest {
+            reason: "软件包 ID 不能为空".into(),
+        });
+    }
+
+    // 1. packageId 必须存在后端 winget search/show 结果缓存，完整匹配 ID
+    let details = state
+        .get_winget_package(clean_id)
+        .or_else(|| {
+            system_ops::show_winget(clean_id).ok().map(|d| {
+                state.store_winget_package(d.clone());
+                d
+            })
+        })
+        .ok_or_else(|| AppError::InvalidRequest {
+            reason: format!("未在后端验证的软件包缓存中找到 ID 为 '{clean_id}' 的软件包。请先通过检索或详情查看该软件。"),
+        })?;
+
+    if !details.id.eq_ignore_ascii_case(clean_id) {
+        return Err(AppError::InvalidRequest {
+            reason: format!("软件包 ID 不匹配：请求 '{clean_id}'，缓存记录为 '{}'", details.id),
+        });
+    }
+
+    let catalog = catalog::Catalog::builtin();
+
+    // Check if package matches an existing builtin SoftwareId
+    let matched_software_id = catalog.entries().iter().find(|e| {
+        e.winget_ids.iter().any(|wid| wid.eq_ignore_ascii_case(clean_id))
+    }).map(|e| e.id);
+
+    let (step_id, step_name) = match matched_software_id {
+        Some(sid) => (sid, sid.display_name().to_string()),
+        None => (SoftwareId::Dynamic, details.name.clone()),
+    };
+
+    let step = InstallStep {
+        id: step_id,
+        name: step_name,
+        source: InstallSource::Winget {
+            package_id: details.id.clone(),
         },
-    ))
+        fallback_plan: vec![format!("winget install --id {}", details.id)],
+        satisfied: false,
+        location_support: Some(InstallLocationSupport::DefaultOnly),
+        expected_location: None,
+    };
+
+    let frozen_policy = storage::load_effective_policy();
+    let revision = frozen_policy.revision;
+    let plan_id = format!("dynamic-plan-{}", detect::now_iso8601().replace([':', '.'], "-"));
+
+    let record = PlanRecord {
+        plan_id,
+        origin: PlanOrigin::Selection,
+        profile_id: None,
+        steps: vec![step],
+        ready_count: 1,
+        satisfied_count: 0,
+        estimated_minutes: Some(5),
+        storage_policy: Some(frozen_policy),
+        storage_revision: revision,
+        created_at: detect::now_iso8601(),
+    };
+
+    state.store_plan(record.clone());
+    Ok(record.to_view())
 }
 
-/// Runs a native command with arguments and working directory, returning captured stdout/stderr.
+/// Cancels an active mutating task by its task_id.
 #[tauri::command]
-pub async fn execute_native_command(
-    program: String,
-    args: Vec<String>,
-    cwd: Option<String>,
-) -> Result<system_ops::CommandOutput, String> {
+pub fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    state.tasks.cancel_task(&task_id)
+}
+
+/// Queries task status by task_id.
+#[tauri::command]
+pub fn query_task(
+    task_id: String,
+    state: State<'_, AppState>,
+) -> Result<task::TaskStatusView, String> {
+    Ok(state.tasks.query_task(&task_id))
+}
+
+/// Retrieves buffered task events after a given sequence.
+#[tauri::command]
+pub fn get_task_events(
+    task_id: String,
+    after_sequence: u64,
+    state: State<'_, AppState>,
+) -> Result<Vec<task::TaskEventPayload>, String> {
+    Ok(state.tasks.get_task_events(&task_id, after_sequence))
+}
+
+/// Downloads a remote file to a controlled destination using native streaming .part file and atomic replace.
+#[tauri::command]
+pub async fn native_download(
+    url: String,
+    filename: Option<String>,
+    destination_dir: Option<String>,
+    destination_path: Option<String>,
+    expected_sha256: Option<String>,
+) -> Result<system_ops::NativeDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        system_ops::run_command(&program, &args, cwd.as_deref())
+        let (name, dir) = if let Some(ref path) = destination_path {
+            let p = std::path::Path::new(path);
+            let n = p
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("download.bin")
+                .to_string();
+            let d = p.parent().map(|p| p.to_string_lossy().to_string());
+            (n, d)
+        } else {
+            let n = filename.unwrap_or_else(|| "download.bin".to_string());
+            (n, destination_dir)
+        };
+        system_ops::download_asset_controlled(
+            &url,
+            &name,
+            dir.as_deref(),
+            expected_sha256.as_deref(),
+        )
     })
     .await
-    .map_err(|e| format!("命令执行异常: {e}"))?
-}
-
-/// Starts streaming command execution emitting stdout/stderr/exit events over Tauri channel.
-#[tauri::command]
-pub fn execute_streaming_command(
-    window: tauri::Window,
-    execution_id: String,
-    program: String,
-    args: Vec<String>,
-    cwd: Option<String>,
-) -> Result<(), String> {
-    system_ops::spawn_streaming_command(window, execution_id, program, args, cwd)
-}
-
-/// Cancels a running streaming execution.
-#[tauri::command]
-pub fn cancel_native_execution(execution_id: String) -> Result<bool, String> {
-    system_ops::cancel_process(&execution_id)
-}
-
-/// Downloads a remote file to a destination path using native curl streaming.
-#[tauri::command]
-pub async fn native_download(url: String, destination_path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        system_ops::download_file(&url, &destination_path)
-    })
-    .await
-    .map_err(|e| format!("下载异常: {e}"))?
+    .map_err(|e| format!("下载任务调度失败: {e}"))?
 }
 
 /// Searches winget for packages matching query.
@@ -2419,14 +2247,18 @@ pub async fn winget_search(query: String) -> Result<Vec<system_ops::WingetSearch
     .map_err(|e| format!("winget 检索异常: {e}"))?
 }
 
-/// Fetches rich details for a specific winget package id.
+/// Fetches rich details for a specific winget package id and stores in backend cache.
 #[tauri::command]
-pub async fn winget_show(package_id: String) -> Result<system_ops::WingetPackageDetails, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        system_ops::show_winget(&package_id)
+pub async fn winget_show(package_id: String, state: State<'_, AppState>) -> Result<system_ops::WingetPackageDetails, String> {
+    let pid = package_id.clone();
+    let details = tauri::async_runtime::spawn_blocking(move || {
+        system_ops::show_winget(&pid)
     })
     .await
-    .map_err(|e| format!("winget 详情获取异常: {e}"))?
+    .map_err(|e| format!("winget 详情获取异常: {e}"))??;
+
+    state.store_winget_package(details.clone());
+    Ok(details)
 }
 
 /// Reveals a file or directory in Windows Explorer.
@@ -2447,10 +2279,10 @@ pub fn detect_editors() -> Vec<system_ops::DetectedEditor> {
     system_ops::probe_editors()
 }
 
-/// Opens a path in the specified editor, optionally using the detected executable path directly.
+/// Opens a path in the specified editor, resolving the editor executable securely.
 #[tauri::command]
-pub fn open_in_editor(editor: String, path: String, executable_path: Option<String>) -> Result<(), String> {
-    system_ops::launch_in_editor(&editor, &path, executable_path.as_deref())
+pub fn open_in_editor(editor: String, path: String) -> Result<(), String> {
+    system_ops::launch_in_editor(&editor, &path)
 }
 
 
@@ -2543,76 +2375,9 @@ pub struct KnowledgeStatus {
 // Installation & Storage Policy
 // ---------------------------------------------------------------------------
 
-/// Gets the effective installation storage policy.
-#[tauri::command]
-pub fn get_storage_policy(state: State<'_, AppState>) -> StoragePolicy {
-    let disks = state
-        .last_environment()
-        .map(|e| e.disks)
-        .unwrap_or_else(|| detect::probe_disks(1024));
-    storage::get_effective_storage_policy(&disks)
-}
+// Storage policy and path validation commands are modularized into
+// `commands::storage` and re-exported at module root (Issue K01).
 
-/// Sets and persists the installation storage policy.
-#[tauri::command]
-pub fn set_storage_policy(
-    mode: StorageMode,
-    custom_root: Option<String>,
-    state: State<'_, AppState>,
-) -> StoragePolicy {
-    let disks = state
-        .last_environment()
-        .map(|e| e.disks)
-        .unwrap_or_else(|| detect::probe_disks(1024));
-    storage::set_storage_policy(&disks, mode, custom_root)
-}
-
-/// Invokes a native folder browser dialog to pick a custom installation directory.
-#[tauri::command]
-pub async fn select_storage_folder() -> AppResult<Option<String>> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let script = r#"
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = "选择软件安装目录"
-$dialog.ShowNewFolderButton = $true
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    Write-Output $dialog.SelectedPath
-}
-"#;
-        let mut cmd = std::process::Command::new("powershell");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(detect::CREATE_NO_WINDOW);
-        }
-        let out = cmd.output().ok()?;
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if stdout.is_empty() {
-            None
-        } else {
-            Some(stdout)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))
-}
-
-/// Validates a custom directory path before user confirms.
-#[tauri::command]
-pub fn validate_storage_path(path: String) -> Result<String, String> {
-    let sys = storage::detect_system_drive();
-    storage::validate_custom_path(&path, &sys)
-}
-
-/// Cleans temporary download files in the download directory.
-#[tauri::command]
-pub fn clean_download_cache() -> AppResult<bool> {
-    let policy = storage::load_effective_policy();
-    storage::clean_downloads_with_policy(&policy);
-    Ok(true)
-}
 
 // ---------------------------------------------------------------------------
 // Tests

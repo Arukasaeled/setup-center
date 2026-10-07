@@ -1,12 +1,15 @@
 /**
- * Setup Center — Personal Catalog & Saved Discovery Items
+ * Setup Center — Personal Catalog & Saved Discovery Items (Issues F09, K06)
  *
  * Persists full snapshots of discovered Software, Repos, Resources, and Templates.
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  * Ensures dynamically discovered online items (GitHub repos, Winget packages) survive
  * restarts and remain fully inspectable and actionable in My Library and Recent.
  */
 
 import type { DiscoveryItem } from "../discovery/types";
+import type { AvailabilityEvidence } from "../../lib/types";
+import { PersonalStateManager } from "./personalState";
 
 export interface DynamicSoftware {
   id: string; // Discovery ID e.g. "winget:Obsidian.Obsidian"
@@ -25,61 +28,19 @@ export interface DynamicSoftware {
   installedVersion?: string;
   discoveredAt: string;
   lastVerifiedAt?: string;
+  availabilityEvidence?: AvailabilityEvidence;
+  actionOutcome?: string;
 }
-
-const PERSONAL_ITEMS_STORAGE_KEY = "setup-center.personal-catalog-items.v1";
-const PERSONAL_SOFTWARE_STORAGE_KEY = "setup-center.personal-catalog-software.v1";
 
 type CatalogListener = () => void;
 
 class PersonalCatalogManager {
-  private items: Map<string, DiscoveryItem> = new Map();
-  private software: Map<string, DynamicSoftware> = new Map();
   private listeners: Set<CatalogListener> = new Set();
 
   constructor() {
-    this.load();
-  }
-
-  private load(): void {
-    try {
-      const rawItems = localStorage.getItem(PERSONAL_ITEMS_STORAGE_KEY);
-      if (rawItems) {
-        const arr = JSON.parse(rawItems) as DiscoveryItem[];
-        if (Array.isArray(arr)) {
-          this.items = new Map(arr.map((item) => [item.id, item]));
-        }
-      }
-    } catch {
-      this.items = new Map();
-    }
-
-    try {
-      const rawSw = localStorage.getItem(PERSONAL_SOFTWARE_STORAGE_KEY);
-      if (rawSw) {
-        const arr = JSON.parse(rawSw) as DynamicSoftware[];
-        if (Array.isArray(arr)) {
-          this.software = new Map(arr.map((sw) => [sw.id, sw]));
-        }
-      }
-    } catch {
-      this.software = new Map();
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(
-        PERSONAL_ITEMS_STORAGE_KEY,
-        JSON.stringify(Array.from(this.items.values())),
-      );
-      localStorage.setItem(
-        PERSONAL_SOFTWARE_STORAGE_KEY,
-        JSON.stringify(Array.from(this.software.values())),
-      );
-    } catch {
-      // ignore
-    }
+    PersonalStateManager.subscribe(() => {
+      this.notify();
+    });
   }
 
   private notify(): void {
@@ -101,74 +62,74 @@ class PersonalCatalogManager {
 
   public saveItem(item: DiscoveryItem): void {
     if (!item || !item.id) return;
-    this.items.set(item.id, item);
-    this.save();
-    this.notify();
+    PersonalStateManager.update((doc) => {
+      doc.catalogItems[item.id] = item;
+    });
   }
 
   public getItem(id: string): DiscoveryItem | undefined {
-    return this.items.get(id);
+    return PersonalStateManager.get().catalogItems[id];
   }
 
   public getAllItems(): DiscoveryItem[] {
-    return Array.from(this.items.values());
+    return Object.values(PersonalStateManager.get().catalogItems);
   }
 
   public removeItem(id: string): boolean {
-    const deleted = this.items.delete(id);
-    if (deleted) {
-      this.save();
-      this.notify();
-    }
-    return deleted;
+    const exists = Boolean(PersonalStateManager.get().catalogItems[id]);
+    if (!exists) return false;
+    PersonalStateManager.update((doc) => {
+      delete doc.catalogItems[id];
+    });
+    return true;
   }
 
   // --- DynamicSoftware Persistence ---
 
   public saveSoftware(sw: DynamicSoftware): void {
     if (!sw || !sw.id) return;
-    this.software.set(sw.id, sw);
 
-    // Also bridge as a DiscoveryItem snapshot so Unified Search can query it
-    const item: DiscoveryItem = {
-      id: sw.id,
-      title: sw.name,
-      subtitle: sw.packageId,
-      description: sw.description || `${sw.publisher || "Windows 软件源"} · ${sw.packageId}`,
-      category: "software",
-      categoryLabel: "动态软件",
-      type: "software",
-      tags: [sw.provider, "software", ...(sw.publisher ? [sw.publisher] : [])],
-      installed: sw.installed,
-      installedVersion: sw.installedVersion,
-      origin: {
-        type: sw.provider === "winget" ? "winget" : sw.provider === "github-release" ? "github" : "builtin",
-        packageId: sw.packageId,
-        url: sw.homepage,
-      },
-    };
-    this.items.set(sw.id, item);
+    PersonalStateManager.update((doc) => {
+      doc.dynamicSoftware[sw.id] = sw;
 
-    this.save();
-    this.notify();
+      // Bridge as a DiscoveryItem snapshot so Unified Search can query it
+      const item: DiscoveryItem = {
+        id: sw.id,
+        title: sw.name,
+        subtitle: sw.packageId,
+        description: sw.description || `${sw.publisher || "Windows 软件源"} · ${sw.packageId}`,
+        category: "software",
+        categoryLabel: "动态软件",
+        type: "software",
+        tags: [sw.provider, "software", ...(sw.publisher ? [sw.publisher] : [])],
+        installed: sw.installed,
+        installedVersion: sw.installedVersion,
+        origin: {
+          type: sw.provider === "winget" ? "winget" : sw.provider === "github-release" ? "github" : "builtin",
+          packageId: sw.packageId,
+          url: sw.homepage,
+        },
+      };
+      doc.catalogItems[sw.id] = item;
+    });
   }
 
   public getSoftware(id: string): DynamicSoftware | undefined {
-    return this.software.get(id);
+    return PersonalStateManager.get().dynamicSoftware[id];
   }
 
   public getAllSoftware(): DynamicSoftware[] {
-    return Array.from(this.software.values());
+    return Object.values(PersonalStateManager.get().dynamicSoftware);
   }
 
   public removeSoftware(id: string): boolean {
-    const deleted = this.software.delete(id);
-    this.items.delete(id);
-    if (deleted) {
-      this.save();
-      this.notify();
-    }
-    return deleted;
+    const exists = Boolean(PersonalStateManager.get().dynamicSoftware[id]);
+    if (!exists) return false;
+    PersonalStateManager.update((doc) => {
+      delete doc.dynamicSoftware[id];
+      delete doc.catalogItems[id];
+    });
+    return true;
   }
 }
 

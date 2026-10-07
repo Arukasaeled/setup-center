@@ -2,10 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use tauri::Emitter;
 
 #[cfg(windows)]
@@ -13,8 +13,45 @@ use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-static PROCESS_TABLE: LazyLock<Mutex<HashMap<String, u32>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Resolves an authentic absolute path within %SystemRoot%\System32.
+pub fn system32_executable(name: &str) -> PathBuf {
+    let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+    PathBuf::from(sys_root).join("System32").join(name)
+}
+
+/// Escapes and quotes an argument safely for Windows command execution.
+pub fn quote_windows_arg(arg: &str) -> String {
+    if !arg.contains(' ') && !arg.contains('\t') && !arg.contains('"') && !arg.is_empty() {
+        return arg.to_string();
+    }
+    let mut escaped = String::from("\"");
+    let mut backslashes = 0;
+    for c in arg.chars() {
+        if c == '\\' {
+            backslashes += 1;
+        } else if c == '"' {
+            for _ in 0..(backslashes * 2 + 1) {
+                escaped.push('\\');
+            }
+            escaped.push('"');
+            backslashes = 0;
+        } else {
+            for _ in 0..backslashes {
+                escaped.push('\\');
+            }
+            backslashes = 0;
+            escaped.push(c);
+        }
+    }
+    for _ in 0..(backslashes * 2) {
+        escaped.push('\\');
+    }
+    escaped.push('"');
+    escaped
+}
+
+static PROCESS_TABLE: LazyLock<crate::modules::task::ProcessTable> =
+    LazyLock::new(|| crate::modules::task::ProcessTable::new());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,39 +67,31 @@ pub fn run_command(
     args: &[String],
     cwd: Option<&str>,
 ) -> Result<CommandOutput, String> {
-    let mut cmd = if cfg!(windows) && matches!(program, "npm" | "npx" | "pnpm" | "yarn") {
-        let mut c = Command::new("cmd");
-        c.args(["/c", program]);
-        c.args(args);
-        c
+    let (prog, proc_args) = if cfg!(windows) && matches!(program, "npm" | "npx" | "pnpm" | "yarn") {
+        let mut full = vec!["/c".to_string(), program.to_string()];
+        full.extend_from_slice(args);
+        ("cmd", full)
     } else {
-        let mut c = Command::new(program);
-        c.args(args);
-        c
+        (program, args.to_vec())
     };
+
+    let mut spec = crate::modules::process::ProcessSpec::new(prog, &proc_args)
+        .with_timeout(std::time::Duration::from_secs(60));
 
     if let Some(dir) = cwd {
         if !dir.is_empty() {
-            cmd.current_dir(dir);
+            spec = spec.with_cwd(PathBuf::from(dir));
         }
     }
 
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    let res = crate::modules::process::execute_process(&spec)?;
 
-    match cmd.output() {
-        Ok(out) => {
-            let stdout = crate::modules::detect::decode_console_output(&out.stdout);
-            let stderr = crate::modules::detect::decode_console_output(&out.stderr);
-            Ok(CommandOutput {
-                success: out.status.success(),
-                exit_code: out.status.code(),
-                stdout,
-                stderr,
-            })
-        }
-        Err(e) => Err(format!("无法启动进程 '{program}': {e}")),
-    }
+    Ok(CommandOutput {
+        success: res.exit_code == Some(0),
+        exit_code: res.exit_code,
+        stdout: res.stdout,
+        stderr: res.stderr,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,11 +141,19 @@ pub fn spawn_streaming_command(
 
     let mut child = cmd.spawn().map_err(|e| format!("无法启动 '{program}': {e}"))?;
     let pid = child.id();
+    let generation = PROCESS_TABLE.next_generation();
 
-    {
-        if let Ok(mut map) = PROCESS_TABLE.lock() {
-            map.insert(execution_id.clone(), pid);
-        }
+    let job = crate::modules::task::JobObjectGuard::new().ok().map(std::sync::Arc::new);
+    #[cfg(windows)]
+    if let Some(ref j) = job {
+        use std::os::windows::io::AsRawHandle;
+        let handle = child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+        let _ = j.assign_process(handle);
+    }
+
+    if let Err(e) = PROCESS_TABLE.register(&execution_id, &execution_id, generation, pid, job) {
+        let _ = child.kill();
+        return Err(e);
     }
 
     let stdout = child.stdout.take();
@@ -125,15 +162,31 @@ pub fn spawn_streaming_command(
     let win_out = window.clone();
     let exec_out = execution_id.clone();
     let t_out = std::thread::spawn(move || {
-        if let Some(out) = stdout {
-            let reader = BufReader::new(out);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    let _ = win_out.emit("native://stdout", StreamLinePayload {
-                        execution_id: exec_out.clone(),
-                        text: l,
-                    });
+        if let Some(mut stream) = stdout {
+            let mut decoder = crate::modules::process::IncrementalDecoder::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let text = decoder.feed(&buf[..n]);
+                        if !text.is_empty() {
+                            let _ = win_out.emit("native://stdout", StreamLinePayload {
+                                execution_id: exec_out.clone(),
+                                text,
+                            });
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
                 }
+            }
+            let flushed = decoder.flush();
+            if !flushed.is_empty() {
+                let _ = win_out.emit("native://stdout", StreamLinePayload {
+                    execution_id: exec_out.clone(),
+                    text: flushed,
+                });
             }
         }
     });
@@ -141,15 +194,31 @@ pub fn spawn_streaming_command(
     let win_err = window.clone();
     let exec_err = execution_id.clone();
     let t_err = std::thread::spawn(move || {
-        if let Some(err) = stderr {
-            let reader = BufReader::new(err);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    let _ = win_err.emit("native://stderr", StreamLinePayload {
-                        execution_id: exec_err.clone(),
-                        text: l,
-                    });
+        if let Some(mut stream) = stderr {
+            let mut decoder = crate::modules::process::IncrementalDecoder::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let text = decoder.feed(&buf[..n]);
+                        if !text.is_empty() {
+                            let _ = win_err.emit("native://stderr", StreamLinePayload {
+                                execution_id: exec_err.clone(),
+                                text,
+                            });
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
                 }
+            }
+            let flushed = decoder.flush();
+            if !flushed.is_empty() {
+                let _ = win_err.emit("native://stderr", StreamLinePayload {
+                    execution_id: exec_err.clone(),
+                    text: flushed,
+                });
             }
         }
     });
@@ -161,9 +230,7 @@ pub fn spawn_streaming_command(
         let _ = t_out.join();
         let _ = t_err.join();
 
-        if let Ok(mut map) = PROCESS_TABLE.lock() {
-            map.remove(&exec_exit);
-        }
+        PROCESS_TABLE.unregister(&exec_exit, generation);
 
         let (exit_code, success) = match status {
             Ok(s) => (s.code(), s.success()),
@@ -181,69 +248,248 @@ pub fn spawn_streaming_command(
 }
 
 pub fn cancel_process(execution_id: &str) -> Result<bool, String> {
-    let pid = {
-        let map = PROCESS_TABLE.lock().map_err(|e| e.to_string())?;
-        map.get(execution_id).copied()
-    };
-
-    if let Some(pid) = pid {
-        #[cfg(windows)]
-        {
-            let mut cmd = Command::new("taskkill");
-            cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
-            cmd.creation_flags(CREATE_NO_WINDOW);
-            let _ = cmd.output();
-        }
-        #[cfg(not(windows))]
-        {
-            let mut cmd = Command::new("kill");
-            cmd.args(["-9", &pid.to_string()]);
-            let _ = cmd.output();
-        }
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    PROCESS_TABLE.cancel(execution_id)
 }
 
-pub fn download_file(url: &str, destination_path: &str) -> Result<(), String> {
-    let p = Path::new(destination_path);
-    if let Some(parent) = p.parent() {
-        let _ = std::fs::create_dir_all(parent);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeDownloadResult {
+    pub success: bool,
+    pub destination_path: String,
+    pub size_bytes: u64,
+    pub sha256_verified: bool,
+}
+
+/// Resolves and strictly validates a target destination file for downloads.
+/// Enforces path policy:
+/// - Filename component is verified via `validate_fs_component` (rejects traversal, reserved device names, ADS, illegal chars).
+/// - Destination root must be inside an allowed directory (user Downloads, LocalAppData, UserProfile, Temp).
+/// - Rejects UNC paths, Windows system directory (`%SystemRoot%`), and raw drive roots.
+/// - Checks ancestor reparse points / junctions.
+pub fn resolve_and_validate_download_target(
+    filename: &str,
+    target_dir: Option<&str>,
+) -> Result<PathBuf, String> {
+    let clean_filename = crate::modules::path_policy::validate_fs_component(filename)
+        .map_err(|e| format!("下载文件名无效: {e}"))?;
+
+    let base_dir = if let Some(dir) = target_dir {
+        let trimmed = dir.trim();
+        if trimmed.is_empty() {
+            PathBuf::from(get_downloads_dir()?)
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else {
+        PathBuf::from(get_downloads_dir()?)
+    };
+
+    let dir_str = base_dir.to_string_lossy().to_string();
+    if dir_str.starts_with(r"\\") {
+        return Err("不支持网络 UNC 或设备命名空间下载路径".into());
     }
+
+    // Check system root
+    let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()).to_lowercase();
+    if dir_str.to_lowercase().starts_with(&sys_root) {
+        return Err("安全策略限制：禁止向 Windows 系统目录下载文件".into());
+    }
+
+    // Reject drive roots (e.g. C:\, D:\)
+    if dir_str.trim_end_matches(['\\', '/']).len() <= 3 {
+        return Err("安全策略限制：禁止直接向驱动器根目录下载文件".into());
+    }
+
+    // Verify allowed roots containment:
+    let downloads_dir = get_downloads_dir().unwrap_or_default();
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+    let temp_dir = std::env::temp_dir().to_string_lossy().to_string();
+
+    let is_allowed_root = (!downloads_dir.is_empty() && dir_str.to_lowercase().starts_with(&downloads_dir.to_lowercase()))
+        || (!local_app_data.is_empty() && dir_str.to_lowercase().starts_with(&local_app_data.to_lowercase()))
+        || (!user_profile.is_empty() && dir_str.to_lowercase().starts_with(&user_profile.to_lowercase()))
+        || (!temp_dir.is_empty() && dir_str.to_lowercase().starts_with(&temp_dir.to_lowercase()));
+
+    if !is_allowed_root {
+        return Err(format!("目标下载目录 '{dir_str}' 不在受控用户下载或工作区白名单范围内"));
+    }
+
+    crate::modules::path_policy::reject_reparse_chain(&base_dir)
+        .map_err(|e| format!("下载目录包含不安全重解析点: {e}"))?;
+
+    if !base_dir.exists() {
+        std::fs::create_dir_all(&base_dir)
+            .map_err(|e| format!("创建下载目标目录失败: {e}"))?;
+    }
+
+    Ok(base_dir.join(clean_filename))
+}
+
+/// Downloads a URL directly into a temporary `.part` file, performs integrity validation,
+/// and atomically replaces/moves the partial file to `target_path`.
+/// Ensures interrupted downloads do not overwrite or leave corrupt destination files.
+pub fn download_file_stream(
+    url: &str,
+    target_path: &Path,
+    expected_sha256: Option<&str>,
+) -> Result<NativeDownloadResult, String> {
+    let clean_url = url.trim();
+    if !clean_url.starts_with("https://") && !clean_url.starts_with("http://") {
+        return Err("仅支持通过 http 或 https 协议下载文件".into());
+    }
+
+    let parent_dir = target_path.parent().ok_or("无法解析目标目录")?;
+    let pid = std::process::id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let part_name = format!(".setup-center-download-{pid}-{now}.part");
+    let part_path = parent_dir.join(&part_name);
 
     #[cfg(windows)]
     {
-        let mut cmd = Command::new("curl.exe");
-        cmd.args(["-fL", "--create-dirs", "-o", destination_path, url]);
+        let curl_bin = system32_executable("curl.exe");
+        let mut cmd = Command::new(curl_bin);
+        cmd.args(["-fL", "--silent", "--show-error", "-o", &part_path.to_string_lossy(), clean_url]);
         cmd.creation_flags(CREATE_NO_WINDOW);
-        match cmd.output() {
-            Ok(out) => {
-                if out.status.success() {
-                    Ok(())
-                } else {
-                    let err = crate::modules::detect::decode_console_output(&out.stderr);
-                    Err(format!("下载失败: {err}"))
-                }
+        let out = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("无法调用 curl 下载: {e}"));
             }
-            Err(e) => Err(format!("无法调用 curl 下载: {e}")),
+        };
+
+        if !out.status.success() {
+            let _ = std::fs::remove_file(&part_path);
+            let err = crate::modules::detect::decode_console_output(&out.stderr);
+            return Err(format!("下载失败 (curl 退出码 {:?}): {err}", out.status.code()));
         }
     }
     #[cfg(not(windows))]
     {
         let mut cmd = Command::new("curl");
-        cmd.args(["-fL", "-o", destination_path, url]);
-        match cmd.output() {
-            Ok(out) => {
-                if out.status.success() {
-                    Ok(())
-                } else {
-                    Err("下载失败".to_string())
-                }
+        cmd.args(["-fL", "--silent", "--show-error", "-o", &part_path.to_string_lossy(), clean_url]);
+        let out = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("curl 执行失败: {e}"));
             }
-            Err(e) => Err(format!("curl 未找到: {e}")),
+        };
+
+        if !out.status.success() {
+            let _ = std::fs::remove_file(&part_path);
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(format!("下载失败: {err}"));
         }
     }
+
+    if !part_path.exists() {
+        return Err("下载未能生成文件".into());
+    }
+
+    let meta = std::fs::metadata(&part_path).map_err(|e| {
+        let _ = std::fs::remove_file(&part_path);
+        format!("读取下载临时文件信息失败: {e}")
+    })?;
+
+    let size_bytes = meta.len();
+    if size_bytes == 0 {
+        let _ = std::fs::remove_file(&part_path);
+        return Err("下载内容为空 (0 字节)".into());
+    }
+
+    let mut sha256_verified = false;
+    if let Some(hash) = expected_sha256 {
+        let hash_clean = hash.trim();
+        if !hash_clean.is_empty() {
+            let match_ok = verify_file_sha256(&part_path.to_string_lossy(), hash_clean)?;
+            if !match_ok {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("下载文件 SHA256 校验不匹配: 期望 {hash_clean}"));
+            }
+            sha256_verified = true;
+        }
+    }
+
+    // Atomic replacement / promotion to destination
+    if target_path.exists() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            let target_wide: Vec<u16> = target_path
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            let part_wide: Vec<u16> = part_path
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let success = unsafe {
+                windows_sys::Win32::Storage::FileSystem::ReplaceFileW(
+                    target_wide.as_ptr(),
+                    part_wide.as_ptr(),
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                )
+            };
+
+            if success == 0 {
+                let err = std::io::Error::last_os_error();
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("原子替换目标文件失败: {err}"));
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            if let Err(e) = std::fs::rename(&part_path, target_path) {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("原子替换目标文件失败: {e}"));
+            }
+        }
+    } else {
+        if let Err(e) = std::fs::rename(&part_path, target_path) {
+            let _ = std::fs::remove_file(&part_path);
+            return Err(format!("重命名目标文件失败: {e}"));
+        }
+    }
+
+    if !target_path.exists() {
+        return Err("目标文件落盘确认失败".into());
+    }
+
+    Ok(NativeDownloadResult {
+        success: true,
+        destination_path: target_path.to_string_lossy().to_string(),
+        size_bytes,
+        sha256_verified,
+    })
+}
+
+pub fn download_file(url: &str, destination_path: &str) -> Result<NativeDownloadResult, String> {
+    let p = Path::new(destination_path);
+    let file_name = p.file_name().and_then(|n| n.to_str()).ok_or("无效的文件名")?;
+    let parent_dir = p.parent().map(|d| d.to_string_lossy().to_string());
+    let validated = resolve_and_validate_download_target(file_name, parent_dir.as_deref())?;
+    download_file_stream(url, &validated, None)
+}
+
+pub fn download_asset_controlled(
+    url: &str,
+    filename: &str,
+    destination_dir: Option<&str>,
+    expected_sha256: Option<&str>,
+) -> Result<NativeDownloadResult, String> {
+    let target = resolve_and_validate_download_target(filename, destination_dir)?;
+    download_file_stream(url, &target, expected_sha256)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -481,7 +727,9 @@ pub fn reveal_path(path: &str) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        let mut cmd = Command::new("explorer");
+        let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let explorer_bin = PathBuf::from(sys_root).join("explorer.exe");
+        let mut cmd = Command::new(explorer_bin);
         cmd.creation_flags(CREATE_NO_WINDOW);
         if p.is_file() {
             cmd.arg(format!("/select,\"{}\"", path));
@@ -500,15 +748,21 @@ pub fn reveal_path(path: &str) -> Result<(), String> {
 }
 
 pub fn open_url(url: &str) -> Result<(), String> {
-    if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("mailto:") {
-        return Err(format!("不支持的 URL 协议: {url}"));
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") {
+        return Err("仅支持通过系统默认浏览器打开 https:// 安全链接，拒绝非 https 协议或本地文件".into());
+    }
+
+    if trimmed.contains('\0') || trimmed.contains('\r') || trimmed.contains('\n') || trimmed.contains('"') {
+        return Err("URL 包含非法控制字符".into());
     }
 
     #[cfg(windows)]
     {
-        let mut cmd = Command::new("rundll32");
+        let rundll = system32_executable("rundll32.exe");
+        let mut cmd = Command::new(rundll);
         cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.args(["url.dll,FileProtocolHandler", url]);
+        cmd.args(["url.dll,FileProtocolHandler", trimmed]);
         cmd.spawn()
             .map_err(|e| format!("打开系统默认浏览器失败: {e}"))?;
         Ok(())
@@ -516,7 +770,7 @@ pub fn open_url(url: &str) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         Command::new("open")
-            .arg(url)
+            .arg(trimmed)
             .spawn()
             .map_err(|e| format!("打开系统默认浏览器失败: {e}"))?;
         Ok(())
@@ -622,7 +876,10 @@ fn find_editor(cmd: &str, subpaths: &[&str]) -> (bool, Option<String>) {
         }
     }
 
-    let mut command = Command::new("where");
+    #[cfg(windows)]
+    let mut command = Command::new(system32_executable("where.exe"));
+    #[cfg(not(windows))]
+    let mut command = Command::new("which");
     command.arg(cmd);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -641,34 +898,80 @@ fn find_editor(cmd: &str, subpaths: &[&str]) -> (bool, Option<String>) {
     (false, None)
 }
 
-pub fn launch_in_editor(editor: &str, target_path: &str, executable_path: Option<&str>) -> Result<(), String> {
-    if let Some(path) = executable_path {
-        if Path::new(path).exists() {
-            let mut cmd = Command::new(path);
-            cmd.arg(target_path);
-            #[cfg(windows)]
-            cmd.creation_flags(CREATE_NO_WINDOW);
-            cmd.spawn().map_err(|e| format!("启动编辑器 '{path}' 失败: {e}"))?;
-            return Ok(());
-        }
+pub fn launch_in_editor(editor: &str, target_path: &str) -> Result<(), String> {
+    let clean_editor = editor.trim().to_lowercase();
+    let allowed_editors = ["vscode", "cursor", "windsurf", "zed"];
+    if !allowed_editors.contains(&clean_editor.as_str()) {
+        return Err(format!("不支持的编辑器类型: '{editor}'。仅允许 vscode, cursor, windsurf, zed"));
     }
 
-    let binary = match editor {
-        "vscode" | "code" => "code",
-        "cursor" => "cursor",
-        "windsurf" => "windsurf",
-        "zed" => "zed",
-        other => other,
-    };
+    let p = Path::new(target_path);
+    if !p.exists() {
+        return Err(format!("目标工程路径不存在: '{target_path}'"));
+    }
 
-    let mut cmd = Command::new(binary);
-    cmd.arg(target_path);
+    let canonical = p.canonicalize().map_err(|e| format!("路径规范化解析失败: {e}"))?;
+    let canonical_str = canonical.to_string_lossy().to_string();
+
+    // Reject drive roots (e.g. C:\, D:\)
+    if canonical_str.trim_end_matches(['\\', '/']).len() <= 3 {
+        return Err("禁止在编辑器中直接打开驱动器根目录".into());
+    }
+
+    // Reject Windows system directory
+    let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()).to_lowercase();
+    if canonical_str.to_lowercase().starts_with(&sys_root) {
+        return Err("禁止在编辑器中打开 Windows 系统目录".into());
+    }
+
+    // Resolve editor executable securely through inventory probe
+    let editors = probe_editors();
+    let detected = editors.into_iter().find(|e| e.id == clean_editor);
+    let resolved_exe = detected.and_then(|e| e.executable_path);
+
     #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    {
+        if let Some(ref path) = resolved_exe {
+            if Path::new(path).exists() {
+                let mut cmd = Command::new(path);
+                cmd.arg(&canonical);
+                cmd.creation_flags(CREATE_NO_WINDOW);
+                cmd.spawn().map_err(|e| format!("启动编辑器 '{path}' 失败: {e}"))?;
+                return Ok(());
+            }
+        }
 
-    cmd.spawn()
-        .map_err(|e| format!("启动编辑器 '{binary}' 失败: {e}"))?;
-    Ok(())
+        let binary = match clean_editor.as_str() {
+            "vscode" => "code",
+            "cursor" => "cursor",
+            "windsurf" => "windsurf",
+            "zed" => "zed",
+            _ => return Err("无效的编辑器类型".into()),
+        };
+
+        let mut cmd = Command::new(binary);
+        cmd.arg(&canonical);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        cmd.spawn()
+            .map_err(|e| format!("启动编辑器 '{binary}' 失败: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let binary = match clean_editor.as_str() {
+            "vscode" => "code",
+            "cursor" => "cursor",
+            "windsurf" => "windsurf",
+            "zed" => "zed",
+            _ => return Err("无效的编辑器类型".into()),
+        };
+        Command::new(binary)
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("启动编辑器 '{binary}' 失败: {e}"))?;
+        Ok(())
+    }
 }
 
 /// Resolves the user's authentic Downloads directory.
@@ -699,7 +1002,8 @@ pub fn verify_file_sha256(path: &str, expected_hash: &str) -> Result<bool, Strin
     }
     #[cfg(windows)]
     {
-        let mut cmd = Command::new("certutil");
+        let certutil_bin = system32_executable("certutil.exe");
+        let mut cmd = Command::new(certutil_bin);
         cmd.args(["-hashfile", path, "SHA256"]);
         cmd.creation_flags(CREATE_NO_WINDOW);
         let out = cmd.output().map_err(|e| format!("certutil 校验失败: {e}"))?;
@@ -743,5 +1047,29 @@ mod tests {
         assert!(editors.iter().any(|e| e.id == "cursor"));
         assert!(editors.iter().any(|e| e.id == "windsurf"));
         assert!(editors.iter().any(|e| e.id == "zed"));
+    }
+
+    #[test]
+    fn download_target_validation_rejects_illegal_components_and_traversal() {
+        assert!(resolve_and_validate_download_target("..", None).is_err());
+        assert!(resolve_and_validate_download_target("../evil.exe", None).is_err());
+        assert!(resolve_and_validate_download_target("CON.txt", None).is_err());
+        assert!(resolve_and_validate_download_target("bad:stream.txt", None).is_err());
+        assert!(resolve_and_validate_download_target("trailing. ", None).is_err());
+    }
+
+    #[test]
+    fn download_target_validation_rejects_system_directory_and_drive_root() {
+        assert!(resolve_and_validate_download_target("test.zip", Some(r"C:\Windows\System32")).is_err());
+        assert!(resolve_and_validate_download_target("test.zip", Some(r"C:\")).is_err());
+        assert!(resolve_and_validate_download_target("test.zip", Some(r"\\evil\share")).is_err());
+    }
+
+    #[test]
+    fn download_target_validation_accepts_clean_filename() {
+        let res = resolve_and_validate_download_target("valid-asset-1.0.0.zip", None);
+        assert!(res.is_ok());
+        let target = res.unwrap();
+        assert!(target.to_string_lossy().ends_with("valid-asset-1.0.0.zip"));
     }
 }

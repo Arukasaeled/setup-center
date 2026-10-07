@@ -44,16 +44,21 @@
 //! ```
 //!
 //! The activation *code* is never stored, only `HMAC(secret, code‖device_hash)`.
-//! DPAPI ties the blob to this Windows account, and `device_hash` ties it to
-//! this hardware, so copying the file to another machine fails at two
-//! independent layers.
+//! DPAPI protects the blob at rest under the active Windows user profile, and
+//! `device_hash` validates against local hardware evidence, providing multi-layer
+//! defensive separation against casual file copying across machines.
 //!
-//! Every read path is tolerant: a missing, corrupt, foreign or undecryptable file
-//! is reported as "not activated", never as a launch failure.
+//! Read paths use structured `LicenseLoadResult` to differentiate `Absent` from
+//! `Corrupt`, `Unreadable`, `DecryptFailed`, or `Invalid`, exposing transparent
+//! diagnostics rather than flattening system failures into a default free state.
+
 
 pub mod crypto;
 pub mod fingerprint;
 pub mod inventory_file;
+pub mod public_keys;
+pub mod rate_limit;
+pub mod signed_v2;
 pub mod validator;
 
 use crate::model::{AppError, AppResult};
@@ -111,18 +116,47 @@ impl Tier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LicenseState {
-    /// No activation file, or it could not be read or decrypted.
+    /// No activation file exists.
     Inactive,
     /// Activated on this machine and the binding still matches.
     Active,
     /// A valid-looking activation bound to different hardware.
     DeviceMismatch,
+    /// Evidence insufficient or multiple hardware changes requiring manual review.
+    NeedsAttention,
+    /// File exists but could not be read (permission, IO error)
+    Unreadable,
+    /// File decrypted but format corrupt
+    Corrupt,
+    /// Schema or version invalid
+    Invalid,
 }
 
 impl LicenseState {
     pub fn is_active(self) -> bool {
         matches!(self, LicenseState::Active)
     }
+}
+
+/// The status of reading and validating the license file on disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LicenseLoadStatus {
+    Absent,
+    Valid,
+    Unreadable,
+    DecryptFailed,
+    Corrupt,
+    Invalid,
+}
+
+/// Structured result of attempting to load the license file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LicenseLoadResult {
+    pub file: LicenseFile,
+    pub status: LicenseLoadStatus,
+    pub error_detail: Option<String>,
 }
 
 /// On-disk activation record, as stored (encrypted) in `license.dat`.
@@ -136,9 +170,12 @@ pub struct LicenseFile {
     /// `HMAC(secret, code‖device_hash)` — never the code itself.
     #[serde(default)]
     pub license_hash: Option<String>,
-    /// The fingerprint this activation was bound to.
+    /// The fingerprint this activation was bound to (legacy V1).
     #[serde(default)]
     pub device_hash: Option<String>,
+    /// Multi-component structured hardware evidence (V2).
+    #[serde(default)]
+    pub device_evidence_v2: Option<fingerprint::DeviceEvidenceV2>,
     /// ISO-8601, for display only. Never compared.
     #[serde(default)]
     pub activated_at: Option<String>,
@@ -234,55 +271,77 @@ pub struct Entitlements {
     pub device_reliable: bool,
     /// A sentence describing the customer's situation. Always present.
     pub reason: String,
+    pub load_status: LicenseLoadStatus,
+    pub load_error: Option<String>,
 }
 
 impl Entitlements {
     /// Projects a licence record into the answers the UI needs.
-    ///
-    /// ## Where the tier comes from
-    ///
-    /// From the **record** (`file.tier`), not from `state.is_active()`. The
-    /// previous version derived it (`if state.is_active() { Pro } else { Free }`),
-    /// which meant a code had no way to express anything except "unlocks PRO":
-    /// a FREE-tier code activated the machine and was then reported as PRO,
-    /// because the only question asked was "did activation succeed".
-    ///
-    /// The tier is only *honoured* while the state is `Active`, which is the
-    /// subtlety that keeps the gate honest: a record can say `tier: pro` and
-    /// still grant nothing if the device binding does not match, so a copied
-    /// `license.dat` cannot carry PRO across machines merely by asserting it.
-    /// In every non-active state this projects FREE, exactly as before.
     pub fn of(file: &LicenseFile, enforced: bool) -> Self {
-        let state = state_of(file);
+        let res = LicenseLoadResult {
+            file: file.clone(),
+            status: if file.license_hash.is_some() {
+                LicenseLoadStatus::Valid
+            } else {
+                LicenseLoadStatus::Absent
+            },
+            error_detail: None,
+        };
+        Self::of_result(&res, enforced)
+    }
+
+    /// Projects a structured load result into entitlements with explicit error handling.
+    pub fn of_result(result: &LicenseLoadResult, enforced: bool) -> Self {
+        let state = state_of_result(result);
         let tier = if state.is_active() {
-            file.tier
+            result.file.tier
         } else {
             Tier::Free
         };
 
         let can_use = !enforced || tier == Tier::Pro;
 
-        let reason = match (tier, enforced, state) {
-            (Tier::Pro, _, _) => "已激活专业版：自动安装、环境初始化与配置功能已解锁。".to_string(),
-            (Tier::Free, true, LicenseState::DeviceMismatch) => {
-                "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。".to_string()
+        let reason = match state {
+            LicenseState::Active => match tier {
+                Tier::Pro => "已激活专业版：自动安装、环境初始化与配置功能已解锁。".to_string(),
+                Tier::Free => {
+                    "已激活免费版授权：包含环境检测与软件推荐，不包含自动安装与配置。".to_string()
+                }
+            },
+            LicenseState::DeviceMismatch => {
+                if enforced {
+                    "授权验证失败，该授权已绑定其他设备。请在原设备上使用，或联系作者处理。".to_string()
+                } else {
+                    "授权验证失败，该授权已绑定其他设备。本版本暂未限制功能。".to_string()
+                }
             }
-            // A genuine FREE-tier activation is worth distinguishing from "never
-            // activated". Both grant the same abilities, but a customer who
-            // entered a trial code and is told only "免费版" will reasonably
-            // conclude their code did not work and go looking for the bug.
-            (Tier::Free, true, LicenseState::Active) => {
-                "已激活免费版授权：包含环境检测与软件推荐，不包含自动安装与配置。".to_string()
+            LicenseState::NeedsAttention => {
+                "硬件特征证据不足或发生多项硬件变动（需人工核验）：当前设备无法满足最低 2 项强特征比对要求。".to_string()
             }
-            (Tier::Free, true, _) => {
-                "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。".to_string()
+            LicenseState::Unreadable => {
+                format!(
+                    "授权文件读取失败：{}。原授权文件已保留，未被清除。",
+                    result.error_detail.as_deref().unwrap_or("文件访问受阻")
+                )
             }
-            // Enforcement switched off is a development/testing configuration.
-            (Tier::Free, false, LicenseState::DeviceMismatch) => {
-                "授权验证失败，该授权已绑定其他设备。本版本暂未限制功能。".to_string()
+            LicenseState::Corrupt => {
+                format!(
+                    "授权文件损坏：{}。原授权文件已保留，未被清除。",
+                    result.error_detail.as_deref().unwrap_or("格式错误")
+                )
             }
-            (Tier::Free, false, _) => {
-                "当前版本：免费版（本构建未启用限制，全部功能可用）。".to_string()
+            LicenseState::Invalid => {
+                format!(
+                    "授权格式无效：{}。原授权文件已保留，未被清除。",
+                    result.error_detail.as_deref().unwrap_or("版本不受支持")
+                )
+            }
+            LicenseState::Inactive => {
+                if enforced {
+                    "当前版本：免费版。可检测环境、查看软件推荐，不包含自动安装与配置。".to_string()
+                } else {
+                    "当前版本：免费版（本构建未启用限制，全部功能可用）。".to_string()
+                }
             }
         };
 
@@ -295,27 +354,36 @@ impl Entitlements {
             enforced,
             state,
             activated_at: if state.is_active() {
-                file.activated_at.clone()
+                result.file.activated_at.clone()
             } else {
                 None
             },
             device_reliable: current_fingerprint().reliable(),
             reason,
+            load_status: result.status.clone(),
+            load_error: result.error_detail.clone(),
         }
     }
 }
 
 /// Whether tier enforcement is on in this build.
 ///
-/// **On by default**, which is the shipping configuration — a commercial build
-/// that gave away installation would have no product. `AISSETUP_ENFORCE_TIERS=0`
-/// turns it off so the ungated path stays exercisable in development without a
-/// rebuild, and so the tests can prove both branches against the real function.
+/// **Production release builds unconditionally enforce license tiers.**
+/// The runtime environment variable `AISSETUP_ENFORCE_TIERS` can NEVER bypass
+/// license gates in release builds (Issue A07).
+/// In development builds with debug assertions, it may be disabled for testing.
 pub fn enforcement_enabled() -> bool {
-    !matches!(
-        std::env::var("AISSETUP_ENFORCE_TIERS").as_deref(),
-        Ok("0") | Ok("false") | Ok("FALSE")
-    )
+    #[cfg(debug_assertions)]
+    {
+        !matches!(
+            std::env::var("AISSETUP_ENFORCE_TIERS").as_deref(),
+            Ok("0") | Ok("false") | Ok("FALSE")
+        )
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -337,12 +405,15 @@ pub fn license_path() -> PathBuf {
 
 /// The fingerprint is a property of the hardware, so reading it more than once
 /// per process is pure waste — and it is not cheap: three PowerShell queries.
-/// `license_status` runs at startup, so without this the first screen would pay
-/// that cost.
 static FINGERPRINT: OnceLock<Fingerprint> = OnceLock::new();
+static EVIDENCE_V2: OnceLock<fingerprint::DeviceEvidenceV2> = OnceLock::new();
 
 fn current_fingerprint() -> &'static Fingerprint {
     FINGERPRINT.get_or_init(fingerprint::capture)
+}
+
+pub fn current_device_evidence_v2() -> &'static fingerprint::DeviceEvidenceV2 {
+    EVIDENCE_V2.get_or_init(fingerprint::DeviceEvidenceV2::capture)
 }
 
 /// The current machine's fingerprint, for display in the activation screen.
@@ -359,57 +430,134 @@ pub fn device_summary() -> (String, usize) {
 // ---------------------------------------------------------------------------
 
 /// Reads the stored activation and reports how it relates to this machine.
-///
-/// Never fails. Every failure mode — absent, unreadable, corrupt, written by
-/// another user, written for another machine — resolves to something the caller
-/// can act on rather than an error the caller must handle.
 pub fn load() -> LicenseFile {
-    load_from(&license_path())
+    load_result().file
 }
 
-/// The testable form of [`load`], taking an explicit path.
+/// Reads the stored activation and returns the structured load result.
+pub fn load_result() -> LicenseLoadResult {
+    load_result_from(&license_path())
+}
+
+/// The testable form of [`load_result`], taking an explicit path.
+pub fn load_result_from(path: &Path) -> LicenseLoadResult {
+    if !path.exists() {
+        return LicenseLoadResult {
+            file: LicenseFile::default(),
+            status: LicenseLoadStatus::Absent,
+            error_detail: None,
+        };
+    }
+
+    let blob = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            return LicenseLoadResult {
+                file: LicenseFile::default(),
+                status: LicenseLoadStatus::Unreadable,
+                error_detail: Some(format!("无法读取授权文件：{e}")),
+            };
+        }
+    };
+
+    let plain = match crypto::unprotect(&blob) {
+        Ok(p) => p,
+        Err(e) => {
+            return LicenseLoadResult {
+                file: LicenseFile::default(),
+                status: LicenseLoadStatus::DecryptFailed,
+                error_detail: Some(format!("授权解密失败：{e}")),
+            };
+        }
+    };
+
+    let file: LicenseFile = match serde_json::from_slice(&plain) {
+        Ok(f) => f,
+        Err(e) => {
+            return LicenseLoadResult {
+                file: LicenseFile::default(),
+                status: LicenseLoadStatus::Corrupt,
+                error_detail: Some(format!("授权数据格式损坏：{e}")),
+            };
+        }
+    };
+
+    if file.version == 0 {
+        return LicenseLoadResult {
+            file,
+            status: LicenseLoadStatus::Invalid,
+            error_detail: Some("授权版本无效 (version=0)".into()),
+        };
+    }
+
+    LicenseLoadResult {
+        file,
+        status: LicenseLoadStatus::Valid,
+        error_detail: None,
+    }
+}
+
 pub fn load_from(path: &Path) -> LicenseFile {
-    let Ok(blob) = std::fs::read(path) else {
-        return LicenseFile::default();
-    };
-    // A blob DPAPI refuses to decrypt is not an error worth surfacing: it means
-    // another user or another machine, which is exactly `Inactive` (or a
-    // mismatch once a fingerprint is compared).
-    let Ok(plain) = crypto::unprotect(&blob) else {
-        return LicenseFile::default();
-    };
-    serde_json::from_slice(&plain).unwrap_or_default()
+    load_result_from(path).file
 }
 
 /// Classifies a record against the current machine.
 pub fn state_of(file: &LicenseFile) -> LicenseState {
-    let Some(stored_hash) = file.license_hash.as_deref() else {
-        return LicenseState::Inactive;
+    let res = LicenseLoadResult {
+        file: file.clone(),
+        status: if file.license_hash.is_some() {
+            LicenseLoadStatus::Valid
+        } else {
+            LicenseLoadStatus::Absent
+        },
+        error_detail: None,
     };
-    if stored_hash.is_empty() {
-        return LicenseState::Inactive;
-    }
+    state_of_result(&res)
+}
 
-    match file.device_hash.as_deref() {
-        Some(device) if current_fingerprint().matches(device) => LicenseState::Active,
-        Some(_) => LicenseState::DeviceMismatch,
-        // A record with a key hash but no device binding predates binding, or
-        // was tampered with. Either way it is not a valid activation.
-        None => LicenseState::Inactive,
+/// Classifies a structured load result against the current machine.
+pub fn state_of_result(result: &LicenseLoadResult) -> LicenseState {
+    match result.status {
+        LicenseLoadStatus::Absent => LicenseState::Inactive,
+        LicenseLoadStatus::Unreadable => LicenseState::Unreadable,
+        LicenseLoadStatus::DecryptFailed => LicenseState::Unreadable,
+        LicenseLoadStatus::Corrupt => LicenseState::Corrupt,
+        LicenseLoadStatus::Invalid => LicenseState::Invalid,
+        LicenseLoadStatus::Valid => {
+            let Some(stored_hash) = result.file.license_hash.as_deref() else {
+                return LicenseState::Inactive;
+            };
+            if stored_hash.is_empty() {
+                return LicenseState::Inactive;
+            }
+
+            // 优先使用 V2 结构化硬件证据比对
+            if let Some(ref stored_v2) = result.file.device_evidence_v2 {
+                let current_v2 = current_device_evidence_v2();
+                return match current_v2.match_against(stored_v2) {
+                    fingerprint::DeviceMatchVerdict::Matched => LicenseState::Active,
+                    fingerprint::DeviceMatchVerdict::Mismatch => LicenseState::DeviceMismatch,
+                    fingerprint::DeviceMatchVerdict::NeedsAttention => LicenseState::NeedsAttention,
+                };
+            }
+
+            // 回退到 Legacy V1 单一 Hash 比对
+            match result.file.device_hash.as_deref() {
+                Some(device) if current_fingerprint().matches(device) => LicenseState::Active,
+                Some(_) => LicenseState::DeviceMismatch,
+                None => LicenseState::Inactive,
+            }
+        }
     }
 }
 
-/// Writes and reads back the activation.
-///
-/// The read-back is what makes `save` mean something: activation is reported to
-/// the customer as having taken effect, so a write that silently did not land
-/// would be a lie told by the UI. Round-tripping through the decrypt path also
-/// proves the blob DPAPI produced is one we can actually read.
+/// Writes and reads back the activation atomically.
 pub fn save(file: &LicenseFile) -> AppResult<()> {
     save_to(&license_path(), file)
 }
 
 /// The testable form of [`save`], taking an explicit path.
+/// Uses atomic file replacement (Issue A11).
 pub fn save_to(path: &Path, file: &LicenseFile) -> AppResult<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -417,49 +565,96 @@ pub fn save_to(path: &Path, file: &LicenseFile) -> AppResult<()> {
     }
 
     let plain = serde_json::to_vec(file)
-        .map_err(|e| AppError::Internal(format!("{}: {}", path.to_string_lossy(), e)))?;
+        .map_err(|e| AppError::Internal(format!("{}: 序列化授权记录失败", path.display())))?;
     let blob = crypto::protect(&plain)?;
 
-    std::fs::write(path, &blob)
-        .map_err(|e| AppError::Internal(format!("{}: {}", path.to_string_lossy(), e)))?;
+    crate::modules::atomic_file::write_atomic(path, &blob)
+        .map_err(|e| AppError::Internal(format!("{}: 原子保存授权文件失败：{}", path.display(), e)))?;
 
-    let read_back = load_from(path);
-    if &read_back != file {
+    let read_back = load_result_from(path);
+    if &read_back.file != file || read_back.status != LicenseLoadStatus::Valid {
         return Err(AppError::Internal(format!(
-            "{}: 激活信息写入后无法读回，可能未保存成功。",
-            path.to_string_lossy()
+            "{}: 激活信息写入后无法通过校验读回，可能未保存成功。",
+            path.display()
         )));
     }
     Ok(())
 }
 
 /// Clears the activation, returning the machine to its default state.
-pub fn deactivate() -> AppResult<LicenseFile> {
+/// Retains existing status if deletion fails (Issue A11).
+pub fn deactivate() -> AppResult<LicenseLoadResult> {
     let path = license_path();
     if path.exists() {
         std::fs::remove_file(&path)
-            .map_err(|e| AppError::Internal(format!("{}: {}", path.to_string_lossy(), e)))?;
+            .map_err(|e| AppError::Internal(format!("{}: 取消激活失败（无法删除原授权文件）：{}", path.display(), e)))?;
     }
-    Ok(load())
+    Ok(load_result())
 }
 
-/// Activates this machine with `code`.
-///
-/// Order matters: the code's shape is checked *before* anything is written, so a
-/// mistyped code cannot leave a half-built record behind, and the failure a
-/// customer sees is about their input rather than about the file.
-///
-/// The tier is taken from the **code** — the author's signature over it is what
-/// decides the edition, never a value the client picked. A v1 code validates as
-/// [`Tier::Pro`], so codes issued before tiers existed keep unlocking PRO.
+/// Activates this machine with `code` (supporting V1 legacy and V2 signed asymmetric tokens).
 pub fn activate(code: &str) -> AppResult<LicenseFile> {
-    let validated = validator::validate_tiered(code).map_err(validator::rejection_error)?;
+    // 1. Enforce local attempt rate limiting against brute-force attacks (Issue A09)
+    rate_limit::check_attempt_allowed()?;
 
+    let code_trimmed = code.trim();
     let fp = current_fingerprint();
+    let evidence_v2 = current_device_evidence_v2().clone();
+
+    // 2. Dispatch V2 signed asymmetric token (Issues A04, A05, A06)
+    if code_trimmed.starts_with("SC2.") {
+        let parsed = match signed_v2::parse_token_v2(code_trimmed) {
+            Ok(token) => token,
+            Err(outcome) => {
+                rate_limit::record_attempt_failure();
+                return Err(AppError::Internal(format!("V2 授权码解析失败：{}", outcome)));
+            }
+        };
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let outcome = signed_v2::verify_token_v2(&parsed, now_secs, &fp.device_hash);
+        match outcome {
+            signed_v2::TokenVerificationOutcome::Valid(claims) => {
+                rate_limit::record_attempt_success();
+                let record = LicenseFile {
+                    version: 2,
+                    license_hash: Some(format!("V2:{}", claims.license_id)),
+                    device_hash: Some(fp.device_hash.clone()),
+                    device_evidence_v2: Some(evidence_v2),
+                    activated_at: Some(crate::modules::detect::now_iso8601()),
+                    tier: claims.tier,
+                };
+                save(&record)?;
+                return Ok(load());
+            }
+            other => {
+                rate_limit::record_attempt_failure();
+                return Err(AppError::Internal(format!("V2 授权验证未通过：{}", other)));
+            }
+        }
+    }
+
+    // 3. Fallback to Legacy V1/V2 HMAC activation code
+    let validated = match validator::validate_tiered(code) {
+        Ok(v) => {
+            rate_limit::record_attempt_success();
+            v
+        }
+        Err(e) => {
+            rate_limit::record_attempt_failure();
+            return Err(validator::rejection_error(e));
+        }
+    };
+
     let record = LicenseFile {
         version: current_version(),
         license_hash: Some(validator::digest(&validated.code, &fp.device_hash)),
         device_hash: Some(fp.device_hash.clone()),
+        device_evidence_v2: Some(evidence_v2),
         activated_at: Some(crate::modules::detect::now_iso8601()),
         tier: validated.tier,
     };
@@ -467,6 +662,7 @@ pub fn activate(code: &str) -> AppResult<LicenseFile> {
     save(&record)?;
     Ok(load())
 }
+
 
 // ---------------------------------------------------------------------------
 // Tests

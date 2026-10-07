@@ -14,7 +14,7 @@ import type { SoftwareId } from "../../lib/types";
 export type SetupActionType =
   | "install"         // Native installer / Winget execution
   | "copy-command"    // Package manager / CLI command copied to clipboard
-  | "native-command"  // Real native process execution in console
+  | "native-command"  // Prepared native command (copied to clipboard / preparedOnly)
   | "command"         // Deprecated alias for backwards compatibility -> copy-command
   | "download"        // Direct asset download via AssetDownloader
   | "clone"           // Git repository clone
@@ -67,9 +67,12 @@ export interface SetupAction {
 }
 
 export interface PrerequisitesStatus {
+  status: "satisfied" | "missing" | "unknown";
   satisfied: boolean;
   missingSoftwareIds: SoftwareId[];
+  missingCapabilities?: string[];
   missingNames: string[];
+  unknownCapabilities?: string[];
   warningHint?: string;
 }
 

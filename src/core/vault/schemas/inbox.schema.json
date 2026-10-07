@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SetupCenterInboxSchema",
+  "description": "Schema definition for incoming raw transfer proposals awaiting normalization",
+  "type": "object",
+  "required": ["id", "url", "capturedAt", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "minLength": 1 },
+    "url": { "type": "string" },
+    "title": { "type": "string" },
+    "note": { "type": "string" },
+    "suggestedType": { "type": "string", "enum": ["resource", "template", "style", "pattern", "skill", "unknown"] },
+    "suggestedCategory": { "type": "string" },
+    "capturedAt": { "type": "string" },
+    "status": { "type": "string", "enum": ["pending", "processed", "rejected"] },
+    "normalizedItemId": { "type": "string" },
+    "extensions": {
+      "type": "object"
+    }
+  }
+}

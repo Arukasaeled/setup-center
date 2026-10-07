@@ -366,19 +366,14 @@ fn run_through_executor(
             break;
         }
 
-        // `SoftwareId::Vscode` is used as the trace's id slot. It is not a claim
-        // about the target: `ActionRecord.id` is typed `SoftwareId` because stage
-        // 3's executor serves the installer, and bootstrap actions are not
-        // software. The *bootstrap* identity lives in `command` and in the
-        // progress record's `action_id`, which is what the UI and the report
-        // read. Widening the field would be a stage-4 change to stage-3's public
-        // contract for a cosmetic gain.
-        let record = execute_source(SoftwareId::Vscode, source, attempt as u32, cancel);
+        let mut record = execute_source(SoftwareId::Vscode, source, attempt as u32, cancel);
+        record.id = None;
+        record.subject_kind = SubjectKind::Config;
+        record.subject_id = step.action.id();
         last_outcome = record.outcome;
         last_error = record.error.clone();
 
         if record.outcome.is_success() {
-            let mut record = record;
             record.final_attempt = true;
             actions.push(record);
             break;
@@ -463,7 +458,9 @@ fn run_file_write(
     progress.detail = error.clone();
 
     actions.push(ActionRecord {
-        id: SoftwareId::Vscode,
+        id: None,
+        subject_kind: SubjectKind::Config,
+        subject_id: step.action.id(),
         source: InstallSource::ConfigurationOnly,
         command: step.action.description(),
         started_at,
@@ -491,52 +488,75 @@ fn run_skill_install(
     let started = std::time::Instant::now();
 
     let request = SkillRequest::new(name, source);
-    // `match` on the result rather than a guard: a pattern guard cannot move out
-    // of the bound error, and the message is needed in the trace.
-    let outcome_result = skill::install(&request, target_root).map_err(|e| {
-        let benign = e.is_benign();
-        let unavailable = matches!(e, SkillError::SourceMissing { .. });
-        (e, benign, unavailable)
-    });
+    let outcome_result = skill::install(&request, target_root);
 
-    let (outcome, error, output) = match outcome_result {
-        Ok(installed) => (
-            AttemptOutcome::Succeeded,
-            None,
-            format!(
-                "已安装技能 {}（{} 个文件）到 {}",
-                installed.name,
-                installed.files,
-                installed.path.display()
+    let (outcome, step_status, stage_label, error, output) = match outcome_result {
+        Ok(installed) => match installed.status {
+            skill::SkillOutcomeStatus::Installed => (
+                AttemptOutcome::Succeeded,
+                StepStatus::Succeeded,
+                "已安装".to_string(),
+                None,
+                format!(
+                    "已安装技能 {}（{} 个文件）到 {}",
+                    installed.name,
+                    installed.files,
+                    installed.path.display()
+                ),
             ),
-        ),
-        // A conflict is the desired state already holding: a success, so a
-        // re-run does not show red for something that is fine.
-        Err((e, true, _)) => (AttemptOutcome::Skipped, None, e.message()),
-        Err((e, _, unavailable)) => {
+            skill::SkillOutcomeStatus::AlreadyPresent => (
+                AttemptOutcome::Skipped,
+                StepStatus::Succeeded,
+                "已存在".to_string(),
+                None,
+                format!(
+                    "技能 {} 已存在于 {}（版本一致），无需重复安装",
+                    installed.name,
+                    installed.path.display()
+                ),
+            ),
+            skill::SkillOutcomeStatus::Conflict => (
+                AttemptOutcome::Failed,
+                StepStatus::SucceededWithWarning,
+                "目录冲突".to_string(),
+                installed.detail.clone(),
+                installed.detail.unwrap_or_else(|| {
+                    format!("目标技能目录 {} 已存在，为保护你的本地数据未予覆盖", installed.path.display())
+                }),
+            ),
+            skill::SkillOutcomeStatus::Failed => (
+                AttemptOutcome::Failed,
+                StepStatus::Failed,
+                "安装失败".to_string(),
+                installed.detail.clone(),
+                installed.detail.unwrap_or_else(|| "安装技能失败".into()),
+            ),
+        },
+        Err(e) => {
+            let unavailable = matches!(e, SkillError::SourceMissing { .. });
             let outcome = if unavailable {
                 AttemptOutcome::Unavailable
             } else {
                 AttemptOutcome::Failed
             };
-            (outcome, Some(e.message()), e.message())
+            (
+                outcome,
+                StepStatus::Failed,
+                "安装失败".to_string(),
+                Some(e.message()),
+                e.message(),
+            )
         }
     };
 
-    progress.status = if outcome.is_success() {
-        StepStatus::Succeeded
-    } else {
-        StepStatus::Failed
-    };
-    progress.stage_label = if outcome.is_success() {
-        "已安装".into()
-    } else {
-        "安装失败".into()
-    };
+    progress.status = step_status;
+    progress.stage_label = stage_label;
     progress.detail = error.clone();
 
     actions.push(ActionRecord {
-        id: SoftwareId::Vscode,
+        id: None,
+        subject_kind: SubjectKind::Skill,
+        subject_id: step.action.id(),
         source: InstallSource::ConfigurationOnly,
         command: step.action.description(),
         started_at,

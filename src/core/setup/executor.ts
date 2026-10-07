@@ -141,24 +141,19 @@ export async function executeSetupAction(
 
     case "native-command": {
       const cmd = action.payload;
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("setup:execute-command", {
-            detail: { command: cmd, title: targetName },
-          }),
-        );
-      }
+      const ok = await copyToClipboard(cmd);
       TransferHistory.record({
         type: "command",
-        title: "调度执行原生命令",
+        title: "准备原生命令",
         targetId,
         targetName,
         status: "info",
-        summary: `已调度原生命令: ${cmd}`,
+        summary: `指令已复制到剪贴板 (准备模式/未直接执行): ${cmd}`,
+        metadata: { command: cmd, preparedOnly: true },
       });
       return {
         ok: true,
-        message: action.successMessage || `正在执行原生命令: ${cmd}`,
+        message: action.successMessage || (ok ? `命令已复制到剪贴板，请在终端中执行: ${cmd}` : `准备执行命令: ${cmd}`),
       };
     }
 
@@ -175,7 +170,7 @@ export async function executeSetupAction(
           targetName,
           status: "success",
           summary: `克隆指令已复制: ${cloneCmd}`,
-          metadata: { cloneCmd },
+          metadata: { cloneCmd, preparedOnly: true },
         });
         return {
           ok: true,

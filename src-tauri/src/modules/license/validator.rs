@@ -15,13 +15,14 @@
 //! * **Proof of origin** — codes are computed from a secret the author holds,
 //!   so a randomly typed string does not activate. This stops accidental and
 //!   casual activation; it does not stop a determined reverse-engineer.
-//! * **Machine binding** — handled in `mod.rs` and `fingerprint.rs`, and it is
-//!   the part that actually does real work, because it is enforced by DPAPI
-//!   rather than by a comparison someone could patch out.
+//! * **Machine binding** — handled in `mod.rs` and `fingerprint.rs`, combining
+//!   DPAPI data-at-rest encryption (protecting raw credentials across Windows accounts/machines)
+//!   with application-level multi-component hardware evidence comparison.
 //!
 //! The honest summary for the report: this is a *speed bump plus a real
 //! device-binding*, not a licence server. Anything stronger needs a server,
 //! which the brief rules out.
+
 //!
 //! ## Why a checksum group rather than a fixed prefix
 //!
@@ -61,10 +62,18 @@ const GROUP: usize = 5;
 /// Compiled in, and therefore extractable — see the module docs. It is spelled
 /// out as bytes rather than as a string literal so it is at least not a
 /// `strings`-command one-liner.
+///
+/// **DEPRECATION & REMEDIATION NOTICE (Issue A04, A05)**:
+/// This compiled-in symmetric HMAC secret belongs to the legacy V1 licensing scheme.
+/// The V2 architecture (`signed_v2.rs` & `public_keys.rs`) transitions to asymmetric
+/// digital signatures (Ed25519), ensuring that no signing secret resides in the binary.
+/// This legacy secret is retained solely for backward compatibility with existing V1 codes
+/// during the migration grace period.
 const SECRET: &[u8] = &[
     0x53, 0x43, 0x2d, 0x4c, 0x69, 0x63, 0x65, 0x6e, 0x73, 0x65, 0x2d, 0x76, 0x31, 0x2d, 0x41, 0x72,
     0x75, 0x6b, 0x61, 0x73, 0x2d, 0x30, 0x36, 0x32, 0x33,
 ];
+
 
 /// Which generation of code a string turned out to be.
 ///

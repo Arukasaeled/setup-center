@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AccessibleDialog } from "../AccessibleDialog";
 import type { UIPart, UIPartKind, UIPartLifecycle, UIPartSource } from "../../core/uiparts/types";
 import { UIPartRepository } from "../../core/uiparts/repository";
 
@@ -153,46 +154,58 @@ export function EditPartModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-xl rounded-2xl border border-white/15 bg-[#0f141f] p-6 shadow-2xl text-slate-100 flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between pb-3 border-b border-white/10">
-          <div>
-            <h2 className="text-base font-semibold text-white">编辑视觉零件</h2>
-            <p className="text-xs text-slate-400 mt-0.5">ID: {part.id}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg bg-black/40 p-1 border border-white/10">
-              <button
-                type="button"
-                onClick={() => setTab("basic")}
-                className={`px-3 py-1 rounded text-xs transition ${
-                  tab === "basic"
-                    ? "bg-white/15 text-white font-medium"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                常规编辑
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab("advanced")}
-                className={`px-3 py-1 rounded text-xs transition ${
-                  tab === "advanced"
-                    ? "bg-white/15 text-white font-medium"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                JSON 结构规格
-              </button>
-            </div>
+    <AccessibleDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      titleId="edit-part-modal-title"
+      contentClassName="relative w-full max-w-xl rounded-2xl border border-white/15 bg-[#0f141f] p-6 shadow-2xl text-slate-100 flex flex-col max-h-[90vh]"
+    >
+      <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <div>
+          <h2 id="edit-part-modal-title" className="text-base font-semibold text-white">编辑视觉零件</h2>
+          <p className="text-xs text-slate-400 mt-0.5">ID: {part.id}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-black/40 p-1 border border-white/10" role="tablist" aria-label="编辑视图切换">
             <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-white p-1 rounded ml-2"
+              type="button"
+              role="tab"
+              aria-selected={tab === "basic"}
+              aria-label="常规表单编辑"
+              onClick={() => setTab("basic")}
+              className={`min-h-[32px] px-3 py-1 rounded text-xs transition cursor-pointer ${
+                tab === "basic"
+                  ? "bg-white/15 text-white font-medium"
+                  : "text-slate-400 hover:text-white"
+              }`}
             >
-              ✕
+              常规编辑
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "advanced"}
+              aria-label="JSON 规格编辑"
+              onClick={() => setTab("advanced")}
+              className={`min-h-[32px] px-3 py-1 rounded text-xs transition cursor-pointer ${
+                tab === "advanced"
+                  ? "bg-white/15 text-white font-medium"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              JSON 结构规格
             </button>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭编辑窗口"
+            className="min-h-[32px] min-w-[32px] flex items-center justify-center text-slate-400 hover:text-white p-1 rounded-md ml-2 transition cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
+      </div>
 
         {error && (
           <div className="mt-3 p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
@@ -204,10 +217,11 @@ export function EditPartModal({
           {tab === "basic" ? (
             <form onSubmit={handleSaveBasic} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label htmlFor="edit-part-title-input" className="block text-xs font-medium text-slate-300 mb-1">
                   零件标题
                 </label>
                 <input
+                  id="edit-part-title-input"
                   type="text"
                   required
                   value={title}
@@ -218,10 +232,11 @@ export function EditPartModal({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label htmlFor="edit-part-kind-select" className="block text-xs font-medium text-slate-300 mb-1">
                     分类 (Kind)
                   </label>
                   <select
+                    id="edit-part-kind-select"
                     value={kind}
                     onChange={(e) => setKind(e.target.value as UIPartKind)}
                     className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
@@ -235,10 +250,11 @@ export function EditPartModal({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label htmlFor="edit-part-lifecycle-select" className="block text-xs font-medium text-slate-300 mb-1">
                     生命周期 (Lifecycle)
                   </label>
                   <select
+                    id="edit-part-lifecycle-select"
                     value={lifecycle}
                     onChange={(e) => setLifecycle(e.target.value as UIPartLifecycle)}
                     className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none uppercase font-mono"
@@ -253,10 +269,11 @@ export function EditPartModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label htmlFor="edit-part-summary-input" className="block text-xs font-medium text-slate-300 mb-1">
                   概要说明 (Summary)
                 </label>
                 <textarea
+                  id="edit-part-summary-input"
                   rows={2}
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
@@ -265,10 +282,11 @@ export function EditPartModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label htmlFor="edit-part-source-url" className="block text-xs font-medium text-slate-300 mb-1">
                   来源链接 (Source URL)
                 </label>
                 <input
+                  id="edit-part-source-url"
                   type="url"
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
@@ -278,10 +296,11 @@ export function EditPartModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label htmlFor="edit-part-tags-input" className="block text-xs font-medium text-slate-300 mb-1">
                   标签 (以逗号分隔)
                 </label>
                 <input
+                  id="edit-part-tags-input"
                   type="text"
                   value={tagsInput}
                   onChange={(e) => setTagsInput(e.target.value)}
@@ -290,10 +309,11 @@ export function EditPartModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label htmlFor="edit-part-notes-input" className="block text-xs font-medium text-slate-300 mb-1">
                   速记笔记 (Notes)
                 </label>
                 <textarea
+                  id="edit-part-notes-input"
                   rows={3}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -305,14 +325,16 @@ export function EditPartModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  aria-label="取消并关闭窗口"
+                  className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition cursor-pointer"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition"
+                  aria-label="保存修改到零件库"
+                  className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? "保存中..." : "保存修改"}
                 </button>
@@ -324,6 +346,8 @@ export function EditPartModal({
                 直接编辑完整的 JSON 领域模型（包含设计 DNA、证据等级、代码资产等）：
               </p>
               <textarea
+                id="edit-part-json-textarea"
+                aria-label="JSON 结构规格代码"
                 rows={14}
                 value={jsonText}
                 onChange={(e) => setJsonText(e.target.value)}
@@ -333,7 +357,8 @@ export function EditPartModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  aria-label="取消并关闭窗口"
+                  className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition cursor-pointer"
                 >
                   取消
                 </button>
@@ -341,7 +366,8 @@ export function EditPartModal({
                   type="button"
                   onClick={handleSaveAdvanced}
                   disabled={isSaving}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition"
+                  aria-label="提交 JSON 规格修改"
+                  className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 transition disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? "保存中..." : "提交 JSON 规格"}
                 </button>
@@ -349,7 +375,6 @@ export function EditPartModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </AccessibleDialog>
   );
 }

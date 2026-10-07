@@ -119,13 +119,30 @@ pub fn execute_source(
     attempt: u32,
     cancel: &CancelFlag,
 ) -> ActionRecord {
+    let policy = super::storage::load_effective_policy();
+    execute_source_with_policy(id, source, attempt, cancel, &policy)
+}
+
+/// Runs one [`InstallSource`] using a frozen storage policy snapshot.
+pub fn execute_source_with_policy(
+    id: SoftwareId,
+    source: &InstallSource,
+    attempt: u32,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+) -> ActionRecord {
     let started = Instant::now();
     let started_at = now_iso8601();
 
     let (outcome, exit_code, output, error) = match source {
-        InstallSource::Winget { package_id } => run_winget(package_id, id, cancel),
-        InstallSource::OfficialInstaller { url, .. } => run_official_installer(url, id, cancel),
-        InstallSource::Script { command } => run_script(command, cancel),
+        InstallSource::Winget { package_id } => run_winget(package_id, id, cancel, policy),
+        InstallSource::OfficialInstaller { url, kind, vendor_id, .. } => {
+            let effective_kind = kind.unwrap_or_else(|| InstallerKind::from_url_pathname(url));
+            run_official_installer(url, effective_kind, vendor_id.as_deref(), id, cancel, policy)
+        }
+        InstallSource::Script { command, program_kind, args } => {
+            run_script(command, *program_kind, args.as_deref(), cancel)
+        }
         InstallSource::ConfigurationOnly => (
             // Nothing to run. Recorded as a success so a configuration-only step
             // does not appear as a hole in the session, but with an explicit
@@ -140,11 +157,10 @@ pub fn execute_source(
     let command_desc = if let InstallSource::Winget { package_id } = source {
         let catalog = Catalog::builtin();
         let entry = catalog.entry(id);
-        let policy = super::storage::load_effective_policy();
         let args = super::storage::build_winget_args(
             package_id,
             entry.install_location,
-            &policy,
+            policy,
             entry.storage_subdir,
         );
         format!("winget {}", args.join(" "))
@@ -153,7 +169,9 @@ pub fn execute_source(
     };
 
     ActionRecord {
-        id,
+        id: Some(id),
+        subject_kind: SubjectKind::Software,
+        subject_id: id.key().to_string(),
         source: source.clone(),
         command: command_desc,
         started_at,
@@ -173,7 +191,12 @@ pub fn execute_source(
 // ---------------------------------------------------------------------------
 
 /// `winget install --id <package> -e --accept-* --silent [--location <path>]`.
-fn run_winget(package_id: &str, id: SoftwareId, cancel: &CancelFlag) -> ExecResult {
+fn run_winget(
+    package_id: &str,
+    id: SoftwareId,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
@@ -186,11 +209,10 @@ fn run_winget(package_id: &str, id: SoftwareId, cancel: &CancelFlag) -> ExecResu
             let version_note = format!("winget {version}\n");
             let catalog = Catalog::builtin();
             let entry = catalog.entry(id);
-            let policy = super::storage::load_effective_policy();
             let args_vec = super::storage::build_winget_args(
                 package_id,
                 entry.install_location,
-                &policy,
+                policy,
                 entry.storage_subdir,
             );
             let args_refs: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
@@ -244,19 +266,58 @@ pub fn winget_version() -> Result<String, String> {
 /// 2. **The file is written to our own work directory**, never to a temp path we
 ///    do not control, and it is removed afterwards. Not maintaining our own
 ///    binaries means not shipping them; it does not mean leaving them behind.
-fn run_official_installer(url: &str, id: SoftwareId, cancel: &CancelFlag) -> ExecResult {
+fn run_official_installer(
+    url: &str,
+    kind: InstallerKind,
+    vendor_id: Option<&str>,
+    id: SoftwareId,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
 
-    // `claude.ai/install.ps1` and similar are scripts, not executables. They
-    // have to go through PowerShell; everything else is passed to the shell
-    // association so the vendor's own installer UI behaves as the vendor made
-    // it. Distinguished by extension rather than by program name, so a new
-    // catalog entry needs no code change.
-    let is_script = url.ends_with(".ps1") || url.ends_with(".cmd") || url.ends_with(".bat");
+    if kind == InstallerKind::Unsupported {
+        return (
+            AttemptOutcome::Unavailable,
+            None,
+            format!("不支持的安装包格式：{url}"),
+            Some(format!(
+                "{url} 无法通过 URL 路径识别为受支持的安装包格式（exe/msi/ps1/cmd/bat）。已拒绝启动。"
+            )),
+        );
+    }
 
-    let Some(path) = download(url, id, cancel) else {
+    // Approved script sources policy: ps1 only from allowed vendor/origin
+    if kind == InstallerKind::Ps1 {
+        let is_allowed_origin = vendor_id == Some("anthropic") || url.starts_with("https://claude.ai/");
+        if !is_allowed_origin {
+            return (
+                AttemptOutcome::Unavailable,
+                None,
+                format!("未受信任的 PowerShell 脚本来源：{url}"),
+                Some("安全策略限制：仅允许来自受信任发行方的受控 PowerShell 安装脚本。".to_string()),
+            );
+        }
+    } else if kind == InstallerKind::Cmd || kind == InstallerKind::Bat {
+        let is_allowed = vendor_id.is_some();
+        if !is_allowed {
+            return (
+                AttemptOutcome::Unavailable,
+                None,
+                format!("未受信任的批处理脚本来源：{url}"),
+                Some("安全策略限制：外部 URL 批处理脚本禁止直接执行。".to_string()),
+            );
+        }
+    }
+
+    let extension = kind.extension();
+    let filename = format!("{}.{}", id.key(), extension);
+    let task_id = format!("dl-{}-{}", id.key(), std::process::id());
+    let dir = super::storage::resolve_download_directory(policy);
+
+    let Some(path) = download(url, &filename, &task_id, cancel, policy) else {
         return (
             AttemptOutcome::Unavailable,
             None,
@@ -267,84 +328,109 @@ fn run_official_installer(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Exe
         );
     };
 
-    // Before running anything: is this actually a program?
-    //
-    // Three catalog fallbacks pointed at *web pages* rather than installers
-    // (`claude.ai/download`, Git's `releases/latest` directory, Python's
-    // `/downloads/windows/`). The download succeeds, the file is non-empty, and
-    // the old code handed an HTML document to the OS — which either opens a
-    // browser or fails with an error nobody can act on.
-    //
-    // The check is on the file's *content*, not its URL, because the URL is
-    // exactly what was wrong in all three cases. A Windows executable begins
-    // `MZ`; a PowerShell script is text and is allowed through by the
-    // extension check above. Anything else is refused with a message that names
-    // the real problem, so the fallback chain can advance instead of the
-    // student being told an install failed for no visible reason.
-    if !is_script && !looks_like_windows_executable(&path) {
-        let _ = std::fs::remove_file(&path);
-        return (
-            AttemptOutcome::Unavailable,
-            None,
-            format!("下载到的不是安装程序：{url}"),
-            Some(format!(
-                "{url} 返回的是一个网页而不是安装包。这不是你的问题，已跳过这种方式。"
-            )),
-        );
-    }
-
-    let result = if is_script {
-        run_process(
-            "powershell",
-            &[
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                &path.to_string_lossy(),
-            ],
-            ATTEMPT_TIMEOUT,
-            cancel,
-        )
-    } else {
-        // `/passive` is not universal across vendors, so no flags are passed:
-        // the installer runs as its author intended. The cost is that some show
-        // UI; the benefit is that we never invent an argument a vendor does not
-        // support, which is how installers end up failing for one program only.
-        run_process(
-            &path.to_string_lossy(),
-            &[],
-            ATTEMPT_TIMEOUT,
-            cancel,
-        )
+    // Format verification per installer kind
+    let format_check_result = match kind {
+        InstallerKind::Exe => {
+            if looks_like_windows_pe(&path) {
+                Ok("PE/MZ 文件头验证通过（格式证据，来源真实性标记: provenanceUnknown）")
+            } else {
+                Err(format!("{url} 返回的内容不是有效的 Windows PE/EXE 程序（缺少 MZ 标记）。"))
+            }
+        }
+        InstallerKind::Msi => {
+            if looks_like_msi_package(&path) {
+                Ok("MSI 复合文档文件头验证通过（格式证据，来源真实性标记: provenanceUnknown）")
+            } else {
+                Err(format!("{url} 返回的内容不是有效的 MSI 安装包复合文档。"))
+            }
+        }
+        InstallerKind::Ps1 | InstallerKind::Cmd | InstallerKind::Bat => {
+            validate_script_file(&path).map(|_| "脚本文件文本与大小限制验证通过")
+        }
+        InstallerKind::Unsupported => unreachable!(),
     };
 
-    // Always clean up, success or failure. A stale installer in the work
-    // directory would be re-used by nothing, but it would sit in the student's
-    // LocalAppData forever.
+    let format_note = match format_check_result {
+        Ok(evidence) => evidence.to_string(),
+        Err(err) => {
+            let _ = std::fs::remove_file(&path);
+            super::storage::record_download_in_manifest(
+                &dir,
+                &filename,
+                &task_id,
+                super::storage::OwnershipStatus::Terminated,
+                0,
+            );
+            return (
+                AttemptOutcome::Unavailable,
+                None,
+                format!("安装包格式校验失败：{url}"),
+                Some(err),
+            );
+        }
+    };
+
+    // Controlled execution dispatch per InstallerKind
+    let result = match kind {
+        InstallerKind::Exe => {
+            run_process(&path.to_string_lossy(), &[], ATTEMPT_TIMEOUT, cancel)
+        }
+        InstallerKind::Msi => {
+            let msiexec = crate::modules::system_ops::system32_executable("msiexec.exe");
+            let msiexec_str = msiexec.to_string_lossy();
+            let path_str = path.to_string_lossy();
+            run_process(&msiexec_str, &["/i", &path_str, "/qn", "/norestart"], ATTEMPT_TIMEOUT, cancel)
+        }
+        InstallerKind::Ps1 => {
+            let ps_v1 = crate::modules::system_ops::system32_executable("WindowsPowerShell\\v1.0\\powershell.exe");
+            let ps_str = if ps_v1.exists() {
+                ps_v1.to_string_lossy().to_string()
+            } else {
+                crate::modules::system_ops::system32_executable("powershell.exe").to_string_lossy().to_string()
+            };
+            let path_str = path.to_string_lossy();
+            run_process(
+                &ps_str,
+                &["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", &path_str],
+                ATTEMPT_TIMEOUT,
+                cancel,
+            )
+        }
+        InstallerKind::Cmd | InstallerKind::Bat => {
+            let cmd_exe = crate::modules::system_ops::system32_executable("cmd.exe");
+            let cmd_str = cmd_exe.to_string_lossy().to_string();
+            let path_str = path.to_string_lossy();
+            run_process(&cmd_str, &["/D", "/C", &path_str], ATTEMPT_TIMEOUT, cancel)
+        }
+        InstallerKind::Unsupported => unreachable!(),
+    };
+
+    // Clean up temporary downloaded installer
     let _ = std::fs::remove_file(&path);
+    super::storage::record_download_in_manifest(
+        &dir,
+        &filename,
+        &task_id,
+        super::storage::OwnershipStatus::Terminated,
+        0,
+    );
 
     match result {
-        Ok(r) => classify(url, r.exit_code, r.output),
+        Ok(r) => {
+            let combined = format!("{format_note}\n{}", r.output);
+            classify_with_kind(url, r.exit_code, combined, Some(kind))
+        }
         Err(e) => (
             AttemptOutcome::Unavailable,
             None,
-            String::new(),
+            format_note,
             Some(format!("无法运行安装包：{e}")),
         ),
     }
 }
 
-/// Does this downloaded file start like a Windows program?
-///
-/// Only the magic number is checked, not the extension: the failure this guards
-/// against was a URL ending in nothing (or in `/download`) returning an HTML
-/// document. `MZ` is the DOS header every PE image starts with, and it is the
-/// cheapest reliable signal that the OS will be able to launch the file.
-///
-/// A missing or unreadable file is `false`: the caller treats that as "not a
-/// program", which is the safe direction.
-fn looks_like_windows_executable(path: &Path) -> bool {
+/// Does this downloaded file start like a Windows PE program?
+fn looks_like_windows_pe(path: &Path) -> bool {
     use std::io::Read;
 
     let Ok(mut file) = std::fs::File::open(path) else {
@@ -357,28 +443,81 @@ fn looks_like_windows_executable(path: &Path) -> bool {
     &magic == b"MZ"
 }
 
-/// Streams a URL to a file in the work directory.
-///
-/// Uses `System.Net.WebClient` through PowerShell rather than an HTTP crate:
-/// Windows ships a proxy-aware, certificate-validating TLS stack, and a
-/// dependency that exists only to fetch five URLs would be a poor trade. The
-/// download is chunked so cancellation is honoured mid-transfer instead of only
-/// between steps.
-fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
+/// Does this downloaded file start like an OLE compound document (MSI)?
+fn looks_like_msi_package(path: &Path) -> bool {
     use std::io::Read;
 
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0u8; 8];
+    if file.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    &magic == b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
+}
+
+/// Validates that a script file is within size limits and decodable as text.
+fn validate_script_file(path: &Path) -> Result<(), String> {
+    use std::io::Read;
+
+    let meta = std::fs::metadata(path).map_err(|e| format!("无法读取文件信息: {e}"))?;
+    if meta.len() > 10 * 1024 * 1024 {
+        return Err("脚本文件体积超出 10 MiB 上限".into());
+    }
+    let mut file = std::fs::File::open(path).map_err(|e| format!("无法打开文件: {e}"))?;
+    let mut head = [0u8; 1024];
+    let n = file.read(&mut head).unwrap_or(0);
+    let null_count = head[..n].iter().filter(|&&b| b == 0).count();
+    if null_count > 4 {
+        return Err("脚本文件内容疑似二进制非文本数据".into());
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn download_path_for(id: SoftwareId, url: &str) -> PathBuf {
     let policy = super::storage::load_effective_policy();
     let dir = super::storage::resolve_download_directory(&policy);
+    let kind = InstallerKind::from_url_pathname(url);
+    let ext = kind.extension();
+    dir.join(format!("{}.{}", id.key(), ext))
+}
+
+#[allow(dead_code)]
+fn is_inside_work_dir(path: &Path) -> bool {
+    let policy = super::storage::load_effective_policy();
+    let dir = super::storage::resolve_download_directory(&policy);
+    path.starts_with(&dir)
+}
+
+#[allow(dead_code)]
+fn looks_like_windows_executable(path: &Path) -> bool {
+    looks_like_windows_pe(path)
+}
+
+/// Streams a URL to a file in the download directory.
+fn download(
+    url: &str,
+    filename: &str,
+    task_id: &str,
+    cancel: &CancelFlag,
+    policy: &super::storage::StoragePolicy,
+) -> Option<PathBuf> {
+    use std::io::Read;
+
+    let dir = super::storage::resolve_download_directory(policy);
     std::fs::create_dir_all(&dir).ok()?;
 
-    let extension = if url.ends_with(".ps1") {
-        "ps1"
-    } else if url.ends_with(".msi") {
-        "msi"
-    } else {
-        "exe"
-    };
-    let path = dir.join(format!("{}.{}", id.key(), extension));
+    let path = dir.join(filename);
+
+    super::storage::record_download_in_manifest(
+        &dir,
+        filename,
+        task_id,
+        super::storage::OwnershipStatus::Downloading,
+        0,
+    );
 
     // Let PowerShell do the transfer, but wait on it here so we can cancel: a
     // synchronous `WebClient.DownloadFile` in a child process cannot be
@@ -406,12 +545,26 @@ fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&path);
+            super::storage::record_download_in_manifest(
+                &dir,
+                filename,
+                task_id,
+                super::storage::OwnershipStatus::Terminated,
+                0,
+            );
             return None;
         }
         match child.try_wait() {
             Ok(Some(status)) => {
                 if !status.success() {
                     let _ = std::fs::remove_file(&path);
+                    super::storage::record_download_in_manifest(
+                        &dir,
+                        filename,
+                        task_id,
+                        super::storage::OwnershipStatus::Failed,
+                        0,
+                    );
                     return None;
                 }
                 break;
@@ -421,12 +574,26 @@ fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
                     let _ = child.kill();
                     let _ = child.wait();
                     let _ = std::fs::remove_file(&path);
+                    super::storage::record_download_in_manifest(
+                        &dir,
+                        filename,
+                        task_id,
+                        super::storage::OwnershipStatus::Terminated,
+                        0,
+                    );
                     return None;
                 }
                 std::thread::sleep(Duration::from_millis(400));
             }
             Err(_) => {
                 let _ = std::fs::remove_file(&path);
+                super::storage::record_download_in_manifest(
+                    &dir,
+                    filename,
+                    task_id,
+                    super::storage::OwnershipStatus::Failed,
+                    0,
+                );
                 return None;
             }
         }
@@ -446,9 +613,25 @@ fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
     // A "download" that produced no file is a failure even with exit code 0 —
     // web clients can write an error page and report success.
     match std::fs::metadata(&path) {
-        Ok(meta) if meta.len() > 0 => Some(path),
+        Ok(meta) if meta.len() > 0 => {
+            super::storage::record_download_in_manifest(
+                &dir,
+                filename,
+                task_id,
+                super::storage::OwnershipStatus::Completed,
+                meta.len(),
+            );
+            Some(path)
+        }
         _ => {
             let _ = std::fs::remove_file(&path);
+            super::storage::record_download_in_manifest(
+                &dir,
+                filename,
+                task_id,
+                super::storage::OwnershipStatus::Failed,
+                0,
+            );
             None
         }
     }
@@ -460,39 +643,107 @@ fn download(url: &str, id: SoftwareId, cancel: &CancelFlag) -> Option<PathBuf> {
 
 /// Runs a documented package-manager command (`npm install -g …`).
 ///
-/// The command is executed through PowerShell, always with `-NoProfile` so the
-/// student's profile cannot change PATH out from under the command, and with
-/// `-ExecutionPolicy Bypass` scoped to this process only.
-///
-/// The command text comes from the catalog and is *not* interpolated with any
-/// user input, so there is no injection surface: the only strings that reach
-/// this function are the ones compiled into `catalog.rs`.
-fn run_script(command: &str, cancel: &CancelFlag) -> ExecResult {
+/// Dispatches to npm.cmd, npx.cmd, pip, python, powershell or cmd based on
+/// explicit ScriptProgramKind or detected command prefix. NPX is never rewritten
+/// to npm.
+fn run_script(
+    command: &str,
+    program_kind: Option<ScriptProgramKind>,
+    args: Option<&[String]>,
+    cancel: &CancelFlag,
+) -> ExecResult {
     if cancel.is_cancelled() {
         return cancelled();
     }
 
-    // Which interpreter runs the command is derived from the command itself, so
-    // a new catalogue entry needs no change here.
-    let first = command.split_whitespace().next().unwrap_or("");
-    let (program, args): (&str, Vec<String>) = if first == "npm" || first == "npx" {
-        // `.cmd` explicitly: `npm` on Windows is a batch shim, and spawning the
-        // bare name resolves to it only through PATH, which is exactly what is
-        // unreliable right after installing Node.
-        (
-            "cmd",
-            vec!["/C".into(), format!("npm{}", &command[first.len()..])],
-        )
-    } else if first == "pip" || first == "python" {
-        ("cmd", vec!["/C".into(), command.to_string()])
-    } else if first.starts_with("powershell") || first.ends_with(".ps1") {
-        ("powershell", vec!["-NoProfile".into(), "-Command".into(), command.to_string()])
+    let cmd_exe = crate::modules::system_ops::system32_executable("cmd.exe");
+    let cmd_str = cmd_exe.to_string_lossy().to_string();
+    let ps_v1 = crate::modules::system_ops::system32_executable("WindowsPowerShell\\v1.0\\powershell.exe");
+    let ps_str = if ps_v1.exists() {
+        ps_v1.to_string_lossy().to_string()
     } else {
-        ("cmd", vec!["/C".into(), command.to_string()])
+        crate::modules::system_ops::system32_executable("powershell.exe").to_string_lossy().to_string()
     };
 
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    match run_process(program, &arg_refs, ATTEMPT_TIMEOUT, cancel) {
+    let kind = program_kind.unwrap_or_else(|| {
+        let first = command.split_whitespace().next().unwrap_or("");
+        match first {
+            "npm" => ScriptProgramKind::Npm,
+            "npx" => ScriptProgramKind::Npx,
+            "pip" => ScriptProgramKind::Pip,
+            "python" => ScriptProgramKind::Python,
+            "powershell" => ScriptProgramKind::PowerShell,
+            _ => {
+                if first.ends_with(".ps1") {
+                    ScriptProgramKind::PowerShell
+                } else {
+                    ScriptProgramKind::Cmd
+                }
+            }
+        }
+    });
+
+    let (program, process_args): (String, Vec<String>) = match kind {
+        ScriptProgramKind::Npm => {
+            let mut v = vec!["/D".to_string(), "/C".to_string(), "npm.cmd".to_string()];
+            if let Some(structured) = args {
+                v.extend(structured.iter().cloned());
+            } else {
+                v.extend(command.split_whitespace().skip(1).map(String::from));
+            }
+            (cmd_str, v)
+        }
+        ScriptProgramKind::Npx => {
+            let mut v = vec!["/D".to_string(), "/C".to_string(), "npx.cmd".to_string()];
+            if let Some(structured) = args {
+                v.extend(structured.iter().cloned());
+            } else {
+                v.extend(command.split_whitespace().skip(1).map(String::from));
+            }
+            (cmd_str, v)
+        }
+        ScriptProgramKind::Pip => {
+            let mut v = vec!["/D".to_string(), "/C".to_string(), "pip".to_string()];
+            if let Some(structured) = args {
+                v.extend(structured.iter().cloned());
+            } else {
+                v.extend(command.split_whitespace().skip(1).map(String::from));
+            }
+            (cmd_str, v)
+        }
+        ScriptProgramKind::Python => {
+            let mut v = vec!["/D".to_string(), "/C".to_string(), "python".to_string()];
+            if let Some(structured) = args {
+                v.extend(structured.iter().cloned());
+            } else {
+                v.extend(command.split_whitespace().skip(1).map(String::from));
+            }
+            (cmd_str, v)
+        }
+        ScriptProgramKind::PowerShell => {
+            let mut v = vec!["-NoProfile".to_string(), "-ExecutionPolicy".to_string(), "Bypass".to_string()];
+            if let Some(structured) = args {
+                v.push("-Command".to_string());
+                v.extend(structured.iter().cloned());
+            } else {
+                v.push("-Command".to_string());
+                v.push(command.to_string());
+            }
+            (ps_str, v)
+        }
+        ScriptProgramKind::Cmd => {
+            let mut v = vec!["/D".to_string(), "/C".to_string()];
+            if let Some(structured) = args {
+                v.extend(structured.iter().cloned());
+            } else {
+                v.push(command.to_string());
+            }
+            (cmd_str, v)
+        }
+    };
+
+    let arg_refs: Vec<&str> = process_args.iter().map(String::as_str).collect();
+    match run_process(&program, &arg_refs, ATTEMPT_TIMEOUT, cancel) {
         Ok(r) => classify(command, r.exit_code, r.output),
         Err(e) => (
             AttemptOutcome::Unavailable,
@@ -525,197 +776,90 @@ fn run_process(
     timeout: Duration,
     cancel: &CancelFlag,
 ) -> Result<ProcessResult, String> {
-    let mut cmd = std::process::Command::new(program);
-    cmd.args(args);
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-    cmd.stdin(std::process::Stdio::null());
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    let spec = crate::modules::process::ProcessSpec::new(program, args)
+        .with_timeout(timeout)
+        .with_cancel(cancel.clone());
 
-    let child = cmd.spawn().map_err(|e| e.to_string())?;
-    let started = Instant::now();
-    let mut child = child;
+    let res = crate::modules::process::execute_process(&spec)?;
 
-    // Poll rather than block so cancellation and the runaway timeout are both
-    // honoured. The pipes stay open, so output is not lost by doing this.
-    let status = loop {
-        if cancel.is_cancelled() {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("已取消".into());
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
-                if started.elapsed() > timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!(
-                        "超过 {} 分钟未完成，已终止",
-                        timeout.as_secs() / 60
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(150));
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-    };
-
-    // Read whatever the process wrote. Done after exit so the reads cannot
-    // deadlock against a full pipe buffer.
-    let mut bytes = Vec::new();
-    if let Some(mut out) = child.stdout.take() {
-        use std::io::Read;
-        let _ = out.read_to_end(&mut bytes);
+    match res.termination_reason {
+        crate::modules::process::TerminationReason::Cancelled => Err("已取消".into()),
+        crate::modules::process::TerminationReason::Timeout => Err(format!(
+            "超过 {} 分钟未完成，已终止",
+            timeout.as_secs() / 60
+        )),
+        _ => Ok(ProcessResult {
+            exit_code: res.exit_code.unwrap_or(-1),
+            output: res.merged_output,
+        }),
     }
-    if let Some(mut err) = child.stderr.take() {
-        use std::io::Read;
-        let mut err_bytes = Vec::new();
-        let _ = err.read_to_end(&mut err_bytes);
-        if !err_bytes.is_empty() {
-            bytes.push(b'\n');
-            bytes.extend_from_slice(&err_bytes);
-        }
-    }
-
-    Ok(ProcessResult {
-        exit_code: status.code().unwrap_or(-1),
-        output: decode_console_output(&bytes),
-    })
 }
 
 /// Turns a process exit code plus output into an outcome.
 ///
-/// The classification is based on **what the tools actually print**, not on the
-/// exit code alone, because exit codes are not portable between winget versions
-/// and a generic `1` tells the student nothing about what to do.
-///
-/// The markers below were all observed in real output:
-///
-/// | marker | source | real meaning |
-/// |---|---|---|
-/// | `0x8A15002B` | winget | needs elevation (`ACCESS_DENIED`) |
-/// | `requires administrator` | vendor installers | same |
-/// | `already installed` | winget | success, nothing to do |
-/// | `No package found` | winget | the id is wrong — retry another link |
-///
-/// `already installed` is deliberately folded into success. It is what a second
-/// run of a plan looks like, and reporting it as a failure would make "click
-/// install twice" appear broken.
+/// Priority is strictly based on the process exit code:
+/// - 0: Succeeded
+/// - 3010 / 1641: SucceededWithWarning (reboot required)
+/// - 0x8A150061: Succeeded (winget package already installed)
+/// - 5 / 740 / 0x8A15002B / 0x80073D28: PermissionDenied
+/// - Other non-zero exit codes: Failed (text only adds diagnostic context, never overrides exit code)
 pub fn classify(subject: &str, exit_code: i32, output: String) -> ExecResult {
+    classify_with_kind(subject, exit_code, output, None)
+}
+
+pub fn classify_with_kind(
+    subject: &str,
+    exit_code: i32,
+    output: String,
+    _kind: Option<InstallerKind>,
+) -> ExecResult {
     let lower = output.to_lowercase();
 
-    // Elevation markers, in both languages.
-    //
-    // The substring choices here are load-bearing and were each observed in real
-    // output, not guessed. Two are worth explaining:
-    //
-    // * `administrator privileges are required` — winget's MSIX path prints
-    //   exactly this wording, and it does *not* contain the phrase
-    //   `requires administrator` (the words are in the opposite order). An
-    //   earlier version matched only the latter, so a real Claude Desktop
-    //   install failure (`0x80073D28`) fell through to the generic
-    //   "安装失败" branch and the student was told nothing actionable. Both
-    //   orders are matched below.
-    // * `0x80073d28` — `ERROR_INSTALL_PACKAGE_REQUIRES_ELEVATION`. It is a
-    //   Win32/AppX HRESULT, so it shares no prefix with winget's own
-    //   `0x8A15xxxx` codes and needs its own marker.
-    //
-    // Matching is done on a lowercased copy, so every literal here is lowercase.
-    let permission = lower.contains("access is denied")
-        || lower.contains("access denied")
-        || lower.contains("0x8a15002b")
-        || lower.contains("0x80073d28")
-        || lower.contains("requires administrator")
-        || lower.contains("administrator privileges are required")
-        || lower.contains("privileges are required")
-        || lower.contains("需要管理员")
-        || lower.contains("管理员权限")
-        || lower.contains("需要提升")
-        || lower.contains("elevated")
-        || lower.contains("没有足够的权限")
-        || lower.contains("权限不足")
-        || lower.contains("拒绝访问");
+    // 1. Process exit code 0 is an action success.
+    if exit_code == 0 {
+        return (AttemptOutcome::Succeeded, Some(exit_code), output, None);
+    }
 
-    // A benign outcome that winget reports with a *non-zero* exit code.
-    //
-    // `0x8A150061` is `APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED`: the
-    // package is present, which for our purposes is the desired end state. This
-    // must be recognised by the code *and* the phrase together, because on its
-    // own the code means nothing to a human reading the log and the phrase
-    // alone appears in the narration of failures (see `failure_evidence`).
-    let already_installed = lower.contains("already installed")
-        || lower.contains("0x8a150061")
-        || lower.contains("已安装") || lower.contains("已存在");
+    // 2. MSI reboot codes (3010, 1641) -> SucceededWithWarning
+    if exit_code == 3010 || exit_code == 1641 {
+        let note = "安装完成，但系统需要重启以使更改生效。".to_string();
+        return (
+            AttemptOutcome::SucceededWithWarning,
+            Some(exit_code),
+            output,
+            Some(note),
+        );
+    }
 
-    // Evidence that the attempt *failed*, checked before any success
-    // heuristic.
-    //
-    // Order matters here, and getting it wrong was a worse bug than the
-    // message wording: winget's upgrade path prints "找到已安装的现有包。正在尝试
-    // 升级已安装的包…" *before* it fails, so the success marker `已安装` matched
-    // the preamble of a run that then died with 0x80073D28. The step was
-    // reported as **Succeeded** and the student was told a program was
-    // installed that was not.
-    //
-    // The rule this encodes: a failure indicator anywhere in the output
-    // outranks a success phrase anywhere in it, because installers narrate
-    // their intent ("trying to upgrade the installed package") before they
-    // act, and that narration contains success-sounding words.
-    let failure_evidence = lower.contains("installer failed")
-        || lower.contains("安装程序失败")
-        || lower.contains("installation failed")
-        || lower.contains("安装失败")
-        || lower.contains("failed with exit code")
-        || lower.contains("error 0x")
-        || lower.contains("错误 0x");
+    // 3. Winget specific exit code 0x8A150061 (APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED)
+    // Only mapped on its exact exit code; loose substrings do not override non-zero failures.
+    if (exit_code as u32) == 0x8A150061 {
+        return (AttemptOutcome::Succeeded, Some(exit_code), output, None);
+    }
 
-    if permission {
+    // 4. Elevation markers only mapped from explicit permission error codes:
+    // 5 = ERROR_ACCESS_DENIED, 740 = ERROR_ELEVATION_REQUIRED
+    // 0x8A15002B = winget ACCESS_DENIED
+    // 0x80073D28 = ERROR_INSTALL_PACKAGE_REQUIRES_ELEVATION
+    let is_permission_exit_code = exit_code == 5
+        || exit_code == 740
+        || (exit_code as u32) == 0x8A15002B
+        || (exit_code as u32) == 0x80073D28;
+
+    if is_permission_exit_code {
         return (
             AttemptOutcome::PermissionDenied,
             Some(exit_code),
             output,
             Some(format!(
-                "{} 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试。",
-                subject
+                "{} 需要管理员权限。请关闭本程序，右键「以管理员身份运行」后重试（退出码 {}）。",
+                subject,
+                format_exit_code(exit_code)
             )),
         );
     }
 
-    // Precedence, stated explicitly because each clause was a real bug:
-    //
-    //   1. a failure indicator → Failed, whatever the exit code says
-    //   2. a benign "already there" outcome → Succeeded, *even on a non-zero
-    //      exit code* (`0x8A150061`)
-    //   3. a non-zero exit code → Failed
-    //   4. otherwise → Succeeded
-    //
-    // Clause 2 exists because winget encodes "already installed" as an error
-    // code; treating a non-zero code as authoritative unconditionally (as an
-    // intermediate version of this function did) broke the most common
-    // real-world case: running a plan a second time.
-    if failure_evidence {
-        let reason = if is_no_package_found(&lower) {
-            // The message names the wrong-package case, but the code is still
-            // appended: the hex HRESULT is how this failure is looked up, and
-            // dropping it here (as an earlier version did) removed the one detail a
-            // student pasting the error into a search engine needs.
-            format!(
-                "{subject}：软件源中没有找到对应的包（退出码 {}）",
-                format_exit_code(exit_code)
-            )
-        } else {
-            format!("{subject} 安装失败（退出码 {}）", format_exit_code(exit_code))
-        };
-
-        return (AttemptOutcome::Failed, Some(exit_code), output, Some(reason));
-    }
-
-    if already_installed || exit_code == 0 {
-        return (AttemptOutcome::Succeeded, Some(exit_code), output, None);
-    }
-
+    // 5. All other non-zero exit codes -> Failed. Output text provides diagnostic details only.
     let reason = if is_no_package_found(&lower) {
         format!(
             "{subject}：软件源中没有找到对应的包（退出码 {}）",
@@ -856,15 +1000,15 @@ pub fn readiness(plan: &InstallPlan, catalog: &Catalog, is_elevated: bool) -> Ex
     }
 }
 
-/// Removes the downloaded payloads of a finished session.
+/// Removes the downloaded payloads of a finished session using the ownership manifest.
 pub fn clean_downloads() {
     let policy = super::storage::load_effective_policy();
-    super::storage::clean_downloads_with_policy(&policy);
+    super::storage::clean_downloads_with_manifest(&policy, &[]);
 }
 
-/// Removes the downloaded payloads using an explicit policy.
+/// Removes the downloaded payloads using an explicit policy and manifest.
 pub fn clean_downloads_with_policy(policy: &StoragePolicy) {
-    super::storage::clean_downloads_with_policy(policy);
+    super::storage::clean_downloads_with_manifest(policy, &[]);
 }
 
 /// Absolute path an installer would be downloaded to. Exposed so a test can
@@ -885,7 +1029,7 @@ pub fn download_path_for(id: SoftwareId, url: &str) -> PathBuf {
 /// Does this path live inside the directory we are allowed to write to?
 pub fn is_inside_work_dir(path: &Path) -> bool {
     let work = super::detect::work_directory();
-    path.starts_with(&work)
+    super::path_policy::resolve_under_root(&work, &path.to_string_lossy()).is_ok()
 }
 
 #[cfg(test)]
@@ -1302,6 +1446,8 @@ mod tests {
             SoftwareId::Git,
             &InstallSource::Script {
                 command: "npm install -g something".into(),
+                program_kind: Some(ScriptProgramKind::Npm),
+                args: None,
             },
             0,
             &cancel,
@@ -1387,7 +1533,7 @@ mod tests {
         let cat = Catalog::builtin();
         for id in SoftwareId::ALL {
             for strategy in cat.entry(id).install {
-                let StrategySource::OfficialInstaller(url) = strategy.source else {
+                let StrategySource::OfficialInstaller { ref url, .. } = strategy.source else {
                     continue;
                 };
                 let page_like = url.ends_with("/download")

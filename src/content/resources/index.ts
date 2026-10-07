@@ -103,13 +103,19 @@ export const RESOURCE_CATEGORIES: ResourceCategoryMeta[] = [...BUILTIN_CATEGORIE
 /** The complete aggregated catalog of developer and creative resources */
 export const RESOURCE_CATALOG: ResourceItem[] = [...discoveredResources];
 
+import { isSameContentId } from "../idAliases";
+
 /** Register or update a resource in the active catalog */
 export function registerResource(item: ResourceItem): void {
-  const existingIdx = RESOURCE_CATALOG.findIndex((r) => r.id === item.id);
+  const normalizedItem: ResourceItem = {
+    ...item,
+    license: item.license || "unknown",
+  };
+  const existingIdx = RESOURCE_CATALOG.findIndex((r) => isSameContentId(r.id, item.id));
   if (existingIdx >= 0) {
-    RESOURCE_CATALOG[existingIdx] = item;
+    RESOURCE_CATALOG[existingIdx] = normalizedItem;
   } else {
-    RESOURCE_CATALOG.push(item);
+    RESOURCE_CATALOG.push(normalizedItem);
   }
 }
 
@@ -130,9 +136,9 @@ export function getFeaturedResources(): ResourceItem[] {
   return RESOURCE_CATALOG.filter((item) => item.featured);
 }
 
-/** Retrieve resource item by ID */
+/** Retrieve resource item by ID or alias */
 export function getResourceById(id: string): ResourceItem | undefined {
-  return RESOURCE_CATALOG.find((item) => item.id === id);
+  return RESOURCE_CATALOG.find((item) => isSameContentId(item.id, id));
 }
 
 /** Search resources across name, description, tags, and recommended reason */

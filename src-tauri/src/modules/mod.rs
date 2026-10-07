@@ -29,6 +29,7 @@
 //! it is *data*, and both `install` and `executor` derive their behaviour from it
 //! so the three cannot drift apart.
 
+pub mod atomic_file;
 pub mod bootstrap;
 pub mod catalog;
 pub mod capability;
@@ -41,10 +42,14 @@ pub mod inventory;
 pub mod knowledge;
 pub mod license;
 pub mod machine;
+pub mod path_policy;
 pub mod plugins;
+pub mod process;
 pub mod profiles;
+pub mod scaffold;
 pub mod storage;
 pub mod system_ops;
+pub mod task;
 pub mod verify;
 // The Software Intelligence Layer's tests live in their own file because they
 // are the largest single body of tests in the crate, they depend on checked-in

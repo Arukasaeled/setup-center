@@ -37,6 +37,7 @@
 //! file reveals nothing about the hardware it was bound to.
 
 use super::crypto::{hex, sha256};
+use serde::{Deserialize, Serialize};
 
 use std::process::Command;
 
@@ -185,9 +186,7 @@ impl Component {
                 );
                 format!("{m} {p}").trim().to_string()
             }
-            Component::Disk => query_wmi(
-                "(Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq 0 } | Select-Object -First 1).SerialNumber",
-            ),
+            Component::Disk => read_system_disk_serial(),
         }
     }
 }
@@ -248,6 +247,311 @@ fn query_wmi(script: &str) -> String {
         return String::new();
     };
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// Reads the serial number of the physical disk backing the Windows system volume.
+///
+/// Deliberately resolves the volume rather than assuming Disk Index 0: on multi-disk
+/// NVMe/SATA setups or systems booted from another drive, Index 0 is often a data drive
+/// that can be removed or swapped, which would break machine binding (Issue A10).
+#[cfg(windows)]
+fn read_system_disk_serial() -> String {
+    let script = r#"
+$sysDrive = $env:SystemDrive
+if (-not $sysDrive) { $sysDrive = 'C:' }
+$dl = $sysDrive.TrimEnd(':')
+$part = Get-Partition -DriveLetter $dl -ErrorAction SilentlyContinue
+if ($part) {
+    $disk = Get-Disk -Number $part.DiskNumber -ErrorAction SilentlyContinue
+    if ($disk -and $disk.SerialNumber) {
+        $disk.SerialNumber.Trim()
+        exit
+    }
+}
+$assoc = Get-CimInstance -Query "ASSOCIATORS OF {Win32_LogicalDisk.DeviceID='$sysDrive'} WHERE AssocClass=Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
+if ($assoc) {
+    $drive = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($assoc.DeviceID)'} WHERE AssocClass=Win32_DiskDriveToDiskPartition" -ErrorAction SilentlyContinue
+    if ($drive -and $drive.SerialNumber) {
+        $drive.SerialNumber.Trim()
+        exit
+    }
+}
+(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object -First 1).SerialNumber
+"#;
+    query_wmi(script)
+}
+
+#[cfg(not(windows))]
+fn read_system_disk_serial() -> String {
+    String::new()
+}
+
+/// Reads the system hardware UUID from WMI.
+#[cfg(windows)]
+fn read_system_uuid() -> String {
+    query_wmi("(Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue).UUID")
+}
+
+#[cfg(not(windows))]
+fn read_system_uuid() -> String {
+    String::new()
+}
+
+// ---------------------------------------------------------------------------
+// Device Evidence V2 (Issue A10)
+// ---------------------------------------------------------------------------
+
+/// The individual components of a machine's evidence record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceComponentKind {
+    SystemUuid,
+    MachineGuid,
+    SystemDiskSerial,
+    CpuModel,
+    BoardModel,
+}
+
+impl DeviceComponentKind {
+    pub fn is_strong(self) -> bool {
+        matches!(
+            self,
+            DeviceComponentKind::SystemUuid
+                | DeviceComponentKind::MachineGuid
+                | DeviceComponentKind::SystemDiskSerial
+        )
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DeviceComponentKind::SystemUuid => "system-uuid",
+            DeviceComponentKind::MachineGuid => "machine-guid",
+            DeviceComponentKind::SystemDiskSerial => "system-disk-serial",
+            DeviceComponentKind::CpuModel => "cpu-model",
+            DeviceComponentKind::BoardModel => "board-model",
+        }
+    }
+}
+
+/// Status of probing a component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ComponentStatus {
+    Available,
+    Missing,
+    PermissionDenied,
+    WeakDefaultValue,
+    QueryFailed,
+}
+
+/// One observed component in the V2 device evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceComponentV2 {
+    pub kind: DeviceComponentKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub status: ComponentStatus,
+    pub is_strong: bool,
+}
+
+/// V2 Device Evidence record containing structured observations with explicit statuses.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceEvidenceV2 {
+    pub version: u32,
+    pub components: Vec<DeviceComponentV2>,
+    pub observed_at: String,
+}
+
+/// Verdict from matching current machine evidence against stored evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceMatchVerdict {
+    Matched,
+    Mismatch,
+    NeedsAttention,
+}
+
+/// Identifies common placeholder or default strings that must not be counted as strong unique identifiers.
+pub fn is_weak_or_default_value(val: &str) -> bool {
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    let is_all_zeros = trimmed.chars().all(|c| c == '0' || c == '-');
+    let is_all_f = trimmed.chars().all(|c| c == 'f' || c == 'F' || c == '-');
+    is_all_zeros
+        || is_all_f
+        || lower == "default string"
+        || lower == "to be filled by o.e.m."
+        || lower == "to be filled by oem"
+        || lower == "system serial number"
+        || lower == "none"
+        || lower == "unknown"
+        || lower == "not applicable"
+        || lower == "chassis serial number"
+}
+
+impl DeviceEvidenceV2 {
+    /// Captures the structured hardware evidence of this machine.
+    pub fn capture() -> Self {
+        let mut components = Vec::with_capacity(5);
+
+        // 1. SystemUuid (Strong)
+        let uuid_raw = read_system_uuid();
+        let (uuid_val, uuid_status) = if uuid_raw.is_empty() {
+            (None, ComponentStatus::Missing)
+        } else if is_weak_or_default_value(&uuid_raw) {
+            (Some(uuid_raw), ComponentStatus::WeakDefaultValue)
+        } else {
+            (Some(uuid_raw), ComponentStatus::Available)
+        };
+        components.push(DeviceComponentV2 {
+            kind: DeviceComponentKind::SystemUuid,
+            value: uuid_val,
+            status: uuid_status,
+            is_strong: true,
+        });
+
+        // 2. MachineGuid (Strong)
+        let guid_raw = read_machine_guid();
+        let (guid_val, guid_status) = if guid_raw.is_empty() {
+            (None, ComponentStatus::Missing)
+        } else if is_weak_or_default_value(&guid_raw) {
+            (Some(guid_raw), ComponentStatus::WeakDefaultValue)
+        } else {
+            (Some(guid_raw), ComponentStatus::Available)
+        };
+        components.push(DeviceComponentV2 {
+            kind: DeviceComponentKind::MachineGuid,
+            value: guid_val,
+            status: guid_status,
+            is_strong: true,
+        });
+
+        // 3. SystemDiskSerial (Strong)
+        let disk_raw = read_system_disk_serial();
+        let (disk_val, disk_status) = if disk_raw.is_empty() {
+            (None, ComponentStatus::Missing)
+        } else if is_weak_or_default_value(&disk_raw) {
+            (Some(disk_raw), ComponentStatus::WeakDefaultValue)
+        } else {
+            (Some(disk_raw), ComponentStatus::Available)
+        };
+        components.push(DeviceComponentV2 {
+            kind: DeviceComponentKind::SystemDiskSerial,
+            value: disk_val,
+            status: disk_status,
+            is_strong: true,
+        });
+
+        // 4. CpuModel (Informational)
+        let cpu_raw = query_wmi("(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1).Name");
+        let (cpu_val, cpu_status) = if cpu_raw.is_empty() {
+            (None, ComponentStatus::Missing)
+        } else {
+            (Some(cpu_raw), ComponentStatus::Available)
+        };
+        components.push(DeviceComponentV2 {
+            kind: DeviceComponentKind::CpuModel,
+            value: cpu_val,
+            status: cpu_status,
+            is_strong: false,
+        });
+
+        // 5. BoardModel (Informational)
+        let m = query_wmi("(Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue | Select-Object -First 1).Manufacturer");
+        let p = query_wmi("(Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue | Select-Object -First 1).Product");
+        let board_raw = format!("{m} {p}").trim().to_string();
+        let (board_val, board_status) = if board_raw.is_empty() {
+            (None, ComponentStatus::Missing)
+        } else if is_weak_or_default_value(&board_raw) {
+            (Some(board_raw), ComponentStatus::WeakDefaultValue)
+        } else {
+            (Some(board_raw), ComponentStatus::Available)
+        };
+        components.push(DeviceComponentV2 {
+            kind: DeviceComponentKind::BoardModel,
+            value: board_val,
+            status: board_status,
+            is_strong: false,
+        });
+
+        DeviceEvidenceV2 {
+            version: 2,
+            components,
+            observed_at: crate::modules::detect::now_iso8601(),
+        }
+    }
+
+    /// Evaluates current machine evidence against the stored evidence.
+    ///
+    /// Fixed V2 matching rule (Audit A10):
+    /// - At least 2 of the 3 strong components must be Available in stored evidence.
+    /// - At least 2 of the strong components must match between current and stored.
+    /// - If matching fails and current strong probes are fewer than 2, reports NeedsAttention.
+    /// - A single component change (e.g. MachineGuid after reinstall) still matches if the other two agree.
+    pub fn match_against(&self, stored: &DeviceEvidenceV2) -> DeviceMatchVerdict {
+        let strong_kinds = [
+            DeviceComponentKind::SystemUuid,
+            DeviceComponentKind::MachineGuid,
+            DeviceComponentKind::SystemDiskSerial,
+        ];
+
+        let stored_strong_available = strong_kinds
+            .iter()
+            .filter(|&&k| {
+                stored
+                    .components
+                    .iter()
+                    .any(|c| c.kind == k && c.status == ComponentStatus::Available && c.value.is_some())
+            })
+            .count();
+
+        if stored_strong_available < 2 {
+            return DeviceMatchVerdict::NeedsAttention;
+        }
+
+        let current_strong_available = strong_kinds
+            .iter()
+            .filter(|&&k| {
+                self
+                    .components
+                    .iter()
+                    .any(|c| c.kind == k && c.status == ComponentStatus::Available && c.value.is_some())
+            })
+            .count();
+
+        let mut matched_count = 0;
+        for &k in &strong_kinds {
+            let stored_val = stored
+                .components
+                .iter()
+                .find(|c| c.kind == k && c.status == ComponentStatus::Available)
+                .and_then(|c| c.value.as_deref());
+            let current_val = self
+                .components
+                .iter()
+                .find(|c| c.kind == k && c.status == ComponentStatus::Available)
+                .and_then(|c| c.value.as_deref());
+
+            if let (Some(s), Some(c)) = (stored_val, current_val) {
+                if s.trim().eq_ignore_ascii_case(c.trim()) {
+                    matched_count += 1;
+                }
+            }
+        }
+
+        if matched_count >= 2 {
+            DeviceMatchVerdict::Matched
+        } else if current_strong_available < 2 {
+            DeviceMatchVerdict::NeedsAttention
+        } else {
+            DeviceMatchVerdict::Mismatch
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -426,5 +730,98 @@ mod tests {
         // an empty string, not panic or hang.
         let got = query_wmi("throw 'nope'");
         assert!(got.is_empty() || got.contains("nope"));
+    }
+
+    // -- DeviceEvidenceV2 tests (Issue A10) ----------------------------------
+
+    fn make_test_evidence(
+        uuid: Option<&str>,
+        guid: Option<&str>,
+        disk: Option<&str>,
+    ) -> DeviceEvidenceV2 {
+        let components = vec![
+            DeviceComponentV2 {
+                kind: DeviceComponentKind::SystemUuid,
+                value: uuid.map(String::from),
+                status: if uuid.is_some() {
+                    ComponentStatus::Available
+                } else {
+                    ComponentStatus::Missing
+                },
+                is_strong: true,
+            },
+            DeviceComponentV2 {
+                kind: DeviceComponentKind::MachineGuid,
+                value: guid.map(String::from),
+                status: if guid.is_some() {
+                    ComponentStatus::Available
+                } else {
+                    ComponentStatus::Missing
+                },
+                is_strong: true,
+            },
+            DeviceComponentV2 {
+                kind: DeviceComponentKind::SystemDiskSerial,
+                value: disk.map(String::from),
+                status: if disk.is_some() {
+                    ComponentStatus::Available
+                } else {
+                    ComponentStatus::Missing
+                },
+                is_strong: true,
+            },
+        ];
+        DeviceEvidenceV2 {
+            version: 2,
+            components,
+            observed_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn v2_matching_accepts_two_matching_strong_components() {
+        let stored = make_test_evidence(Some("UUID-1"), Some("GUID-1"), Some("DISK-1"));
+        // MachineGuid changed (e.g. OS reinstalled), but UUID and Disk match
+        let current = make_test_evidence(Some("UUID-1"), Some("GUID-2"), Some("DISK-1"));
+        assert_eq!(current.match_against(&stored), DeviceMatchVerdict::Matched);
+    }
+
+    #[test]
+    fn v2_matching_rejects_when_fewer_than_two_strong_components_match() {
+        let stored = make_test_evidence(Some("UUID-1"), Some("GUID-1"), Some("DISK-1"));
+        // Only UUID matches, GUID and Disk belong to a different machine
+        let current = make_test_evidence(Some("UUID-1"), Some("GUID-2"), Some("DISK-2"));
+        assert_eq!(current.match_against(&stored), DeviceMatchVerdict::Mismatch);
+    }
+
+    #[test]
+    fn v2_matching_needs_attention_when_stored_has_fewer_than_two_strong_components() {
+        let stored = make_test_evidence(Some("UUID-1"), None, None);
+        let current = make_test_evidence(Some("UUID-1"), Some("GUID-1"), Some("DISK-1"));
+        assert_eq!(
+            current.match_against(&stored),
+            DeviceMatchVerdict::NeedsAttention
+        );
+    }
+
+    #[test]
+    fn v2_matching_needs_attention_when_current_probes_insufficient() {
+        let stored = make_test_evidence(Some("UUID-1"), Some("GUID-1"), Some("DISK-1"));
+        // Current machine only has one probe working (e.g. WMI broken, reg denied)
+        let current = make_test_evidence(Some("UUID-1"), None, None);
+        assert_eq!(
+            current.match_against(&stored),
+            DeviceMatchVerdict::NeedsAttention
+        );
+    }
+
+    #[test]
+    fn weak_default_values_are_detected() {
+        assert!(is_weak_or_default_value("00000000-0000-0000-0000-000000000000"));
+        assert!(is_weak_or_default_value("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"));
+        assert!(is_weak_or_default_value("To be filled by O.E.M."));
+        assert!(is_weak_or_default_value("None"));
+        assert!(is_weak_or_default_value("Default string"));
+        assert!(!is_weak_or_default_value("4A2C85A1-97BD-41D8-868C-226871DFDE25"));
     }
 }

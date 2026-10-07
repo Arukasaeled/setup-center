@@ -17,6 +17,10 @@ echo.
 
 set /p CHOICE=Choose a number:
 
+if not defined LEDGER_PATH (
+    set /p LEDGER_PATH=Enter external ledger path (--ledger): 
+)
+
 if "%CHOICE%"=="1" goto list
 if "%CHOICE%"=="2" goto status
 if "%CHOICE%"=="3" goto verify
@@ -31,11 +35,11 @@ pause
 exit /b 1
 
 :list
-license_admin.exe list
+license_admin.exe list --ledger "%LEDGER_PATH%"
 goto done
 
 :status
-license_admin.exe status
+license_admin.exe status --ledger "%LEDGER_PATH%"
 goto done
 
 :verify
@@ -45,7 +49,7 @@ echo.
 set /p CODE=Code:
 if not defined CODE goto done
 echo.
-license_admin.exe verify %CODE%
+license_admin.exe verify %CODE% --ledger "%LEDGER_PATH%"
 goto done
 
 :mark_activated
@@ -56,11 +60,11 @@ set /p DEV=Device hash of the other machine (press Enter if unknown):
 set /p NOTE=Note, e.g. who you gave it to (can be empty):
 echo.
 if not defined DEV goto act_nodev
-license_admin.exe mark %ID% activated %DEV% --note "%NOTE%"
+license_admin.exe mark %ID% activated %DEV% --note "%NOTE%" --ledger "%LEDGER_PATH%"
 goto done
 
 :act_nodev
-license_admin.exe mark %ID% activated "" --note "%NOTE%"
+license_admin.exe mark %ID% activated "" --note "%NOTE%" --ledger "%LEDGER_PATH%"
 goto done
 
 :mark_unused
@@ -68,7 +72,7 @@ echo.
 set /p ID=Serial number (e.g. 137):
 if not defined ID goto done
 echo.
-license_admin.exe mark %ID% unused
+license_admin.exe mark %ID% unused --ledger "%LEDGER_PATH%"
 goto done
 
 :mark_revoked
@@ -76,7 +80,7 @@ echo.
 set /p ID=Serial number (e.g. 137):
 if not defined ID goto done
 echo.
-license_admin.exe mark %ID% revoked
+license_admin.exe mark %ID% revoked --ledger "%LEDGER_PATH%"
 goto done
 
 :done

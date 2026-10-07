@@ -82,6 +82,16 @@ export interface VaultStyleManifest {
   designPrinciples?: string[];
 }
 
+export interface ScaffoldStep {
+  id?: string;
+  program: string;
+  args: string[];
+  cwd?: string;
+  description?: string;
+  optional?: boolean;
+  condition?: string;
+}
+
 export interface VaultTemplateItem {
   id: string;
   name: string;
@@ -99,6 +109,12 @@ export interface VaultTemplateItem {
     archiveUrl?: string;
     defaultDir?: string;
     postInstallNotice?: string;
+    steps?: ScaffoldStep[];
+    supportedPackageManagers?: string[];
+    defaultPackageManager?: string;
+    requiredCapabilities?: string[];
+    preparedOnly?: boolean;
+    targetSubdir?: string;
   };
   requirements?: string[];
   featured?: boolean;
@@ -119,6 +135,54 @@ export interface VaultPatternItem {
   updatedAt?: string;
 }
 
+export interface VaultSkillItem {
+  id: string;
+  name: string;
+  description: string;
+  author?: string;
+  tags?: string[];
+  prompt: string;
+  tools?: string[];
+  updatedAt?: string;
+}
+
+export interface VaultResourceItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  recommendedReason: string;
+  author: string;
+  tags: string[];
+  actionType: "github" | "external" | "download";
+  repository?: string;
+  homepage?: string;
+  downloadUrl?: string;
+  stars?: string | number | { value: string; source?: string; observedAt?: string };
+  license?: string;
+  licenseStatus?: "known" | "unknown" | "proprietary" | "mit" | "apache-2.0";
+  version?: string;
+  updatedAt?: string;
+  featured?: boolean;
+}
+
+export interface VaultReleaseCheckpoint {
+  releaseVersion: string;
+  commitSha: string;
+  snapshotTag: string;
+  publishedAt: string;
+  summary: string;
+  changes: string[];
+  collections: {
+    styles: number;
+    resources: number;
+    templates: number;
+    patterns: number;
+    skills?: number;
+    inbox?: number;
+  };
+}
+
 export interface VaultInboxItem {
   id: string;
   url: string;
@@ -131,6 +195,15 @@ export interface VaultInboxItem {
 }
 
 export type VaultSyncStatus = "idle" | "checking" | "syncing" | "success" | "error";
+
+export interface VaultSourceDescriptor {
+  origin: string;
+  releaseUrl: string;
+  manifestPath: string;
+  trusted: boolean;
+  unsupportedSource?: boolean;
+  unsupportedReason?: string;
+}
 
 export interface VaultSyncResult {
   ok: boolean;
@@ -145,11 +218,14 @@ export interface VaultSyncResult {
    * able to see that rather than it being a console.warn nobody reads.
    */
   pinFallback?: string;
+  origin?: string;
+  descriptor?: VaultSourceDescriptor;
   itemCounts?: {
     styles: number;
     resources: number;
     templates: number;
     patterns: number;
+    skills?: number;
   };
 }
 
@@ -157,7 +233,9 @@ export interface CachedVaultData {
   manifest: VaultManifest;
   syncedAt: string;
   styles: Record<string, VaultStyleManifest>;
-  resources: Array<Record<string, unknown>>;
+  resources: Array<Record<string, unknown> | VaultResourceItem>;
   templates: VaultTemplateItem[];
   patterns: VaultPatternItem[];
+  skills?: VaultSkillItem[];
 }
+

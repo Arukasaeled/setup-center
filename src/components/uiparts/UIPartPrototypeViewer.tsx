@@ -169,24 +169,53 @@ function ScreenshotGallery({
   selected: number;
   onSelect: (idx: number) => void;
 }) {
+  const [failedPaths, setFailedPaths] = useState<Set<string>>(new Set());
+  const [retryKey, setRetryKey] = useState<number>(0);
+
   if (screenshots.length === 0) {
-    return <div className="text-slate-500 text-xs py-8 text-center">暂无截图记录</div>;
+    return <div className="text-slate-500 text-xs py-8 text-center font-mono">暂无截图记录</div>;
   }
 
   const current = screenshots[selected] || screenshots[0];
+  const resolvedUrl = UIPartRepository.getResolvedAssetUrl(current);
+  const isFailed = failedPaths.has(current);
+
+  const handleRetry = (path: string) => {
+    setFailedPaths((prev) => {
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
+    setRetryKey((k) => k + 1);
+  };
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-white/10 bg-black/40 p-2 flex items-center justify-center min-h-[320px]">
-        <img
-          src={current}
-          alt={`Screenshot ${selected + 1}`}
-          className="max-h-[400px] w-auto rounded object-contain shadow-lg"
-          onError={(e) => {
-            // If image fails to load relative path, replace with subtle placeholder
-            (e.target as HTMLElement).style.display = "none";
-          }}
-        />
+      <div className="rounded-lg border border-white/10 bg-black/40 p-4 flex items-center justify-center min-h-[320px]">
+        {isFailed ? (
+          <div className="flex flex-col items-center justify-center text-center p-6 space-y-2">
+            <span className="text-2xl">⚠️</span>
+            <p className="text-xs text-slate-300 font-medium">截图文件未能成功加载</p>
+            <p className="text-[11px] font-mono text-slate-500 max-w-md break-all">{current}</p>
+            <button
+              onClick={() => handleRetry(current)}
+              className="mt-2 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-xs text-sky-300 transition font-mono flex items-center gap-1.5"
+            >
+              <span>↻</span>
+              <span>重新尝试加载</span>
+            </button>
+          </div>
+        ) : (
+          <img
+            key={`${current}-${retryKey}`}
+            src={resolvedUrl}
+            alt={`Screenshot ${selected + 1}`}
+            className="max-h-[400px] w-auto rounded object-contain shadow-lg"
+            onError={() => {
+              setFailedPaths((prev) => new Set(prev).add(current));
+            }}
+          />
+        )}
       </div>
       {screenshots.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-1">

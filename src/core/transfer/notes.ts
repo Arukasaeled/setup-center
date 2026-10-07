@@ -1,42 +1,25 @@
 /**
- * Setup Center — Personal Notes Manager
+ * Setup Center — Personal Notes Manager (Issues F09, K06)
  *
  * Lightweight personal annotations on Software, Repos, Resources, and Templates.
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  */
 
-const NOTES_STORAGE_KEY = "setup-center.item-notes.v1";
+import { PersonalStateManager } from "./personalState";
 
 type NotesListener = (notes: Record<string, string>) => void;
 
 class NotesManager {
-  private notes: Record<string, string> = {};
   private listeners: Set<NotesListener> = new Set();
 
   constructor() {
-    this.load();
+    PersonalStateManager.subscribe((doc) => {
+      this.notify(doc.notes);
+    });
   }
 
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(NOTES_STORAGE_KEY);
-      if (raw) {
-        this.notes = JSON.parse(raw);
-      }
-    } catch {
-      this.notes = {};
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(this.notes));
-    } catch {
-      // ignore
-    }
-  }
-
-  private notify(): void {
-    const data = { ...this.notes };
+  private notify(notes?: Record<string, string>): void {
+    const data = notes || this.getAll();
     for (const l of this.listeners) {
       try {
         l(data);
@@ -52,26 +35,26 @@ class NotesManager {
   }
 
   public get(id: string): string {
-    return this.notes[id] || "";
+    return PersonalStateManager.get().notes[id] || "";
   }
 
   public set(id: string, text: string): void {
     const trimmed = text.trim();
-    if (!trimmed) {
-      delete this.notes[id];
-    } else {
-      this.notes[id] = trimmed;
-    }
-    this.save();
-    this.notify();
+    PersonalStateManager.update((doc) => {
+      if (!trimmed) {
+        delete doc.notes[id];
+      } else {
+        doc.notes[id] = trimmed;
+      }
+    });
   }
 
   public has(id: string): boolean {
-    return Boolean(this.notes[id]?.trim());
+    return Boolean(PersonalStateManager.get().notes[id]?.trim());
   }
 
   public getAll(): Record<string, string> {
-    return { ...this.notes };
+    return { ...PersonalStateManager.get().notes };
   }
 }
 

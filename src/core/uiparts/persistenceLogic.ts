@@ -16,29 +16,29 @@ import type {
   UIPartsRecoveryState,
   UIPartsStorageDocument,
 } from "./types";
+import {
+  VALID_KINDS,
+  VALID_LIFECYCLES,
+  VALID_SOURCE_TYPES,
+  VALID_EVIDENCE_LEVELS,
+  VALID_EXPORT_STATUS,
+  validatePartContract,
+  validateStorageDocument,
+  validatePackageContract,
+  deepClone,
+} from "./validation";
 
-export const VALID_KINDS: UIPartKind[] = [
-  "component",
-  "layout",
-  "composition",
-  "navigation",
-  "interaction",
-  "typography",
-  "status",
-  "search",
-  "card",
-  "data-viz",
-  "motion",
-  "visual-rule",
-  "other",
-];
-
-export const VALID_LIFECYCLES: UIPartLifecycle[] = [
-  "raw",
-  "enriched",
-  "prototyped",
-  "validated",
-];
+export {
+  VALID_KINDS,
+  VALID_LIFECYCLES,
+  VALID_SOURCE_TYPES,
+  VALID_EVIDENCE_LEVELS,
+  VALID_EXPORT_STATUS,
+  validatePartContract,
+  validateStorageDocument,
+  validatePackageContract,
+  deepClone,
+};
 
 export const SUPPORTED_IMAGE_MIMES = [
   "image/png",
@@ -94,28 +94,7 @@ export function parseSupportedImageDataUrl(dataUrl?: string | null): SupportedIm
  * Validates that an object satisfies minimum contract safety.
  */
 export function validateContract(data: any): { valid: boolean; error?: string } {
-  if (!data || typeof data !== "object") {
-    return { valid: false, error: "零件规范必须为 JSON 对象" };
-  }
-  if (!data.id || typeof data.id !== "string" || !data.id.trim()) {
-    return { valid: false, error: "缺少必填字段: id (必须为非空字符串)" };
-  }
-  if (!data.title || typeof data.title !== "string" || !data.title.trim()) {
-    return { valid: false, error: "缺少必填字段: title (必须为非空字符串)" };
-  }
-  if (!data.kind || !VALID_KINDS.includes(data.kind)) {
-    return {
-      valid: false,
-      error: `非法分类 kind: "${data.kind}"。合法值包括: ${VALID_KINDS.join(", ")}`,
-    };
-  }
-  if (!data.lifecycle || !VALID_LIFECYCLES.includes(data.lifecycle)) {
-    return {
-      valid: false,
-      error: `非法生命周期 lifecycle: "${data.lifecycle}"。合法值包括: ${VALID_LIFECYCLES.join(", ")}`,
-    };
-  }
-  return { valid: true };
+  return validatePartContract(data);
 }
 
 /** Merges user parts with seed parts so starter parts are never lost */
@@ -327,17 +306,20 @@ export function inspectStartupCache(
         parsed &&
         typeof parsed === "object" &&
         Array.isArray(parsed.parts) &&
-        parsed.parts.length > 0 &&
         typeof parsed.revision === "number"
       ) {
-        return {
-          state: "valid",
-          hydratedFrom: "cache",
-          parts: parsed.parts,
-          revision: parsed.revision,
-          schemaVersion: parsed.schemaVersion || 1,
-          updatedAt: parsed.updatedAt || new Date().toISOString(),
-        };
+        const docValidation = validateStorageDocument(parsed);
+        if (docValidation.valid) {
+          return {
+            state: "valid",
+            hydratedFrom: "cache",
+            parts: parsed.parts,
+            revision: parsed.revision,
+            schemaVersion: parsed.schemaVersion || 1,
+            updatedAt: parsed.updatedAt || new Date().toISOString(),
+          };
+        }
+        return { state: "invalid", hydratedFrom: "seed" };
       }
       return { state: "invalid", hydratedFrom: "seed" };
     } catch {
@@ -348,15 +330,18 @@ export function inspectStartupCache(
   if (rawLegacy && rawLegacy.trim()) {
     try {
       const parsed = JSON.parse(rawLegacy);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return {
-          state: "valid",
-          hydratedFrom: "legacy-cache",
-          parts: parsed,
-          revision: 1,
-          schemaVersion: 1,
-          updatedAt: new Date().toISOString(),
-        };
+      if (Array.isArray(parsed)) {
+        const allValid = parsed.every((p) => validatePartContract(p).valid);
+        if (allValid) {
+          return {
+            state: "valid",
+            hydratedFrom: "legacy-cache",
+            parts: parsed,
+            revision: 1,
+            schemaVersion: 1,
+            updatedAt: new Date().toISOString(),
+          };
+        }
       }
       return { state: "invalid", hydratedFrom: "seed" };
     } catch {
@@ -379,10 +364,11 @@ export interface ReconciliationOutcome {
  * Reconciles authoritative disk state with startup cache and fallback seeds.
  *
  * Golden Rules:
- * 1. Disk is authoritative: If disk has valid content, disk always wins over cache.
+ * 1. Disk is authoritative: If disk has valid content (including valid empty collection parts: []),
+ *    disk always wins over cache and seeds without forced resurrection.
  * 2. Corrupted disk: Restores from cache ONLY IF cacheHydrationState === 'valid'.
  * 3. Corrupted disk + corrupted/missing cache: Restores from standard seeds (source: 'seed').
- * 4. Empty disk (first run): Writes seeds to disk and cache.
+ * 4. Absent disk (first run, diskDoc === null): Writes seeds (or valid startup cache) to disk and cache.
  */
 export function reconcileStorageState(params: {
   diskDoc: UIPartsStorageDocument | null;
@@ -403,7 +389,7 @@ export function reconcileStorageState(params: {
 
   // Case 1: Disk is corrupted
   if (isDiskCorrupted) {
-    if (cacheHydrationState === "valid" && cacheDoc && cacheDoc.parts.length > 0) {
+    if (cacheHydrationState === "valid" && cacheDoc && Array.isArray(cacheDoc.parts)) {
       return {
         action: "recover-from-cache",
         activeDoc: cacheDoc,
@@ -439,8 +425,10 @@ export function reconcileStorageState(params: {
     };
   }
 
-  // Case 2: Disk is valid -> DISK IS AUTHORITATIVE
-  if (diskDoc && Array.isArray(diskDoc.parts) && diskDoc.parts.length > 0) {
+  // Case 2: Disk is present and valid -> DISK IS AUTHORITATIVE
+  // F02: Explicitly distinguish valid empty collection (parts: []) from absent disk (diskDoc === null).
+  // When diskDoc is non-null and parts is an array, disk is authoritative regardless of length!
+  if (diskDoc !== null && Array.isArray(diskDoc.parts)) {
     return {
       action: "use-disk",
       activeDoc: diskDoc,
@@ -453,9 +441,9 @@ export function reconcileStorageState(params: {
     };
   }
 
-  // Case 3: Empty disk (First launch in Tauri)
+  // Case 3: Absent disk (First launch in Tauri, file does not exist on disk yet: diskDoc === null)
   const initialParts =
-    cacheHydrationState === "valid" && cacheDoc && cacheDoc.parts.length > 0
+    cacheHydrationState === "valid" && cacheDoc && Array.isArray(cacheDoc.parts)
       ? cacheDoc.parts
       : seedParts;
 

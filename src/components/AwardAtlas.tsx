@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import clsx from "clsx";
+import { AccessibleDialog } from "./AccessibleDialog";
 
 export interface AwardCase {
   id: string;
@@ -1109,189 +1110,187 @@ export function AwardAtlas({ onNotice }: { onNotice?: (msg: string) => void }) {
 
       {/* Case Detail Modal */}
       {selectedCase && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+        <AccessibleDialog
+          isOpen={true}
+          onClose={() => setSelectedCaseId(null)}
+          titleId="award-case-title"
+          dataProtectedUi={true}
+          maxWidth="max-w-3xl"
+          panelClassName="relative z-10 flex h-full max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
         >
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
-            onClick={() => setSelectedCaseId(null)}
-          />
+          {/* Modal Header */}
+          <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/80 px-6 py-4">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 id="award-case-title" className="text-[18px] font-bold text-[color:var(--text-strong)]">
+                  {selectedCase.name}
+                </h3>
+                <span className="rounded bg-[color:var(--surface-sunken)] border border-[color:var(--status-warn)]/30 px-2 py-0.5 text-[11px] font-mono text-[color:var(--status-warn)]">
+                  {selectedCase.year}
+                </span>
+                <span className="rounded bg-[color:var(--surface-sunken)] border border-[color:var(--line-subtle)] px-2 py-0.5 text-[10.5px] font-mono text-[color:var(--text-secondary)]">
+                  {selectedCase.awardLevel}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-[color:var(--text-quiet)] mt-1 flex-wrap">
+                <span>{selectedCase.creator}</span>
+                <span>·</span>
+                <span>{selectedCase.tag}</span>
+                <span>·</span>
+                <a
+                  href={selectedCase.originalSiteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[color:var(--status-accent)] hover:underline flex items-center gap-0.5 font-medium"
+                >
+                  <span>访问产品官网</span>
+                  <span>↗</span>
+                </a>
+              </div>
+            </div>
 
-          <div className="relative z-10 flex h-full max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-[#12141a] text-zinc-100 shadow-2xl">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/80 px-6 py-4">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-[18px] font-bold text-white">
-                    {selectedCase.name}
-                  </h3>
-                  <span className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[11px] font-mono text-amber-400">
-                    {selectedCase.year}
-                  </span>
-                  <span className="rounded bg-zinc-800 border border-zinc-700/60 px-2 py-0.5 text-[10.5px] font-mono text-zinc-300">
-                    {selectedCase.awardLevel}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyPrompt(selectedCase)}
+                className="flex min-h-[32px] items-center rounded-lg bg-[color:var(--status-accent)] text-black font-bold px-3 py-1.5 text-[12px] hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+              >
+                {copiedPromptId === selectedCase.id ? "✓ 已复制 Prompt" : "⌗ 复制 AI 设计师 Prompt"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCaseId(null)}
+                aria-label="关闭案例详情"
+                className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+              >
+                <span className="text-[13px] leading-none">✕</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Modal Body */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Sketch stage */}
+            <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 aspect-[16/9] max-h-[260px] mx-auto flex items-center justify-center">
+              <CaseArchetypeSketch id={selectedCase.id} />
+            </div>
+
+            {/* Philosophy */}
+            <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4">
+              <h4 className="text-[12px] font-mono uppercase tracking-wider text-[color:var(--status-accent)] font-bold mb-1.5">
+                核心设计信条 // PHILOSOPHY
+              </h4>
+              <p className="text-[13.5px] text-[color:var(--text-primary)] leading-relaxed">
+                {selectedCase.philosophy}
+              </p>
+            </div>
+
+            {/* Design DNA */}
+            <div>
+              <h4 className="text-[13px] font-bold text-[color:var(--text-strong)] mb-2">
+                设计 DNA 架构分解
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {selectedCase.designDNA.map((dna, idx) => {
+                  const [title, desc] = dna.split(":");
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 text-[12.5px]"
+                    >
+                      <strong className="text-[color:var(--text-strong)] block font-mono text-[12px] mb-1">
+                        {title}
+                      </strong>
+                      <span className="text-[color:var(--text-secondary)] leading-relaxed">
+                        {desc}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Visual Mechanics */}
+            <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4 space-y-3">
+              <h4 className="text-[13px] font-bold text-[color:var(--text-strong)]">
+                关键视觉机制与规范参数 (Visual Mechanics)
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12px]">
+                <div>
+                  <span className="text-[color:var(--text-quiet)] block text-[11px]">经典调色板</span>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {selectedCase.visualMechanics.palette.map((hex, i) => (
+                      <span
+                        key={i}
+                        className="h-5 w-5 rounded border border-white/20 shadow-sm"
+                        style={{ backgroundColor: hex }}
+                        title={hex}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[color:var(--text-quiet)] block text-[11px]">几何圆角</span>
+                  <span className="text-[color:var(--text-secondary)] font-mono mt-1 block">
+                    {selectedCase.visualMechanics.radius}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-[12px] text-zinc-400 mt-1 flex-wrap">
-                  <span>{selectedCase.creator}</span>
-                  <span>·</span>
-                  <span>{selectedCase.tag}</span>
-                  <span>·</span>
-                  <a
-                    href={selectedCase.originalSiteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-amber-400 hover:underline flex items-center gap-0.5 font-medium"
-                  >
-                    <span>访问产品官网</span>
-                    <span>↗</span>
-                  </a>
+                <div>
+                  <span className="text-[color:var(--text-quiet)] block text-[11px]">动效阻尼</span>
+                  <span className="text-[color:var(--text-secondary)] font-mono mt-1 block truncate">
+                    {selectedCase.visualMechanics.motion}
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-3 pt-2 border-t border-[color:var(--line-subtle)]">
+                  <span className="text-[color:var(--text-quiet)] block text-[11px]">标志性视觉钩子</span>
+                  <span className="text-[color:var(--text-primary)] mt-1 block leading-relaxed">
+                    {selectedCase.visualMechanics.uniqueHook}
+                  </span>
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center gap-2">
+            {/* Design Notes (Local Persistence) */}
+            <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-[13px] font-bold text-[color:var(--text-strong)] flex items-center gap-2">
+                  <span>我的设计手记与灵感提炼</span>
+                  <span className="text-[10.5px] font-normal text-[color:var(--text-quiet)]">(自动保存于本地)</span>
+                </h4>
+                {notes[selectedCase.id] && (
+                  <span className="text-[11px] text-[color:var(--status-ok)] font-mono">✓ 已持久化</span>
+                )}
+              </div>
+              <textarea
+                id="award-atlas-note-textarea"
+                value={notes[selectedCase.id] ?? ""}
+                onChange={(e) => handleUpdateNote(selectedCase.id, e.target.value)}
+                placeholder={`写下关于「${selectedCase.name}」的美学启示、适合应用在你哪个项目、或有哪些值得借鉴的交互细节...`}
+                rows={3}
+                className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] p-3 text-[12.5px] text-[color:var(--text-primary)] placeholder-[color:var(--text-quiet)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+              />
+            </div>
+
+            {/* AI Agent Prompt Box */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <h4 className="text-[12.5px] font-mono text-[color:var(--text-quiet)]">
+                  导出的 AI 设计师 Prompt:
+                </h4>
                 <button
                   type="button"
                   onClick={() => handleCopyPrompt(selectedCase)}
-                  className="rounded-lg bg-amber-500 text-black font-bold px-3 py-1.5 text-[12px] hover:bg-amber-400 transition-colors cursor-pointer shadow-sm"
+                  className="text-[11px] text-[color:var(--status-accent)] hover:underline cursor-pointer"
                 >
-                  {copiedPromptId === selectedCase.id ? "✓ 已复制 Prompt" : "⌗ 复制 AI 设计师 Prompt"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCaseId(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  ✕
+                  复制完整文本 ↗
                 </button>
               </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Sketch stage */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 aspect-[16/9] max-h-[260px] mx-auto flex items-center justify-center">
-                <CaseArchetypeSketch id={selectedCase.id} />
-              </div>
-
-              {/* Philosophy */}
-              <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
-                <h4 className="text-[12px] font-mono uppercase tracking-wider text-amber-400 font-bold mb-1.5">
-                  核心设计信条 // PHILOSOPHY
-                </h4>
-                <p className="text-[13.5px] text-zinc-200 leading-relaxed">
-                  {selectedCase.philosophy}
-                </p>
-              </div>
-
-              {/* Design DNA */}
-              <div>
-                <h4 className="text-[13px] font-bold text-white mb-2">
-                  设计 DNA 架构分解
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {selectedCase.designDNA.map((dna, idx) => {
-                    const [title, desc] = dna.split(":");
-                    return (
-                      <div
-                        key={idx}
-                        className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-[12.5px]"
-                      >
-                        <strong className="text-white block font-mono text-[12px] mb-1">
-                          {title}
-                        </strong>
-                        <span className="text-zinc-400 leading-relaxed">
-                          {desc}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Visual Mechanics */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-                <h4 className="text-[13px] font-bold text-white">
-                  关键视觉机制与规范参数 (Visual Mechanics)
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12px]">
-                  <div>
-                    <span className="text-zinc-500 block text-[11px]">经典调色板</span>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      {selectedCase.visualMechanics.palette.map((hex, i) => (
-                        <span
-                          key={i}
-                          className="h-5 w-5 rounded border border-white/20 shadow-sm"
-                          style={{ backgroundColor: hex }}
-                          title={hex}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block text-[11px]">几何圆角</span>
-                    <span className="text-zinc-300 font-mono mt-1 block">
-                      {selectedCase.visualMechanics.radius}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block text-[11px]">动效阻尼</span>
-                    <span className="text-zinc-300 font-mono mt-1 block truncate">
-                      {selectedCase.visualMechanics.motion}
-                    </span>
-                  </div>
-                  <div className="col-span-2 sm:col-span-3 pt-2 border-t border-zinc-800/80">
-                    <span className="text-zinc-500 block text-[11px]">标志性视觉钩子</span>
-                    <span className="text-zinc-300 mt-1 block leading-relaxed">
-                      {selectedCase.visualMechanics.uniqueHook}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Design Notes (Local Persistence) */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-[13px] font-bold text-white flex items-center gap-2">
-                    <span>我的设计手记与灵感提炼</span>
-                    <span className="text-[10.5px] font-normal text-zinc-400">(自动保存于本地)</span>
-                  </h4>
-                  {notes[selectedCase.id] && (
-                    <span className="text-[11px] text-emerald-400 font-mono">✓ 已持久化</span>
-                  )}
-                </div>
-                <textarea
-                  value={notes[selectedCase.id] ?? ""}
-                  onChange={(e) => handleUpdateNote(selectedCase.id, e.target.value)}
-                  placeholder={`写下关于「${selectedCase.name}」的美学启示、适合应用在你哪个项目、或有哪些值得借鉴的交互细节...`}
-                  rows={3}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-[12.5px] text-zinc-200 placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-colors"
-                />
-              </div>
-
-              {/* AI Agent Prompt Box */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <h4 className="text-[12.5px] font-mono text-zinc-400">
-                    导出的 AI 设计师 Prompt:
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyPrompt(selectedCase)}
-                    className="text-[11px] text-amber-400 hover:underline cursor-pointer"
-                  >
-                    复制完整文本 ↗
-                  </button>
-                </div>
-                <pre className="rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-[11px] text-zinc-400 whitespace-pre-wrap leading-relaxed max-h-[140px] overflow-y-auto">
-                  {selectedCase.agentPrompt}
-                </pre>
-              </div>
+              <pre className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] p-3 font-mono text-[11px] text-[color:var(--text-secondary)] whitespace-pre-wrap leading-relaxed max-h-[140px] overflow-y-auto">
+                {selectedCase.agentPrompt}
+              </pre>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
     </div>
   );

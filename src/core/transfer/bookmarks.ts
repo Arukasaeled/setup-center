@@ -1,49 +1,28 @@
 /**
- * Setup Center — Personal Bookmarks
+ * Setup Center — Personal Bookmarks (Issues F09, K06)
  *
  * Persists user favorites across resources, styles, templates, and patterns.
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  */
 
 import { TransferHistory } from "./history";
 import { PersonalCatalog } from "./catalog";
 import type { DiscoveryItem } from "../discovery/types";
-
-const BOOKMARKS_STORAGE_KEY = "setup-center.bookmarks.v1";
+import { PersonalStateManager } from "./personalState";
 
 type BookmarkListener = (bookmarks: string[]) => void;
 
 class BookmarkManager {
-  private bookmarks: Set<string> = new Set();
   private listeners: Set<BookmarkListener> = new Set();
 
   constructor() {
-    this.load();
+    PersonalStateManager.subscribe((doc) => {
+      this.notify(doc.bookmarks);
+    });
   }
 
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(BOOKMARKS_STORAGE_KEY);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          this.bookmarks = new Set(arr);
-        }
-      }
-    } catch {
-      this.bookmarks = new Set();
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(Array.from(this.bookmarks)));
-    } catch {
-      // ignore
-    }
-  }
-
-  private notify(): void {
-    const list = this.getAll();
+  private notify(bookmarks?: string[]): void {
+    const list = bookmarks || this.getAll();
     for (const listener of this.listeners) {
       try {
         listener(list);
@@ -59,26 +38,32 @@ class BookmarkManager {
   }
 
   public getAll(): string[] {
-    return Array.from(this.bookmarks);
+    return [...PersonalStateManager.get().bookmarks];
   }
 
   public isBookmarked(id: string): boolean {
-    return this.bookmarks.has(id);
+    return PersonalStateManager.get().bookmarks.includes(id);
   }
 
   public toggle(id: string, name?: string, snapshot?: DiscoveryItem): boolean {
     let nowBookmarked = false;
-    if (this.bookmarks.has(id)) {
-      this.bookmarks.delete(id);
-      nowBookmarked = false;
-    } else {
-      this.bookmarks.add(id);
-      nowBookmarked = true;
 
-      if (snapshot) {
-        PersonalCatalog.saveItem(snapshot);
+    PersonalStateManager.update((doc) => {
+      const idx = doc.bookmarks.indexOf(id);
+      if (idx >= 0) {
+        doc.bookmarks.splice(idx, 1);
+        nowBookmarked = false;
+      } else {
+        doc.bookmarks.push(id);
+        nowBookmarked = true;
+
+        if (snapshot && snapshot.id) {
+          doc.catalogItems[snapshot.id] = snapshot;
+        }
       }
+    });
 
+    if (nowBookmarked) {
       TransferHistory.record({
         type: "bookmark",
         title: "收藏资产",
@@ -88,8 +73,7 @@ class BookmarkManager {
         summary: `已将「${name ?? id}」加入个人收藏清单`,
       });
     }
-    this.save();
-    this.notify();
+
     return nowBookmarked;
   }
 }

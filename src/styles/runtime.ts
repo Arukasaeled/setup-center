@@ -46,7 +46,8 @@ import type {
   TokenKey,
   TokenOverrides,
 } from "./types";
-import { getStyle, STYLE_REGISTRY } from "./registry";
+import { getStyle, getStyleRevision, STYLE_REGISTRY } from "./registry";
+import { sanitizeTokenOverrides, validateTokenOverrides } from "./tokenValidation";
 
 // ---------------------------------------------------------------------------
 // Runtime defaults
@@ -103,6 +104,40 @@ export const TIER_SHORT: Record<string, string> = {
  * with "需要更新应用" rather than rendered as a broken page.
  */
 export const EXPERIENCE_RUNTIME_CAPABILITY = "1.0.0";
+
+/**
+ * Numeric capability revision level (Issue G05).
+ * Experiences demanding capabilityRevision > this value will be refused.
+ */
+export const EXPERIENCE_CAPABILITY_REVISION = 1;
+
+/**
+ * Parse a SemVer string into [major, minor, patch] (Issue G05).
+ * Robust against leading 'v', suffixes (-beta, +build), and non-standard spacing.
+ */
+export function parseSemVer(v: string | undefined): [number, number, number] | null {
+  if (!v || typeof v !== "string") return null;
+  const clean = v.trim().replace(/^v/i, "").split("-")[0].split("+")[0];
+  const parts = clean.split(".").map((p) => parseInt(p, 10));
+  if (parts.length === 0 || parts.some((n) => isNaN(n))) return null;
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+}
+
+/**
+ * Compare two SemVer strings strictly by integer segments (Issue G05).
+ * Returns < 0 if a < b, 0 if a === b, > 0 if a > b.
+ */
+export function compareSemVer(a: string, b: string): number {
+  const pa = parseSemVer(a);
+  const pb = parseSemVer(b);
+  if (!pa && !pb) return 0;
+  if (!pa) return -1;
+  if (!pb) return 1;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
 
 // ---------------------------------------------------------------------------
 // Grammar labels
@@ -365,11 +400,29 @@ export function lockReason(style: SetupStyle | undefined, key: TokenKey): string
   return tweakableKeys(style).includes(key) ? null : "此体验未开放该令牌";
 }
 
-/** Whether this client can render the experience at all. */
+/**
+ * Whether this client can render the experience at all (Issue G05).
+ * Enforces strict integer capabilityRevision and three-segment SemVer runtimeCapability.
+ */
 export function isRenderable(style: SetupStyle | undefined): boolean {
-  const required = resolveExperienceProfile(style).runtimeCapability;
-  if (!required) return true;
-  return required <= EXPERIENCE_RUNTIME_CAPABILITY;
+  if (!style) return true;
+  const profile = resolveExperienceProfile(style);
+
+  // 1. Integer capabilityRevision check
+  if (typeof profile.capabilityRevision === "number") {
+    if (profile.capabilityRevision > EXPERIENCE_CAPABILITY_REVISION) {
+      return false;
+    }
+  }
+
+  // 2. Strict SemVer runtimeCapability check
+  if (profile.runtimeCapability) {
+    if (compareSemVer(profile.runtimeCapability, EXPERIENCE_RUNTIME_CAPABILITY) > 0) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +542,8 @@ export const FAMILY_LABEL: Record<string, string> = {
 export const RUNTIME_ATTRIBUTES = [
   "data-experience",
   "data-style",
+  "data-base-style",
+  "data-style-revision",
   "data-tier",
   "data-family",
   "data-scene",
@@ -673,6 +728,13 @@ export function applyExperience(
   }
 
   const root = document.documentElement;
+
+  // Issue G03: Purge all previous runtime variables completely before applying new ones,
+  // preventing stale properties from older revisions from lingering on document root.
+  for (const name of RUNTIME_VARIABLES) {
+    root.style.removeProperty(name);
+  }
+
   // "important" is the whole trick: an inline important declaration outranks an
   // author important declaration, so a user override beats every per-style
   // `!important` rule without deleting any of them.
@@ -695,6 +757,18 @@ export function applyExperience(
   const id = style?.id ?? "default";
   root.setAttribute("data-experience", id);
   root.setAttribute("data-style", id);
+
+  // Issue G02: Inherit base style identity for derived experiences
+  const baseId = style?.baseStyleId ?? (id.startsWith("custom:") ? id.split(":")[1] : undefined);
+  if (baseId) {
+    root.setAttribute("data-base-style", baseId);
+  } else {
+    root.removeAttribute("data-base-style");
+  }
+
+  // Issue G03: DOM revision stamp
+  const revision = style?.revision ?? (typeof style?.id === "string" ? getStyleRevision(style.id) : 1);
+  root.setAttribute("data-style-revision", String(revision));
   root.setAttribute("data-tier", profile.tier);
   root.setAttribute("data-shell", profile.shell!);
   root.setAttribute("data-nav", profile.navigation!);
@@ -760,6 +834,8 @@ export function readRuntimeGrammar() {
     density: attr("data-density", DEFAULT_EXPERIENCE.density),
     motion: attr("data-motion", DEFAULT_EXPERIENCE.motion),
     tier: attr("data-tier", DEFAULT_EXPERIENCE.tier),
+    baseStyle: attr("data-base-style", ""),
+    styleRevision: parseInt(attr("data-style-revision", "1"), 10) || 1,
   };
 }
 
@@ -832,10 +908,11 @@ export function loadOverrides(styleId: StyleId): TokenOverrides {
 
 export function saveOverrides(styleId: StyleId, overrides: TokenOverrides): void {
   const all = loadAllOverrides();
-  if (!overrides || Object.keys(overrides).length === 0) {
+  const sanitized = sanitizeTokenOverrides(overrides);
+  if (!sanitized || Object.keys(sanitized).length === 0) {
     delete all[styleId];
   } else {
-    all[styleId] = overrides;
+    all[styleId] = sanitized;
   }
   writeJson(OVERRIDE_KEY, all);
 }
@@ -858,15 +935,38 @@ export function hasOverrides(styleId: StyleId): boolean {
 
 // --- Derived experiences ---------------------------------------------------
 
+const LEGACY_CUSTOM_KEY = "setup-center.custom-experiences.v2";
+
 export function loadCustomExperiences(): CustomExperience[] {
-  return readJson<CustomExperience[]>(CUSTOM_KEY, []);
+  let list = readJson<CustomExperience[]>(CUSTOM_KEY, []);
+  if ((!list || list.length === 0) && typeof localStorage !== "undefined") {
+    const legacy = readJson<CustomExperience[]>(LEGACY_CUSTOM_KEY, []);
+    if (legacy && legacy.length > 0) {
+      list = legacy;
+      writeJson(CUSTOM_KEY, list);
+      try {
+        localStorage.removeItem(LEGACY_CUSTOM_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return (list || []).map((c) => ({
+    ...c,
+    overrides: sanitizeTokenOverrides(c.overrides),
+  }));
 }
 
 export function saveCustomExperience(entry: CustomExperience): void {
-  const all = loadCustomExperiences().filter((c) => c.id !== entry.id);
-  all.push(entry);
+  const sanitizedEntry: CustomExperience = {
+    ...entry,
+    overrides: sanitizeTokenOverrides(entry.overrides),
+  };
+  const all = loadCustomExperiences().filter((c) => c.id !== sanitizedEntry.id);
+  all.push(sanitizedEntry);
   writeJson(CUSTOM_KEY, all);
 }
+
 
 export function deleteCustomExperience(id: StyleId): void {
   writeJson(
@@ -923,6 +1023,7 @@ export function hydrateCustomExperiences(): CustomExperience[] {
     registerDerived({
       ...base,
       id: custom.id,
+      baseStyleId: custom.baseStyleId,
       name: custom.name,
       subtitle: `${base.subtitle} · 派生`,
       description: `基于「${base.name}」的派生体验，仅覆盖令牌，不复制样式表。`,
@@ -974,6 +1075,24 @@ export interface ExperienceExport {
   overrides: TokenOverrides;
 }
 
+/**
+ * Complete Experience Specification (Issue G07)
+ * Captures full effective tokens (including user overrides), active deltas,
+ * declarative grammar, and an explicit list of non-inlined or missing assets.
+ */
+export interface ExperienceSpecification {
+  kind: "setup-center.experience-spec";
+  formatVersion: 2;
+  styleId: StyleId;
+  baseStyleId?: StyleId;
+  styleName: string;
+  exportedAt: string;
+  effectiveTokens: ExperienceTokens;
+  overrides: TokenOverrides;
+  grammar: ExperienceProfile;
+  missingAssets: string[];
+}
+
 export function buildExport(style: SetupStyle, overrides: TokenOverrides): ExperienceExport {
   return {
     kind: "setup-center.experience",
@@ -982,6 +1101,42 @@ export function buildExport(style: SetupStyle, overrides: TokenOverrides): Exper
     styleName: style.name,
     exportedAt: new Date().toISOString(),
     overrides,
+  };
+}
+
+/**
+ * Build the authoritative Experience Specification (Issue G07).
+ * Accurately merges manifest tokens with active user overrides and evaluates missing assets.
+ */
+export function buildExperienceSpecification(
+  style: SetupStyle,
+  overrides: TokenOverrides = {},
+): ExperienceSpecification {
+  const effectiveTokens = resolveTokens(style, overrides);
+  const profile = resolveExperienceProfile(style);
+  const missingAssets: string[] = [];
+
+  if (!style.implemented) {
+    missingAssets.push("该体验目前处于草案状态，尚未完全落地 CSS 样式规则");
+  }
+  if (profile.runtimeCapability && compareSemVer(profile.runtimeCapability, EXPERIENCE_RUNTIME_CAPABILITY) > 0) {
+    missingAssets.push(`需要运行时支持 v${profile.runtimeCapability} 语法契约`);
+  }
+  if (!style.experience?.typography?.headingFamily && !style.tokens?.fontHeading) {
+    missingAssets.push("未声明专用标题字体资源，回退至系统默认无衬线字体");
+  }
+
+  return {
+    kind: "setup-center.experience-spec",
+    formatVersion: 2,
+    styleId: style.id,
+    baseStyleId: style.baseStyleId,
+    styleName: style.name,
+    exportedAt: new Date().toISOString(),
+    effectiveTokens,
+    overrides,
+    grammar: profile,
+    missingAssets,
   };
 }
 
@@ -1002,13 +1157,21 @@ export function parseImport(text: string): { ok: true; overrides: TokenOverrides
   const obj = parsed as Record<string, unknown>;
 
   if (obj.kind === "setup-center.experience" && obj.overrides) {
-    return { ok: true, overrides: obj.overrides as TokenOverrides, styleId: obj.styleId as StyleId };
+    const valResult = validateTokenOverrides(obj.overrides);
+    if (!valResult.valid || !valResult.data) {
+      return { ok: false, error: `令牌语义校验失败: ${valResult.errors.join("; ")}` };
+    }
+    return { ok: true, overrides: valResult.data, styleId: obj.styleId as StyleId };
   }
   if (obj.tokens) {
     return { ok: false, error: "这是 v1 令牌导出（shadowDepth 单值模型），无法安全映射到新的阴影模型，请重新导出" };
   }
   if (typeof obj === "object") {
-    return { ok: true, overrides: obj as TokenOverrides };
+    const valResult = validateTokenOverrides(obj);
+    if (!valResult.valid || !valResult.data) {
+      return { ok: false, error: `令牌语义校验失败: ${valResult.errors.join("; ")}` };
+    }
+    return { ok: true, overrides: valResult.data };
   }
   return { ok: false, error: "无法识别的格式" };
 }

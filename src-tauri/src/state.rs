@@ -8,10 +8,11 @@
 use crate::model::{EnvironmentReport, ExecutionSession, SoftwareId, SoftwareInventory, SoftwareScan};
 use crate::modules::bootstrap::run::BootstrapSession;
 use crate::modules::executor::CancelFlag;
+use crate::modules::task::TaskManager;
 use crate::modules::{config, knowledge, plugins, profiles};
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct AppState {
     pub profiles: profiles::ProfileStore,
@@ -29,7 +30,11 @@ pub struct AppState {
     /// 数据文件**，不是改代码。而且每行 Claude 详情都要问"这个 target 有哪些增强"，
     /// 每次重读五个 JSON 属于浪费。
     pub plugins: plugins::PluginCatalog,
+    /// 统一任务管理器与互斥协调器 (T07)
+    pub tasks: Arc<TaskManager>,
     cache: Mutex<Cache>,
+    plans: Mutex<std::collections::HashMap<String, PlanRecord>>,
+    winget_cache: Mutex<std::collections::HashMap<String, crate::modules::system_ops::WingetPackageDetails>>,
 }
 
 #[derive(Default)]
@@ -43,8 +48,6 @@ struct Cache {
     /// in the frontend would be lost on a crash, which is exactly when a
     /// resumable installer matters most.
     session: Option<ExecutionSession>,
-    /// The cancel flag of the in-flight run, if any.
-    cancel: Option<CancelFlag>,
     /// The last bootstrap run, finished or not.
     ///
     /// Separate from `session` because the two answer different questions —
@@ -67,6 +70,36 @@ impl AppState {
         let knowledge_dir = resource_dir.as_ref().map(|d| d.join("knowledge"));
         let plugins_dir = resource_dir.as_ref().map(|d| d.join("plugins"));
 
+        let cache = Mutex::new(Cache::default());
+
+        // 启动检测 active_task.json：running/queued 改 interrupted，绝不自动续跑
+        if let Ok(Some(mut doc)) = crate::modules::install::load_task_document() {
+            if doc.status == "running" || doc.status == "queued" {
+                doc.status = "interrupted".to_string();
+                for step in doc.session.steps.iter_mut() {
+                    if step.status == StepStatus::Running {
+                        step.status = StepStatus::Failed;
+                        step.stage = "上次结果不确定".into();
+                        step.detail = Some("进程在运行中异常中断，结果未经验证".into());
+                        step.action_outcome = Some(AttemptOutcome::Cancelled);
+                        step.availability = Some(AvailabilityEvidence {
+                            kind: AvailabilityKind::Cli,
+                            status: AvailabilityStatus::Unknown,
+                            version: None,
+                            evidence_source: "启动检查".into(),
+                            observed_at: crate::modules::detect::now_iso8601(),
+                            detail: Some("进程在运行中异常中断，可用性未知".into()),
+                        });
+                    }
+                }
+                doc.updated_at = crate::modules::detect::now_iso8601();
+                let _ = crate::modules::install::save_task_document(&doc);
+            }
+            if let Ok(mut c) = cache.lock() {
+                c.session = Some(doc.session);
+            }
+        }
+
         Self {
             profiles: profiles::ProfileStore::load(profiles_dir.as_deref()),
             localization: config::LocalizationStore::load(localization_dir.as_deref()),
@@ -74,7 +107,10 @@ impl AppState {
             // 目录缺席时是空目录而非错误 —— `cargo test` 下资源本就不在，这条
             // 与 profiles/knowledge 的既有约定一致，不能让单测依赖打包产物。
             plugins: plugins::PluginCatalog::load(&plugins_dir.unwrap_or_default()),
-            cache: Mutex::new(Cache::default()),
+            tasks: Arc::new(TaskManager::new()),
+            cache,
+            plans: Mutex::new(std::collections::HashMap::new()),
+            winget_cache: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -149,35 +185,40 @@ impl AppState {
         self.cache.lock().ok().and_then(|c| c.session.clone())
     }
 
-    /// Stores a session and returns the flag the engine is watching.
-    ///
-    /// Returns the *existing* flag when a run is already in flight, so a second
-    /// click on "开始安装" cannot start two engines against the same machine.
-    /// Two concurrent `winget install` runs for the same package is a real way
-    /// to corrupt an installation.
-    pub fn begin_session(&self, session: ExecutionSession) -> (CancelFlag, bool) {
+    /// Begins an install session, acquiring a unified MutationLease.
+    /// Fails if ANY other mutating task (Install, Bootstrap, Plugin, etc.) is in progress.
+    pub fn begin_session(
+        &self,
+        session: ExecutionSession,
+    ) -> Result<(crate::modules::task::MutationLease, CancelFlag), String> {
+        let lease = self
+            .tasks
+            .try_begin_mutation(crate::modules::task::MutationKind::Install, None)
+            .map_err(|e| e.message)?;
+        let flag = lease.cancel_flag().clone();
         if let Ok(mut cache) = self.cache.lock() {
-            let already_running = cache
-                .session
-                .as_ref()
-                .is_some_and(|s| s.finished_at.is_none());
-            if already_running {
-                if let Some(flag) = cache.cancel.clone() {
-                    return (flag, false);
-                }
-            }
-            let flag = CancelFlag::new();
-            cache.cancel = Some(flag.clone());
             cache.session = Some(session);
-            return (flag, true);
         }
-        (CancelFlag::new(), true)
+        Ok((lease, flag))
     }
 
-    pub fn finish_session(&self, session: ExecutionSession) {
+    pub fn finish_session(
+        &self,
+        session: ExecutionSession,
+        lease: Option<crate::modules::task::MutationLease>,
+    ) {
+        if let Some(l) = lease {
+            let status = if session.is_success() {
+                crate::modules::task::TaskFinalStatus::Succeeded
+            } else if session.is_cancelled() {
+                crate::modules::task::TaskFinalStatus::Cancelled
+            } else {
+                crate::modules::task::TaskFinalStatus::Failed
+            };
+            l.finish(status);
+        }
         if let Ok(mut cache) = self.cache.lock() {
             cache.session = Some(session);
-            cache.cancel = None;
             // The session's verification re-scanned the machine, so the cached
             // inventory is now stale by exactly the amount the run changed it.
             // Dropping it forces the next screen to re-read rather than show a
@@ -188,26 +229,40 @@ impl AppState {
 
     /// Requests cancellation of the in-flight run.
     pub fn cancel_active_session(&self) -> bool {
-        let cache = match self.cache.lock() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        match cache.cancel.as_ref() {
-            Some(flag) => {
-                flag.cancel();
-                true
-            }
-            None => false,
+        if let Some(active_id) = self.tasks.active_task_id() {
+            self.tasks.cancel_task(&active_id).unwrap_or(false)
+        } else {
+            false
         }
     }
 
     /// True while an installation is physically running.
     pub fn is_installing(&self) -> bool {
-        self.cache
-            .lock()
-            .ok()
-            .and_then(|c| c.session.as_ref().map(|s| s.finished_at.is_none()))
-            .unwrap_or(false)
+        self.tasks.active_kind() == Some(crate::modules::task::MutationKind::Install)
+    }
+
+    /// Stores a backend-owned plan record.
+    pub fn store_plan(&self, plan: PlanRecord) {
+        if let Ok(mut plans) = self.plans.lock() {
+            plans.insert(plan.plan_id.clone(), plan);
+        }
+    }
+
+    /// Retrieves a backend-owned plan record by id.
+    pub fn get_plan(&self, plan_id: &str) -> Option<PlanRecord> {
+        self.plans.lock().ok()?.get(plan_id).cloned()
+    }
+
+    /// Stores a validated winget package details record in backend cache.
+    pub fn store_winget_package(&self, details: crate::modules::system_ops::WingetPackageDetails) {
+        if let Ok(mut cache) = self.winget_cache.lock() {
+            cache.insert(details.id.clone(), details);
+        }
+    }
+
+    /// Retrieves a validated winget package details record by exact package id.
+    pub fn get_winget_package(&self, package_id: &str) -> Option<crate::modules::system_ops::WingetPackageDetails> {
+        self.winget_cache.lock().ok()?.get(package_id).cloned()
     }
 
     // -----------------------------------------------------------------------
@@ -216,49 +271,43 @@ impl AppState {
 
     /// True while any state-changing run is in flight.
     ///
-    /// The single-instance rule covers both engines: two runs writing the same
-    /// `settings.json` would race, and the second write would silently undo the
-    /// first's merge.
+    /// The single-instance rule covers all mutating tasks (Install, Bootstrap, Plugin, Template, Clean).
     pub fn is_busy(&self) -> bool {
-        if self.is_installing() {
-            return true;
-        }
-        self.cache
-            .lock()
-            .ok()
-            .and_then(|c| c.bootstrap.as_ref().map(|s| s.finished_at.is_none()))
-            .unwrap_or(false)
+        self.tasks.is_busy()
     }
 
-    pub fn begin_bootstrap(&self, session: BootstrapSession) -> (CancelFlag, bool) {
+    pub fn begin_bootstrap(
+        &self,
+        session: BootstrapSession,
+    ) -> Result<(crate::modules::task::MutationLease, CancelFlag), String> {
+        let lease = self
+            .tasks
+            .try_begin_mutation(crate::modules::task::MutationKind::Bootstrap, None)
+            .map_err(|e| e.message)?;
+        let flag = lease.cancel_flag().clone();
         if let Ok(mut cache) = self.cache.lock() {
-            let busy = cache
-                .bootstrap
-                .as_ref()
-                .is_some_and(|s| s.finished_at.is_none())
-                || cache
-                    .session
-                    .as_ref()
-                    .is_some_and(|s| s.finished_at.is_none());
-            if busy {
-                return (CancelFlag::new(), false);
-            }
-            let flag = CancelFlag::new();
-            cache.cancel = Some(flag.clone());
             cache.bootstrap = Some(session);
-            return (flag, true);
         }
-        (CancelFlag::new(), true)
+        Ok((lease, flag))
     }
 
-    pub fn finish_bootstrap(&self, session: BootstrapSession) {
+    pub fn finish_bootstrap(
+        &self,
+        session: BootstrapSession,
+        lease: Option<crate::modules::task::MutationLease>,
+    ) {
+        if let Some(l) = lease {
+            let status = if session.is_success() {
+                crate::modules::task::TaskFinalStatus::Succeeded
+            } else {
+                crate::modules::task::TaskFinalStatus::Failed
+            };
+            l.finish(status);
+        }
         if let Ok(mut cache) = self.cache.lock() {
             cache.bootstrap = Some(session);
-            cache.cancel = None;
-            // Configuration can change what a program reports about itself (a
-            // language pack does not, but an extension can register settings the
-            // inventory reads). Dropping the scan forces a re-read rather than
-            // letting a stale answer sit next to a fresh report.
+            // Configuration can change what a program reports about itself.
+            // Dropping the scan forces a re-read rather than letting a stale answer sit.
             cache.scan = None;
         }
     }

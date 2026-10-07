@@ -1573,6 +1573,31 @@ function VerificationList({ report }: { report: PostInstallReport }) {
                     版本: {check.version}
                   </span>
                 )}
+                {/* Dual-axis availability status */}
+                {check.availability && (
+                  <span
+                    className={clsx(
+                      "text-[11px] px-1.5 py-0.5 rounded border",
+                      check.availability.status === "available"
+                        ? "text-[color:var(--status-ok)] bg-[color:var(--surface-inset)] border-[color:var(--status-ok)]/30"
+                        : check.availability.status === "unavailable"
+                        ? "text-[color:var(--status-bad)] bg-[color:var(--surface-inset)] border-[color:var(--status-bad)]/30"
+                        : "text-[color:var(--status-warning)] bg-[color:var(--surface-inset)] border-[color:var(--status-warning)]/30"
+                    )}
+                  >
+                    {check.availability.status === "available"
+                      ? check.availability.kind === "gui"
+                        ? "应用已就绪"
+                        : "命令已可用"
+                      : check.availability.status === "unavailable"
+                      ? check.availability.kind === "gui"
+                        ? "应用不可用"
+                        : "命令缺失"
+                      : check.availability.status === "legacyUnverified"
+                      ? "待重新验证"
+                      : "可用性未确认"}
+                  </span>
+                )}
                 {/* Location verification tags */}
                 {check.locationStatus === "matched" && check.actualLocation && (
                   <span className="text-[color:var(--status-ok)] text-[11px] font-mono bg-[color:var(--surface-inset)] px-1.5 py-0.5 rounded border border-[color:var(--line-subtle)]">
@@ -1615,7 +1640,7 @@ function VerificationList({ report }: { report: PostInstallReport }) {
           noise on a screen that already says 安装完成. */}
       {problems.length > 0 && (
         <p className="text-[color:var(--text-secondary)] mt-2.5 text-[12.5px]">
-          有 {problems.length} 项安装执行完成，但是未检测到命令。
+          有 {problems.length} 项安装执行完成，但是未通过可用性检查。
         </p>
       )}
     </div>

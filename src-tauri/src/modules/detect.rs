@@ -29,22 +29,22 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// `from_utf8_lossy`, because a Windows child process does not reliably write
 /// UTF-8 to a pipe — see that function.
 pub fn run_capture(program: &str, args: &[&str]) -> AppResult<String> {
-    let mut cmd = std::process::Command::new(program);
-    cmd.args(args);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    let spec = crate::modules::process::ProcessSpec::new(program, args)
+        .with_timeout(std::time::Duration::from_secs(10));
 
-    let output = cmd.output().map_err(|e| AppError::ProbeFailed {
+    let res = crate::modules::process::execute_process(&spec).map_err(|e| AppError::ProbeFailed {
         probe: program.to_string(),
-        reason: e.to_string(),
+        reason: e,
     })?;
 
-    let mut text = decode_console_output(&output.stdout);
-    if !output.stderr.is_empty() {
-        text.push('\n');
-        text.push_str(&decode_console_output(&output.stderr));
+    if res.exit_code != Some(0) {
+        return Err(AppError::ProbeFailed {
+            probe: program.to_string(),
+            reason: format!("进程退出非零 ({:?}): {}", res.exit_code, res.merged_output),
+        });
     }
-    Ok(text)
+
+    Ok(res.merged_output)
 }
 
 /// Decodes a child process's captured output into a `String`.
@@ -345,37 +345,64 @@ pub fn signal_admin(info: &AdminInfo) -> Signal {
 // Probe 3: disk space
 // ---------------------------------------------------------------------------
 
+fn unique_probe_name() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!(".setup-center-probe-{}-{}-{}", pid, nanos, count)
+}
+
+fn test_directory_writable(dir: &Path) -> bool {
+    let probe_file_name = unique_probe_name();
+    let probe_path = dir.join(probe_file_name);
+    let probe_result = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe_path);
+
+    match probe_result {
+        Ok(mut f) => {
+            use std::io::Write;
+            let pid = std::process::id();
+            let payload = format!("probe:pid={pid}\n");
+            let write_ok = f.write_all(payload.as_bytes()).is_ok();
+            drop(f);
+            let _ = std::fs::remove_file(&probe_path);
+            write_ok
+        }
+        Err(_) => false,
+    }
+}
+
 pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
-    // Where installs and downloads will actually happen. Testing writability
-    // here is meaningful; testing it at `C:\` root is not, because writing to
-    // the root of a system drive is denied for every standard user — including
-    // on a perfectly healthy machine, which would produce a false "blocking".
-    let work_dir = work_directory();
-    let work_letter = work_dir
-        .to_string_lossy()
+    // System drive detection from Windows system root
+    let sys_drive = system_drive();
+    let sys_letter = sys_drive
         .chars()
         .next()
         .unwrap_or('C')
         .to_ascii_uppercase();
 
+    let work_dir = work_directory();
+
     let mut out = Vec::new();
     let all_roots = drive_roots();
 
-    // 1. Primary volume (where work_directory lives, typically C:\) must be first.
-    let primary_root = PathBuf::from(format!("{}:\\", work_letter));
+    // 1. Primary volume (where system and work_directory live) must be first.
+    let primary_root = PathBuf::from(format!("{}:\\", sys_letter));
     let primary_writable = match std::fs::create_dir_all(&work_dir) {
-        Ok(()) => {
-            let probe = work_dir.join(".write-test");
-            let ok = std::fs::write(&probe, b"ok").is_ok();
-            let _ = std::fs::remove_file(&probe);
-            ok
-        }
+        Ok(()) => test_directory_writable(&work_dir),
         Err(_) => false,
     };
     let (p_total, p_free) = disk_space(&primary_root).unwrap_or((0, 0));
     let p_free_mb = p_free / (1024 * 1024);
     out.push(DiskInfo {
-        root: format!("{}:\\", work_letter),
+        root: format!("{}:\\", sys_letter),
         label: None,
         total_bytes: p_total,
         free_bytes: p_free,
@@ -391,17 +418,16 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
             .next()
             .unwrap_or('C')
             .to_ascii_uppercase();
-        if letter == work_letter {
+        if letter == sys_letter {
             continue;
         }
 
         let writable = {
-            let probe_dir = root.join(".setup-center-test");
+            let probe_sub = format!(".setup-center-probe-dir-{}", unique_probe_name());
+            let probe_dir = root.join(&probe_sub);
             match std::fs::create_dir_all(&probe_dir) {
                 Ok(()) => {
-                    let probe = probe_dir.join(".write-test");
-                    let ok = std::fs::write(&probe, b"ok").is_ok();
-                    let _ = std::fs::remove_file(&probe);
+                    let ok = test_directory_writable(&probe_dir);
                     let _ = std::fs::remove_dir(&probe_dir);
                     ok
                 }
@@ -424,7 +450,7 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
 
     if out.is_empty() {
         out.push(DiskInfo {
-            root: work_dir.to_string_lossy().to_string(),
+            root: format!("{}:\\", sys_letter),
             label: None,
             total_bytes: 0,
             free_bytes: 0,
@@ -437,15 +463,31 @@ pub fn probe_disks(required_mb: u64) -> Vec<DiskInfo> {
 }
 
 /// System drive string (e.g. "C:").
+/// Derived from Windows system directory / %SystemRoot% / %windir% / %SystemDrive%,
+/// NOT inferred from AppData or work_directory.
 pub fn system_drive() -> String {
-    let work = work_directory();
-    let letter = work
-        .to_string_lossy()
-        .chars()
-        .next()
-        .unwrap_or('C')
-        .to_ascii_uppercase();
-    format!("{}:", letter)
+    #[cfg(windows)]
+    {
+        if let Ok(sd) = std::env::var("SystemDrive") {
+            let trimmed = sd.trim();
+            if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' {
+                let ch = (trimmed.as_bytes()[0] as char).to_ascii_uppercase();
+                if ch.is_ascii_alphabetic() {
+                    return format!("{}:", ch);
+                }
+            }
+        }
+        if let Ok(sr) = std::env::var("SystemRoot").or_else(|_| std::env::var("windir")) {
+            let trimmed = sr.trim();
+            if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' {
+                let ch = (trimmed.as_bytes()[0] as char).to_ascii_uppercase();
+                if ch.is_ascii_alphabetic() {
+                    return format!("{}:", ch);
+                }
+            }
+        }
+    }
+    "C:".to_string()
 }
 
 /// The directory this app installs into and downloads to.
@@ -608,18 +650,12 @@ pub fn probe_network() -> NetworkInfo {
     }
 }
 
-/// Raw TCP connect with a timeout — no DNS library, no HTTP client, no
-/// dependency. `ToSocketAddrs` gives us name resolution for free.
 fn tcp_probe(host: &str, port: u16) -> Option<u32> {
-    use std::net::{TcpStream, ToSocketAddrs};
-    use std::time::{Duration, Instant};
-
-    let addr = (host, port).to_socket_addrs().ok()?.next()?;
-    let start = Instant::now();
-    match TcpStream::connect_timeout(&addr, Duration::from_millis(2500)) {
-        Ok(_) => Some(start.elapsed().as_millis() as u32),
-        Err(_) => None,
-    }
+    crate::modules::process::tcp_probe_with_budget(
+        host,
+        port,
+        std::time::Duration::from_secs(10),
+    )
 }
 
 pub fn signal_network(info: &NetworkInfo) -> Vec<Signal> {
@@ -674,7 +710,7 @@ pub fn signal_network(info: &NetworkInfo) -> Vec<Signal> {
         signals.push(Signal::ok(
             "network.winget",
             "winget 组件源",
-            "可达",
+            "连通（网络连通不代表下载完全可用）",
             20.0,
         ));
     } else {

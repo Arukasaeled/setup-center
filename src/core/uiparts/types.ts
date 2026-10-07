@@ -188,10 +188,19 @@ export interface UIPart {
   updatedAt: string;
 }
 
+export interface UIPartPackageManifest {
+  totalAssets: number;
+  inlinedMediaCount: number;
+  codeAssetCount: number;
+  integrity: "complete" | "partial" | "metadata-only";
+  missingAssets?: string[];
+}
+
 export interface UIPartPackage {
   format: "uipart-package.v1";
   exportedAt: string;
   part: UIPart;
+  manifest?: UIPartPackageManifest;
 }
 
 export interface UIPartFilterQuery {

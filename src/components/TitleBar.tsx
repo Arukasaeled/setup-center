@@ -113,6 +113,8 @@ export function TitleBar() {
 
   return (
     <div
+      id="titlebar"
+      data-protected-ui="true"
       className="titlebar-drag relative z-40 flex h-14 shrink-0 items-center px-2"
       onDoubleClick={() => win.toggleMaximize().catch(() => {})}
     >

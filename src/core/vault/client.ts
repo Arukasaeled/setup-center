@@ -5,7 +5,8 @@
  * Features built-in timeout, status check, and network fault tolerance.
  */
 
-import type { VaultManifest } from "./types";
+import type { VaultManifest, VaultReleaseCheckpoint } from "./types";
+import { validateManifest, validateRelativePath, validateReleaseCheckpoint } from "./validation";
 
 export class VaultClient {
   private baseUrl: string;
@@ -25,33 +26,64 @@ export class VaultClient {
   }
 
   /**
-   * Fetch top-level vault manifest
+   * Fetch top-level vault manifest and validate against schema
    */
-  public async fetchManifest(): Promise<VaultManifest> {
+  public async fetchManifest(externalSignal?: AbortSignal): Promise<VaultManifest> {
     const url = `${this.baseUrl}/manifest.json`;
-    return this.fetchJson<VaultManifest>(url);
+    const json = await this.fetchJson<unknown>(url, externalSignal);
+    const result = validateManifest(json);
+    if (!result.valid || !result.data) {
+      throw new Error(`Vault manifest validation failed: ${result.errors.join("; ")}`);
+    }
+    return result.data;
   }
 
   /**
-   * Fetch a collection or asset by relative path
+   * Fetch release checkpoint and validate against schema
    */
-  public async fetchAssetJson<T>(relativePath: string): Promise<T> {
-    const cleanPath = relativePath.replace(/^\/+/, "");
-    const url = `${this.baseUrl}/${cleanPath}`;
-    return this.fetchJson<T>(url);
+  public async fetchReleaseCheckpoint(externalSignal?: AbortSignal): Promise<VaultReleaseCheckpoint> {
+    const url = `${this.baseUrl}/releases/latest.json`;
+    const json = await this.fetchJson<unknown>(url, externalSignal);
+    const result = validateReleaseCheckpoint(json);
+    if (!result.valid || !result.data) {
+      throw new Error(`Vault release checkpoint validation failed: ${result.errors.join("; ")}`);
+    }
+    return result.data;
   }
 
   /**
-   * Fetch text content (e.g. style CSS)
+   * Fetch a collection or asset by validated relative path
    */
-  public async fetchAssetText(relativePath: string): Promise<string> {
+  public async fetchAssetJson<T>(relativePath: string, externalSignal?: AbortSignal): Promise<T> {
+    if (!validateRelativePath(relativePath)) {
+      throw new Error(`Invalid or unsafe vault relative path: ${relativePath}`);
+    }
     const cleanPath = relativePath.replace(/^\/+/, "");
     const url = `${this.baseUrl}/${cleanPath}`;
-    return this.fetchText(url);
+    return this.fetchJson<T>(url, externalSignal);
   }
 
-  private async fetchJson<T>(url: string): Promise<T> {
+  /**
+   * Fetch text content (e.g. style CSS) by validated relative path
+   */
+  public async fetchAssetText(relativePath: string, externalSignal?: AbortSignal): Promise<string> {
+    if (!validateRelativePath(relativePath)) {
+      throw new Error(`Invalid or unsafe vault relative path: ${relativePath}`);
+    }
+    const cleanPath = relativePath.replace(/^\/+/, "");
+    const url = `${this.baseUrl}/${cleanPath}`;
+    return this.fetchText(url, externalSignal);
+  }
+
+  private async fetchJson<T>(url: string, externalSignal?: AbortSignal): Promise<T> {
+    if (externalSignal?.aborted) {
+      throw new DOMException("The operation was aborted", "AbortError");
+    }
     const controller = new AbortController();
+    const onAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal) {
+      externalSignal.addEventListener("abort", onAbort, { once: true });
+    }
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await fetch(url, {
@@ -66,11 +98,21 @@ export class VaultClient {
       return (await res.json()) as T;
     } finally {
       clearTimeout(timer);
+      if (externalSignal) {
+        externalSignal.removeEventListener("abort", onAbort);
+      }
     }
   }
 
-  private async fetchText(url: string): Promise<string> {
+  private async fetchText(url: string, externalSignal?: AbortSignal): Promise<string> {
+    if (externalSignal?.aborted) {
+      throw new DOMException("The operation was aborted", "AbortError");
+    }
     const controller = new AbortController();
+    const onAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal) {
+      externalSignal.addEventListener("abort", onAbort, { once: true });
+    }
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await fetch(url, {
@@ -85,6 +127,9 @@ export class VaultClient {
       return await res.text();
     } finally {
       clearTimeout(timer);
+      if (externalSignal) {
+        externalSignal.removeEventListener("abort", onAbort);
+      }
     }
   }
 }

@@ -22,15 +22,29 @@ use state::AppState;
 use std::sync::Mutex;
 use tauri::Manager;
 
-/// Guard so only one instance runs. Two installers racing over winget is a
-/// genuinely bad failure mode (half-installed packages, locked MSI mutexes).
-#[derive(Default)]
-pub struct SingleInstanceGuard(pub Mutex<()>);
+/// Guard so only one instance runs. Uses Windows Named Mutex Local\SetupCenter.<SID>.app.aistudent.setup
+/// to prevent two instances racing over winget / MSI / local configuration.
+pub struct SingleInstanceGuard(pub Mutex<Option<modules::task::NamedSingleInstanceGuard>>);
+
+impl Default for SingleInstanceGuard {
+    fn default() -> Self {
+        Self(Mutex::new(None))
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            let guard = match modules::task::NamedSingleInstanceGuard::acquire() {
+                Ok(g) => g,
+                Err(err) => {
+                    eprintln!("Single instance check: {err}");
+                    std::process::exit(0);
+                }
+            };
+            app.manage(SingleInstanceGuard(Mutex::new(Some(guard))));
+
             // Resource dir is where `profiles/`, `localization/` and
             // `knowledge/` were bundled. It is absent during `cargo test`, in
             // which case state falls back to the compiled-in copies.
@@ -109,9 +123,10 @@ pub fn run() {
             commands::plugin_targets,
             commands::run_plugin,
             // Native system ops & discovery
-            commands::execute_native_command,
-            commands::execute_streaming_command,
-            commands::cancel_native_execution,
+            commands::build_dynamic_install_plan,
+            commands::cancel_task,
+            commands::query_task,
+            commands::get_task_events,
             commands::native_download,
             commands::winget_search,
             commands::winget_show,
@@ -125,6 +140,9 @@ pub fn run() {
             commands::save_user_uiparts,
             commands::get_uiparts_info,
             commands::save_uipart_asset,
+            commands::stage_uipart_asset,
+            commands::commit_uipart_assets,
+            commands::discard_uipart_assets,
             commands::read_uipart_asset,
             commands::delete_uipart_assets,
             // Storage policy (0.2.4)

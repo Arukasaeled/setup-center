@@ -16,6 +16,7 @@ import type {
   BootstrapSessionView,
   BootstrapVerificationView,
   CapabilityStatus,
+  CleanupResult,
   ConceptNote,
   ConfigAction,
   EnvironmentPlan,
@@ -44,6 +45,7 @@ import type {
   SoftwareDescriptor,
   SoftwareId,
   SoftwareInventory,
+  StartInstallRequest,
   StepProgress,
   StoragePolicy,
   VerificationReport,
@@ -280,8 +282,8 @@ export const buildInstallPlan = (profileId: string) =>
   call<InstallPlan>("build_install_plan", { profileId });
 
 /** A plan for the programs the student actually ticked, not the profile's list. */
-export const buildInstallPlanFor = (ids: SoftwareId[], profileId: string) =>
-  call<InstallPlan>("build_install_plan_for", { ids, profileId });
+export const buildInstallPlanFor = (ids: SoftwareId[], profileId?: string | null) =>
+  call<InstallPlan>("build_install_plan_for", { ids, profileId: profileId ?? null });
 
 export const installStrategies = (profileId: string) =>
   call<InstallStrategy[]>("install_strategies", { profileId });
@@ -304,8 +306,8 @@ export const previewInstall = (plan: InstallPlan) =>
  * the caller must show progress and offer cancellation — `cancelInstall` is how
  * the run is stopped, not by dropping this promise.
  */
-export const runInstall = (plan: InstallPlan) =>
-  call<ExecutionSession>("run_install", { plan });
+export const runInstall = (request: StartInstallRequest) =>
+  call<ExecutionSession>("run_install", { request });
 
 /** Continues an interrupted run, skipping everything already done. */
 export const resumeInstall = () => call<ExecutionSession>("resume_install");
@@ -536,24 +538,9 @@ export interface DetectedEditor {
   executablePath?: string;
 }
 
-/** Executes a native program with args and optional cwd, capturing stdout/stderr */
-export const executeNativeCommand = (
-  program: string,
-  args: string[],
-  cwd?: string,
-) => call<CommandOutput>("execute_native_command", { program, args, cwd });
-
-/** Starts streaming command execution emitting stdout/stderr/exit events over Tauri channel */
-export const executeStreamingCommand = (
-  executionId: string,
-  program: string,
-  args: string[],
-  cwd?: string,
-) => call<void>("execute_streaming_command", { executionId, program, args, cwd });
-
-/** Cancels an active streaming execution by execution ID */
-export const cancelNativeExecution = (executionId: string) =>
-  call<boolean>("cancel_native_execution", { executionId });
+/** Builds an install plan for a dynamic winget package through backend validation */
+export const buildDynamicInstallPlan = (packageId: string) =>
+  call<InstallPlan>("build_dynamic_install_plan", { packageId });
 
 /** Downloads a remote file to a destination path using native curl streaming */
 export const nativeDownload = (url: string, destinationPath: string) =>
@@ -578,9 +565,9 @@ export const openUrl = (url: string) =>
 /** Probes which editors (VS Code, Cursor, Windsurf, Zed) are installed on this machine */
 export const detectEditors = () => call<DetectedEditor[]>("detect_editors");
 
-/** Launches a file or directory in an installed editor, using executablePath if known */
-export const openInEditor = (editor: string, path: string, executablePath?: string) =>
-  call<void>("open_in_editor", { editor, path, executablePath });
+/** Launches a file or directory in an installed editor */
+export const openInEditor = (editor: string, path: string) =>
+  call<void>("open_in_editor", { editor, path });
 
 
 /** Returns the authenticated user's real Downloads directory */
@@ -590,6 +577,59 @@ export const getDownloadsDir = () =>
 /** Verifies a downloaded file's SHA256 checksum */
 export const verifyFileSha256 = (path: string, expectedSha256: string) =>
   call<boolean>("verify_file_sha256", { path, expectedSha256 });
+
+export interface TaskEventPayload {
+  taskId: string;
+  sequence: number;
+  stream: "stdout" | "stderr" | "status" | string;
+  text: string;
+  timestamp: string;
+  truncated?: boolean;
+  exitCode?: number | null;
+  status?: string | null;
+}
+
+export interface TaskStatusView {
+  taskId: string;
+  status: "running" | "succeeded" | "failed" | "cancelled" | "interrupted" | "idle" | string;
+  activeKind?: string | null;
+  exitCode?: number | null;
+}
+
+/** Cancels an active mutating task by its taskId */
+export const cancelTask = (taskId: string) =>
+  call<boolean>("cancel_task", { taskId });
+
+/** Queries task status */
+export const queryTask = (taskId: string) =>
+  call<TaskStatusView>("query_task", { taskId });
+
+/** Retrieves buffered task events after a given sequence */
+export const getTaskEvents = (taskId: string, afterSequence: number = 0) =>
+  call<TaskEventPayload[]>("get_task_events", { taskId, afterSequence });
+
+/** Attaches listener to task-event streaming events */
+export async function onTaskEvent(
+  handler: (payload: TaskEventPayload) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<TaskEventPayload>("task-event", (event) => {
+      handler(event.payload);
+    });
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      void Promise.resolve()
+        .then(() => unlisten())
+        .catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
 
 export interface StreamingOutputPayload {
   executionId: string;
@@ -688,6 +728,16 @@ export interface UIPartAssetSaveResult {
   absolute_path: string;
 }
 
+export interface UIPartAssetStageResult {
+  staging_path: string;
+  relative_path: string;
+}
+
+export interface UIPartAssetCommitItem {
+  staging_path: string;
+  relative_path: string;
+}
+
 export interface UIPartsInfo {
   storage_dir: string;
   index_file: string;
@@ -746,6 +796,51 @@ export async function saveUIPartAsset(
   }
 }
 
+/** Stages a media asset to a temporary staging path before transactional commit. */
+export async function stageUIPartAsset(
+  partId: string,
+  fileName: string,
+  base64Data: string,
+): Promise<UIPartAssetStageResult | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<UIPartAssetStageResult>("stage_uipart_asset", {
+      partId,
+      fileName,
+      base64Data,
+    });
+  } catch (err) {
+    console.warn("Failed to stage UI part asset via Tauri IPC:", err);
+    throw err;
+  }
+}
+
+/** Commits staged media assets atomically to their final paths. */
+export async function commitUIPartAssets(
+  items: UIPartAssetCommitItem[],
+): Promise<boolean> {
+  if (!isTauri() || items.length === 0) return true;
+  try {
+    return await invoke<boolean>("commit_uipart_assets", { items });
+  } catch (err) {
+    console.error("Failed to commit staged UI part assets via Tauri IPC:", err);
+    throw err;
+  }
+}
+
+/** Cleans up temporary staged media assets if a transaction is aborted. */
+export async function discardUIPartAssets(
+  stagingPaths: string[],
+): Promise<boolean> {
+  if (!isTauri() || stagingPaths.length === 0) return true;
+  try {
+    return await invoke<boolean>("discard_uipart_assets", { stagingPaths });
+  } catch (err) {
+    console.warn("Failed to discard staged UI part assets via Tauri IPC:", err);
+    return false;
+  }
+}
+
 /** Reads a media asset from disk as a Data URL (for package export or fallback). */
 export async function readUIPartAsset(relativePath: string): Promise<string | null> {
   if (!isTauri()) return null;
@@ -793,7 +888,34 @@ export async function validateStoragePath(path: string): Promise<PathValidationR
 }
 
 /** Cleans temporary downloaded installers in downloads cache directory. */
-export async function cleanDownloadCache(): Promise<number> {
-  return await call<number>("clean_download_cache");
+export async function cleanDownloadCache(): Promise<CleanupResult> {
+  return await call<CleanupResult>("clean_download_cache");
 }
+
+// ---------------------------------------------------------------------------
+// Native Controlled Asset Download (B13, K07)
+// ---------------------------------------------------------------------------
+
+export interface NativeDownloadResult {
+  success: boolean;
+  destinationPath: string;
+  sizeBytes: number;
+  sha256Verified: boolean;
+}
+
+export interface NativeDownloadOptions {
+  url: string;
+  filename?: string;
+  destinationDir?: string;
+  destinationPath?: string;
+  expectedSha256?: string;
+}
+
+/** Downloads an asset safely via backend controlled streaming with disk landing guarantee. */
+export async function nativeDownload(
+  options: NativeDownloadOptions,
+): Promise<NativeDownloadResult> {
+  return await call<NativeDownloadResult>("native_download", options as unknown as Record<string, unknown>);
+}
+
 

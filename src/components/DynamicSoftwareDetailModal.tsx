@@ -11,8 +11,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { AccessibleDialog } from "./AccessibleDialog";
 import type { DiscoveryItem } from "../core/discovery/types";
 import { fetchWingetPackageDetails } from "../core/discovery/winget";
 import { PersonalCatalog, type DynamicSoftware } from "../core/transfer/catalog";
@@ -22,11 +22,11 @@ import {
   nativeDownload,
   getDownloadsDir,
   verifyFileSha256,
-  executeNativeCommand,
+  buildDynamicInstallPlan,
+  runInstall,
   isTauri,
   type WingetPackageDetails,
 } from "../lib/ipc";
-import { ExecutionConsoleModal } from "./ExecutionConsoleModal";
 import { openExternalUrl } from "../core/setup/executor";
 
 export interface DynamicSoftwareDetailModalProps {
@@ -45,7 +45,7 @@ export function DynamicSoftwareDetailModal({
   const [details, setDetails] = useState<WingetPackageDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPackPicker, setShowPackPicker] = useState(false);
   const [packs, setPacks] = useState<CustomPack[]>(CustomPacks.getAll());
@@ -59,7 +59,7 @@ export function DynamicSoftwareDetailModal({
     if (!isOpen || !item) {
       setDetails(null);
       setLoading(false);
-      setIsConsoleOpen(false);
+      setIsInstalling(false);
       setShowPackPicker(false);
       return;
     }
@@ -111,44 +111,11 @@ export function DynamicSoftwareDetailModal({
     onNotice?.(`已将「${sw.name}」永久保存至个人资产`);
   };
 
-  const handleInstallSuccess = async () => {
-    onNotice?.(`进程已退出，正在执行本机状态验证 (winget list --id ${cleanPackageId} -e)…`);
-
-    let verified = false;
-    let verifiedVersion: string | undefined = details?.version;
-
-    if (isTauri()) {
-      try {
-        const verifyRes = await executeNativeCommand("winget", [
-          "list",
-          "--id",
-          cleanPackageId,
-          "-e",
-        ]);
-        if (
-          verifyRes.success &&
-          verifyRes.stdout &&
-          verifyRes.stdout.toLowerCase().includes(cleanPackageId.toLowerCase())
-        ) {
-          verified = true;
-          const lines = verifyRes.stdout.split("\n");
-          for (const line of lines) {
-            if (line.toLowerCase().includes(cleanPackageId.toLowerCase())) {
-              const parts = line.trim().split(/\s{2,}/);
-              if (parts[2]) {
-                verifiedVersion = parts[2].trim();
-              }
-              break;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[DynamicSoftware] Post-install verification command error:", err);
-      }
-    } else {
-      // In browser preview, simulate verified state
-      verified = true;
-    }
+  const handleInstallSuccess = async (sessionSuccess: boolean = true) => {
+    if (!item) return;
+    const cleanPackageId = item.id.replace(/^winget:/i, "");
+    const verified = sessionSuccess;
+    const verifiedVersion = details?.version;
 
     if (verified) {
       const sw: DynamicSoftware = {
@@ -164,6 +131,15 @@ export function DynamicSoftwareDetailModal({
         installedVersion: verifiedVersion || details?.version,
         discoveredAt: new Date().toISOString(),
         lastVerifiedAt: new Date().toISOString(),
+        actionOutcome: "succeeded",
+        availabilityEvidence: {
+          kind: "gui",
+          status: "available",
+          version: verifiedVersion || details?.version,
+          evidenceSource: "run_install session",
+          observedAt: new Date().toISOString(),
+          detail: `✓ 本机状态验证通过: ${cleanPackageId} 已确认安装并在个人库纳管`,
+        },
       };
       PersonalCatalog.saveSoftware(sw);
       setIsSavedInCatalog(true);
@@ -180,9 +156,43 @@ export function DynamicSoftwareDetailModal({
         homepage: details?.homepage,
         installed: false,
         discoveredAt: new Date().toISOString(),
+        actionOutcome: "failed",
+        availabilityEvidence: {
+          kind: "gui",
+          status: "unavailable",
+          version: details?.version,
+          evidenceSource: "run_install session",
+          observedAt: new Date().toISOString(),
+          detail: `安装任务未成功完成，可用性未确认`,
+        },
       };
       PersonalCatalog.saveSoftware(sw);
-      onNotice?.(`⚠ 命令执行退出码为 0，但未在本机检测到对应软件 (Execution Success, Verification Failed)`);
+      onNotice?.(`⚠ 安装任务未成功完成（动作未就绪，可用性未确认）`);
+    }
+  };
+
+  const handleWingetInstall = async () => {
+    if (!item) return;
+    setIsInstalling(true);
+    try {
+      onNotice?.(`正在验证软件包授权与依赖，生成可信安装计划…`);
+      const plan = await buildDynamicInstallPlan(cleanPackageId);
+      onNotice?.(`已生成可信安装计划，正在启动 Winget 安装…`);
+      const session = await runInstall({ planId: plan.id, plan });
+      if (session.status === "succeeded") {
+        await handleInstallSuccess(true);
+      } else {
+        await handleInstallSuccess(false);
+      }
+    } catch (err: unknown) {
+      const msg = String(err);
+      if (msg.includes("LicenseRequired") || msg.includes("Pro entitlement")) {
+        onNotice?.("需要专业版授权：安装功能需激活 Pro 授权。请先在设置中激活。");
+      } else {
+        onNotice?.(`安装启动失败: ${msg}`);
+      }
+    } finally {
+      setIsInstalling(false);
     }
   };
 
@@ -290,73 +300,66 @@ export function DynamicSoftwareDetailModal({
     onNotice?.(`已将「${details?.name || item.title}」加入开发套件`);
   };
 
-  const content = (
-    <>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dynamic-software-detail-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-      >
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
-          onClick={onClose}
-          aria-hidden="true"
-        />
+  return (
+    <AccessibleDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      titleId="dynamic-software-detail-title"
+      className="p-4 sm:p-6"
+      contentClassName="relative z-10 flex h-full w-full max-h-[85vh] max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-[#12151b] text-zinc-100 shadow-2xl"
+    >
+      {/* Header */}
+      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-800 bg-[#141820] px-6 py-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="rounded bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 text-[11px] font-bold text-sky-300">
+              Winget 软件源
+            </span>
+            <h3
+              id="dynamic-software-detail-title"
+              className="text-[18px] font-bold text-white truncate"
+            >
+              {details?.name || item.title}
+            </h3>
+            {details?.version && (
+              <span className="font-mono text-[11.5px] text-zinc-400">
+                v{details.version}
+              </span>
+            )}
+          </div>
+          <p className="font-mono text-[12px] text-zinc-400 mt-1 truncate">
+            Package ID: {cleanPackageId}
+            {details?.publisher ? ` · ${details.publisher}` : ""}
+          </p>
+        </div>
 
-        {/* Modal Window */}
-        <div className="relative z-10 flex h-full w-full max-h-[85vh] max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-[#12151b] text-zinc-100 shadow-2xl">
-          {/* Header */}
-          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-800 bg-[#141820] px-6 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="rounded bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 text-[11px] font-bold text-sky-300">
-                  Winget 软件源
-                </span>
-                <h3
-                  id="dynamic-software-detail-title"
-                  className="text-[18px] font-bold text-white truncate"
-                >
-                  {details?.name || item.title}
-                </h3>
-                {details?.version && (
-                  <span className="font-mono text-[11.5px] text-zinc-400">
-                    v{details.version}
-                  </span>
-                )}
-              </div>
-              <p className="font-mono text-[12px] text-zinc-400 mt-1 truncate">
-                Package ID: {cleanPackageId}
-                {details?.publisher ? ` · ${details.publisher}` : ""}
-              </p>
-            </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleToggleBookmark}
+            aria-label={isBookmarked ? "取消收藏" : "收藏至我的库"}
+            className={clsx(
+              "flex h-8 min-h-[32px] items-center gap-1 rounded-lg border px-3 text-[12px] font-bold transition-all cursor-pointer",
+              isBookmarked
+                ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                : "border-zinc-700 bg-zinc-800/80 text-zinc-300 hover:text-white",
+            )}
+            title={isBookmarked ? "取消收藏" : "收藏至我的库"}
+          >
+            <span>{isBookmarked ? "★" : "☆"}</span>
+            <span>{isBookmarked ? "已收藏" : "收藏"}</span>
+          </button>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleToggleBookmark}
-                className={clsx(
-                  "flex h-8 items-center gap-1 rounded-lg border px-3 text-[12px] font-bold transition-all cursor-pointer",
-                  isBookmarked
-                    ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
-                    : "border-zinc-700 bg-zinc-800/80 text-zinc-300 hover:text-white",
-                )}
-                title={isBookmarked ? "取消收藏" : "收藏至我的库"}
-              >
-                <span>{isBookmarked ? "★" : "☆"}</span>
-                <span>{isBookmarked ? "已收藏" : "收藏"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          </header>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭软件详情"
+            className="flex h-8 w-8 min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      </header>
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -409,6 +412,49 @@ export function DynamicSoftwareDetailModal({
                 </span>
               </div>
             </div>
+
+            {/* Installed & Availability Status Banner */}
+            {(() => {
+              const localSaved = PersonalCatalog.getSoftware(
+                item.id.startsWith("winget:") ? item.id : `winget:${cleanPackageId}`,
+              );
+              if (!localSaved) return null;
+              const avail = localSaved.availabilityEvidence;
+              const outcome = localSaved.actionOutcome;
+              return (
+                <div className="rounded-xl border border-zinc-800 bg-[#0e1218] p-3.5 space-y-1.5 text-[12.5px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-zinc-300">本机纳管状态</span>
+                    <span
+                      className={clsx(
+                        "px-2 py-0.5 rounded text-[11px] font-bold",
+                        localSaved.installed && avail?.status === "available"
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          : avail?.status === "legacyUnverified"
+                          ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                          : "bg-zinc-800 text-zinc-400 border border-zinc-700",
+                      )}
+                    >
+                      {localSaved.installed && avail?.status === "available"
+                        ? "已安装 · 可用"
+                        : avail?.status === "legacyUnverified"
+                        ? "历史记录 · 待重新验证"
+                        : outcome === "succeeded"
+                        ? "安装动作完成 · 可用性未确认"
+                        : "未就绪"}
+                    </span>
+                  </div>
+                  {avail?.detail && (
+                    <p className="text-[12px] text-zinc-400">{avail.detail}</p>
+                  )}
+                  {localSaved.lastVerifiedAt && (
+                    <p className="text-[11px] font-mono text-zinc-500">
+                      上次验证时间: {new Date(localSaved.lastVerifiedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Pack Picker Popover */}
             {showPackPicker && (
@@ -508,7 +554,8 @@ export function DynamicSoftwareDetailModal({
                   type="button"
                   onClick={handleDirectDownload}
                   disabled={isDownloading}
-                  className="rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
+                  aria-label="直接下载官方安装包"
+                  className="min-h-[32px] rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
                 >
                   {isDownloading ? "下载中…" : "下载安装包"}
                 </button>
@@ -516,28 +563,15 @@ export function DynamicSoftwareDetailModal({
 
               <button
                 type="button"
-                onClick={() => setIsConsoleOpen(true)}
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-[12.5px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shadow-sm"
+                onClick={handleWingetInstall}
+                disabled={isInstalling}
+                aria-label="通过 Winget 一键安装软件"
+                className="min-h-[32px] rounded-lg bg-blue-600 px-4 py-1.5 text-[12.5px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
               >
-                一键 Winget 安装
+                {isInstalling ? "正在启动 Winget 安装…" : "一键 Winget 安装"}
               </button>
             </div>
           </footer>
-        </div>
-      </div>
-
-      {isConsoleOpen && (
-        <ExecutionConsoleModal
-          isOpen={true}
-          onClose={() => setIsConsoleOpen(false)}
-          title={`Winget 安装: ${details?.name || item.title}`}
-          command="winget"
-          args={["install", "--id", cleanPackageId, "-e", "--accept-source-agreements", "--accept-package-agreements"]}
-          onSuccess={handleInstallSuccess}
-        />
-      )}
-    </>
+    </AccessibleDialog>
   );
-
-  return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }

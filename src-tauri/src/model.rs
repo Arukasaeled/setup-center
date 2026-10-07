@@ -412,6 +412,8 @@ pub enum SoftwareId {
     /// user downloaded from Google's own site byte-for-byte at the version
     /// field, which is how the id was confirmed rather than guessed at.
     GeminiDesktop,
+    /// Dynamic software discovered and installed via winget
+    Dynamic,
 }
 
 impl SoftwareId {
@@ -494,6 +496,7 @@ impl SoftwareId {
             SoftwareId::CapCut => "capcut",
             SoftwareId::ComfyUi => "comfyui",
             SoftwareId::GeminiDesktop => "gemini_desktop",
+            SoftwareId::Dynamic => "dynamic",
         }
     }
 
@@ -536,6 +539,7 @@ impl SoftwareId {
             SoftwareId::CapCut => "CapCut",
             SoftwareId::ComfyUi => "ComfyUI",
             SoftwareId::GeminiDesktop => "Gemini",
+            SoftwareId::Dynamic => "动态应用",
         }
     }
 
@@ -582,6 +586,7 @@ impl SoftwareId {
             SoftwareId::CapCut => "剪映国际版，功能与剪映一致",
             SoftwareId::ComfyUi => "节点式 AI 绘画，本地出图",
             SoftwareId::GeminiDesktop => "Google 官方桌面聊天客户端",
+            SoftwareId::Dynamic => "通过 winget 检索安装的自定义软件包",
         }
     }
 
@@ -618,7 +623,8 @@ impl SoftwareId {
             | SoftwareId::Chatbox
             | SoftwareId::JianyingPro
             | SoftwareId::CapCut
-            | SoftwareId::ComfyUi => SoftwareCategory::AiCreative,
+            | SoftwareId::ComfyUi
+            | SoftwareId::Dynamic => SoftwareCategory::AiCreative,
             SoftwareId::Python
             | SoftwareId::Node
             | SoftwareId::Git
@@ -719,10 +725,14 @@ impl SoftwareId {
                 // list. Its older sibling `Gemini` (the CLI) is npm-installed
                 // and remains detect-only.
                 | SoftwareId::GeminiDesktop
+                | SoftwareId::Dynamic
         )
     }
 
     pub fn from_key(key: &str) -> Option<Self> {
+        if key == "dynamic" {
+            return Some(SoftwareId::Dynamic);
+        }
         Self::ALL.into_iter().find(|s| s.key() == key)
     }
 }
@@ -808,6 +818,38 @@ pub struct EvidenceView {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AvailabilityKind {
+    Cli,
+    Gui,
+    Config,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AvailabilityStatus {
+    Available,
+    Unavailable,
+    Unknown,
+    NotApplicable,
+    LegacyUnverified,
+}
+
+/// Structured evidence distinguishing physical installation, execution outcome, and operational availability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailabilityEvidence {
+    pub kind: AvailabilityKind,
+    pub status: AvailabilityStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub evidence_source: String,
+    pub observed_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 /// The answer to "is this on the machine, and how sure are we?"
 ///
 /// Named `installed`/`confidence` per the brief's field list. The two are
@@ -838,6 +880,9 @@ pub struct SoftwareInfo {
     pub evidence: Vec<EvidenceView>,
     /// Actionable notes, e.g. "installed but not callable from this terminal".
     pub hints: Vec<String>,
+    /// Independent operational availability evidence (CLI runnable, GUI registered, Config validated).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<AvailabilityEvidence>,
 }
 
 /// The complete answer: what is on this machine.
@@ -1075,22 +1120,96 @@ pub struct GitBootstrap {
     pub configure: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    Stdio,
+    Http,
+}
+
+impl Default for McpTransport {
+    fn default() -> Self {
+        Self::Stdio
+    }
+}
+
 /// One MCP server declaration.
-///
-/// `spec` is the package specification in the same form the official MCP
-/// documentation writes it, so a student can copy an entry from a README into a
-/// profile. See `bootstrap::mcp` for the accepted forms and why an unscoped name
-/// is rejected.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpBootstrap {
     pub name: String,
+    /// Preserved for display and backward-compatibility.
+    #[serde(default)]
     pub spec: String,
+    #[serde(default)]
+    pub executable: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub transport: McpTransport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_names: Option<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
 // Installation planning and execution
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InstallerKind {
+    Exe,
+    Msi,
+    Ps1,
+    Cmd,
+    Bat,
+    Unsupported,
+}
+
+impl InstallerKind {
+    pub fn from_url_pathname(url: &str) -> Self {
+        let path = url.split('?').next().unwrap_or(url);
+        let path = path.split('#').next().unwrap_or(path);
+        let lower = path.to_lowercase();
+        if lower.ends_with(".exe") {
+            InstallerKind::Exe
+        } else if lower.ends_with(".msi") {
+            InstallerKind::Msi
+        } else if lower.ends_with(".ps1") {
+            InstallerKind::Ps1
+        } else if lower.ends_with(".cmd") {
+            InstallerKind::Cmd
+        } else if lower.ends_with(".bat") {
+            InstallerKind::Bat
+        } else {
+            InstallerKind::Unsupported
+        }
+    }
+
+    pub fn extension(self) -> &'static str {
+        match self {
+            InstallerKind::Exe => "exe",
+            InstallerKind::Msi => "msi",
+            InstallerKind::Ps1 => "ps1",
+            InstallerKind::Cmd => "cmd",
+            InstallerKind::Bat => "bat",
+            InstallerKind::Unsupported => "bin",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptProgramKind {
+    Npm,
+    Npx,
+    Pip,
+    Python,
+    PowerShell,
+    Cmd,
+}
 
 /// How an installer will obtain the software. Modelled explicitly so the
 /// "don't maintain your own binaries" rule is enforced by the type system:
@@ -1109,9 +1228,23 @@ pub enum InstallSource {
     /// Official installer, downloaded at runtime from the vendor and passed to
     /// the OS. Used only where winget has no package or ships something stale
     /// (Claude Desktop, Codex).
-    OfficialInstaller { url: String, sha256: Option<String> },
+    OfficialInstaller {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sha256: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kind: Option<InstallerKind>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vendor_id: Option<String>,
+    },
     /// Installed through a package manager that is itself already present.
-    Script { command: String },
+    Script {
+        command: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        program_kind: Option<ScriptProgramKind>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        args: Option<Vec<String>>,
+    },
     /// Nothing to install; configuration only (e.g. a local git config).
     ConfigurationOnly,
 }
@@ -1133,6 +1266,14 @@ pub struct InstallStep {
     pub expected_location: Option<String>,
 }
 
+/// Origin category of an install plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlanOrigin {
+    Profile,
+    Selection,
+}
+
 /// The complete plan for a detected environment + chosen profile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1151,6 +1292,112 @@ pub struct InstallPlan {
     /// promise the run has to break.
     #[serde(default)]
     pub estimated_minutes: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_policy: Option<crate::modules::storage::StoragePolicy>,
+}
+
+/// Authoritative backend-owned record of an install plan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanRecord {
+    pub plan_id: String,
+    pub origin: PlanOrigin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    pub steps: Vec<InstallStep>,
+    pub ready_count: u32,
+    pub satisfied_count: u32,
+    pub estimated_minutes: Option<u32>,
+    pub storage_policy: Option<crate::modules::storage::StoragePolicy>,
+    pub storage_revision: u64,
+    pub created_at: String,
+}
+
+impl PlanRecord {
+    pub fn to_view(&self) -> PlanView {
+        PlanView {
+            plan_id: self.plan_id.clone(),
+            origin: self.origin,
+            profile_id: self.profile_id.clone(),
+            steps: self.steps.clone(),
+            ready_count: self.ready_count,
+            satisfied_count: self.satisfied_count,
+            estimated_minutes: self.estimated_minutes,
+            storage_policy: self.storage_policy.clone(),
+            storage_revision: self.storage_revision,
+            created_at: self.created_at.clone(),
+        }
+    }
+}
+
+/// Display-only view of a plan returned to the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanView {
+    pub plan_id: String,
+    pub origin: PlanOrigin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    pub steps: Vec<InstallStep>,
+    pub ready_count: u32,
+    pub satisfied_count: u32,
+    pub estimated_minutes: Option<u32>,
+    pub storage_policy: Option<crate::modules::storage::StoragePolicy>,
+    pub storage_revision: u64,
+    pub created_at: String,
+}
+
+impl PlanView {
+    pub fn to_install_plan(&self) -> InstallPlan {
+        InstallPlan {
+            profile_id: self.profile_id.clone().unwrap_or_default(),
+            steps: self.steps.clone(),
+            ready_count: self.ready_count,
+            satisfied_count: self.satisfied_count,
+            estimated_minutes: self.estimated_minutes,
+            storage_policy: self.storage_policy.clone(),
+        }
+    }
+}
+
+/// IPC request payload to launch an install.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartInstallRequest {
+    pub plan_id: String,
+    #[serde(default)]
+    pub selected_step_ids: Option<Vec<SoftwareId>>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+/// Frozen snapshot of a plan saved into `TaskDocumentV1`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrozenPlan {
+    pub plan_id: String,
+    pub origin: PlanOrigin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    pub catalog_revision: String,
+    pub steps: Vec<InstallStep>,
+    pub storage_policy: Option<crate::modules::storage::StoragePolicy>,
+    pub storage_revision: u64,
+    pub created_at: String,
+}
+
+/// On-disk task document adhering to schema `task-document.v1`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDocumentV1 {
+    pub schema_version: String,
+    pub task_id: String,
+    pub status: String,
+    pub frozen_plan: FrozenPlan,
+    pub session: ExecutionSession,
+    pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1185,6 +1432,10 @@ pub struct StepProgress {
     pub fraction: Option<f32>,
     /// Verbatim tool output. Rendered only in advanced mode.
     pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<AvailabilityEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_outcome: Option<AttemptOutcome>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1206,6 +1457,8 @@ pub struct StepProgress {
 pub enum AttemptOutcome {
     /// Ran and the OS reported success (exit code 0).
     Succeeded,
+    /// Ran and the OS reported success with warning (e.g. MSI 3010 / 1641 reboot required).
+    SucceededWithWarning,
     /// Ran and the OS reported failure.
     Failed,
     /// Could not be started at all — the tool is missing (no winget), the
@@ -1226,7 +1479,12 @@ pub enum AttemptOutcome {
 
 impl AttemptOutcome {
     pub fn is_success(self) -> bool {
-        matches!(self, AttemptOutcome::Succeeded | AttemptOutcome::Skipped)
+        matches!(
+            self,
+            AttemptOutcome::Succeeded
+                | AttemptOutcome::SucceededWithWarning
+                | AttemptOutcome::Skipped
+        )
     }
 
     /// Whether a *different* link in the fallback chain could still succeed.
@@ -1243,6 +1501,21 @@ impl AttemptOutcome {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SubjectKind {
+    Software,
+    Config,
+    Plugin,
+    Skill,
+}
+
+impl Default for SubjectKind {
+    fn default() -> Self {
+        Self::Software
+    }
+}
+
 /// One executed action, recorded so the session is replayable after the fact.
 ///
 /// The brief requires every installation to be "可追踪": this is the trace. It
@@ -1251,7 +1524,12 @@ impl AttemptOutcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionRecord {
-    pub id: SoftwareId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<SoftwareId>,
+    #[serde(default)]
+    pub subject_kind: SubjectKind,
+    #[serde(default)]
+    pub subject_id: String,
     /// The strategy that was attempted, in the same form the plan used.
     pub source: InstallSource,
     /// Human-readable description of the command, for the advanced view.
@@ -1349,6 +1627,14 @@ impl ExecutionSession {
     pub fn last_action(&self) -> Option<&ActionRecord> {
         self.actions.last()
     }
+
+    pub fn is_success(&self) -> bool {
+        self.failed_steps.is_empty() && self.remaining.is_empty() && !self.cancelled_by_user
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled_by_user
+    }
 }
 
 /// Whether this process may attempt a given source at all, and why not.
@@ -1414,6 +1700,8 @@ pub struct PackageVerification {
     pub on_path: CheckResult,
     pub version: CheckResult,
     pub passed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<AvailabilityEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1456,6 +1744,8 @@ pub enum AppError {
     ProfileNotFound { id: String },
     #[error("profile file is invalid: {reason}")]
     ProfileInvalid { reason: String },
+    #[error("未找到安装方案：{id}")]
+    PlanNotFound { id: String },
     #[error("detection probe failed: {probe} ({reason})")]
     ProbeFailed { probe: String, reason: String },
     #[error("winget is unavailable: {reason}")]

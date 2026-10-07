@@ -61,6 +61,7 @@ fn remaining_enum_values_match_the_typescript_unions() {
         (serde_json::to_value(RunStatus::Succeeded).unwrap(), "succeeded"),
         (serde_json::to_value(RunStatus::Refused).unwrap(), "refused"),
         (serde_json::to_value(RunStatus::Failed).unwrap(), "failed"),
+        (serde_json::to_value(RunStatus::RollbackPartial).unwrap(), "rollbackPartial"),
     ] {
         assert_eq!(value, expected);
     }
@@ -347,6 +348,7 @@ fn state_lookup_is_by_plugin_id() {
             backup: None,
             modified: vec![],
             layers: vec![],
+            transaction_id: None,
         },
         InstalledRecord {
             plugin_id: "b".into(),
@@ -356,6 +358,7 @@ fn state_lookup_is_by_plugin_id() {
             backup: None,
             modified: vec![],
             layers: vec![],
+            transaction_id: None,
         },
     ];
     assert!(state_for(&records, "a").is_some());

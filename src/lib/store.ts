@@ -95,40 +95,53 @@ export type Section =
 export interface NavigationPreferences {
   defaultSection: Section;
   hiddenSections: Section[];
+  reducedDecoration?: boolean;
 }
 
 const NAV_PREFS_KEY = "setup-center:nav-preferences";
 
+/**
+ * Valid persistent dashboard sections (Issue H08).
+ * Fully includes "uiparts" so UI Parts library survives navigation preference persistence.
+ */
+export const VALID_SECTIONS: readonly Section[] = [
+  "overview",
+  "goals",
+  "software",
+  "repos",
+  "resources",
+  "uiparts",
+  "library",
+  "style",
+  "config",
+  "history",
+  "plugins",
+  "license",
+  "about",
+] as const;
+
 export function loadNavPreferences(): NavigationPreferences {
   if (typeof localStorage === "undefined") {
-    return { defaultSection: "overview", hiddenSections: [] };
+    return { defaultSection: "overview", hiddenSections: [], reducedDecoration: false };
   }
   try {
     const raw = localStorage.getItem(NAV_PREFS_KEY);
-    if (!raw) return { defaultSection: "overview", hiddenSections: [] };
+    if (!raw) return { defaultSection: "overview", hiddenSections: [], reducedDecoration: false };
     const parsed = JSON.parse(raw);
-    const validSections: Section[] = [
-      "overview",
-      "goals",
-      "software",
-      "repos",
-      "resources",
-      "library",
-      "style",
-      "config",
-      "history",
-      "plugins",
-      "license",
-      "about",
-    ];
+    const validSections = VALID_SECTIONS;
+    const isReduced = parsed.reducedDecoration === true;
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.reducedDecoration = String(isReduced);
+    }
     return {
       defaultSection: validSections.includes(parsed.defaultSection) ? parsed.defaultSection : "overview",
       hiddenSections: Array.isArray(parsed.hiddenSections)
-        ? parsed.hiddenSections.filter((s: unknown): s is Section => typeof s === "string" && validSections.includes(s as Section) && s !== "overview")
+        ? parsed.hiddenSections.filter((s: unknown): s is Section => typeof s === "string" && (validSections as readonly string[]).includes(s) && s !== "overview")
         : [],
+      reducedDecoration: isReduced,
     };
   } catch {
-    return { defaultSection: "overview", hiddenSections: [] };
+    return { defaultSection: "overview", hiddenSections: [], reducedDecoration: false };
   }
 }
 
@@ -136,6 +149,9 @@ export function saveNavPreferences(prefs: NavigationPreferences): void {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(NAV_PREFS_KEY, JSON.stringify(prefs));
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.reducedDecoration = String(prefs.reducedDecoration === true);
+    }
   } catch {}
 }
 
@@ -238,6 +254,8 @@ interface AppStore {
   setDefaultSection: (section: Section) => void;
   toggleSectionVisibility: (section: Section) => void;
   setHiddenSections: (sections: Section[]) => void;
+  setReducedDecoration: (enabled: boolean) => void;
+  toggleReducedDecoration: () => void;
 
   /**
    * The item whose detail is shown in the right-hand panel.
@@ -765,6 +783,15 @@ export const useApp = create<AppStore>((set, get) => ({
     const next: NavigationPreferences = { ...get().navPreferences, hiddenSections: sanitized };
     saveNavPreferences(next);
     set({ navPreferences: next });
+  },
+  setReducedDecoration: (reducedDecoration: boolean) => {
+    const next: NavigationPreferences = { ...get().navPreferences, reducedDecoration };
+    saveNavPreferences(next);
+    set({ navPreferences: next });
+  },
+  toggleReducedDecoration: () => {
+    const current = get().navPreferences.reducedDecoration ?? false;
+    get().setReducedDecoration(!current);
   },
 
   openDashboard: (section?: Section) => {
@@ -1384,34 +1411,28 @@ export const useApp = create<AppStore>((set, get) => ({
     const plan = get().plan;
     if (!plan || get().installing) return;
 
-    // Selective install (brief phase 7): the engine runs exactly the steps in
-    // the plan it is handed, and `install::execute_steps` derives both its loop
-    // and its `total` from `plan.steps`. So narrowing the plan *here* is the
-    // whole mechanism — no Rust change, no second execution path, and the
-    // session that comes back describes only what was actually requested.
-    //
-    // Steps the student unchecked are removed rather than marked skipped. A
-    // `skipped` step would appear in the report as "已检测到，无需安装", which
-    // is a different claim from "the student chose not to"; removing them keeps
-    // the report honest about what was and was not attempted.
+    // Selective install: plan was authoritative in backend, frontend passes planId and selectedStepIds
     const chosen = get().chosenSteps;
-    const effective =
+    const selectedStepIds =
       chosen === null
-        ? plan
-        : { ...plan, steps: plan.steps.filter((s) => chosen.has(s.id)) };
+        ? plan.steps.map((s) => s.id)
+        : plan.steps.filter((s) => chosen.has(s.id)).map((s) => s.id);
 
     // Everything the student wanted was already installed. Starting a run with
     // no steps would produce an empty session that reads like a silent failure;
     // refreshing the scan and leaving the existing session alone is the truthful
     // outcome.
-    if (effective.steps.length === 0) {
+    if (selectedStepIds.length === 0) {
       await get().scanInstalled(plan.steps.map((s) => s.id));
       return;
     }
 
     set({ installing: true, executionError: null });
     try {
-      const session = await ipc.runInstall(effective);
+      const session = await ipc.runInstall({
+        planId: plan.planId,
+        selectedStepIds,
+      });
       set({
         session,
         installing: false,

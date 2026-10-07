@@ -123,6 +123,9 @@ import type { DiscoveryItem } from "../core/discovery/types";
 import { RepoDetailModal } from "../components/RepoDetailModal";
 import { CloneRepoModal } from "../components/CloneRepoModal";
 import { DynamicSoftwareDetailModal } from "../components/DynamicSoftwareDetailModal";
+import { OverflowNavigation } from "../components/OverflowNavigation";
+import { AccessibleDialog } from "../components/AccessibleDialog";
+import { HealthBlockersSummary } from "./dashboard/HealthBlockersSummary";
 
 // ---------------------------------------------------------------------------
 // Sections
@@ -383,51 +386,12 @@ function DashboardNav({
           </div>
         </div>
 
-        <div data-nav-list className="flex flex-col gap-0.5">
-          {visibleSections.map((s) => {
-            const active = s.id === section;
-            const badge = badges[s.id];
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => onSelect(s.id)}
-                aria-current={active ? "page" : undefined}
-                className={clsx(
-                  "group flex items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left",
-                  "transition-colors duration-150 cursor-pointer",
-                  active
-                    ? "bg-[color:var(--surface-active)]"
-                    : "hover:bg-[color:var(--surface-hover)]",
-                )}
-              >
-                <span
-                  className={clsx(
-                    "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200",
-                    active
-                      ? "bg-[color:var(--status-accent)]"
-                      : "bg-[color:var(--line-default)] group-hover:bg-[color:var(--text-quiet)]",
-                  )}
-                />
-                <span
-                  className={clsx(
-                    "flex-1 text-[13px] transition-colors duration-150",
-                    active
-                      ? "text-[color:var(--text-strong)]"
-                      : "text-[color:var(--text-secondary)]",
-                  )}
-                >
-                  {s.label}
-                </span>
-                {badge != null && badge > 0 && (
-                  <span className="text-[color:var(--text-quiet)] tnum text-[11.5px]">
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <OverflowNavigation
+          items={visibleSections}
+          activeSection={section}
+          onSelect={onSelect}
+          badges={badges}
+        />
 
         <div data-nav-foot className="mt-auto flex flex-col gap-2 pt-6">
           <button
@@ -462,95 +426,137 @@ function NavPreferencesModal({
   const navPreferences = useApp((s) => s.navPreferences);
   const setDefaultSection = useApp((s) => s.setDefaultSection);
   const toggleSectionVisibility = useApp((s) => s.toggleSectionVisibility);
+  const toggleReducedDecoration = useApp((s) => s.toggleReducedDecoration);
 
   if (!isOpen) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+    <AccessibleDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      titleId="nav-prefs-title"
+      dataProtectedUi={true}
+      maxWidth="max-w-md"
+      panelClassName="relative w-full max-w-md rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-5 text-[color:var(--text-primary)] shadow-2xl space-y-4"
     >
-      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-[#121419] p-5 shadow-2xl text-zinc-100 space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-          <h3 className="text-[15px] font-bold text-white flex items-center gap-2">
-            <span>⚙ 导航偏好设置</span>
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-zinc-400 hover:text-white text-[13px] px-2 py-1 rounded cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
+      <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] pb-3">
+        <h3 id="nav-prefs-title" className="text-[16px] font-bold text-[color:var(--text-strong)] flex items-center gap-2">
+          <span>⚙ 导航偏好设置</span>
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭导航偏好设置"
+          className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+        >
+          <span className="text-[13px] leading-none">✕</span>
+        </button>
+      </div>
 
-        {/* 1. Default Startup Section */}
-        <div className="space-y-1.5">
-          <label className="text-[12px] font-semibold text-zinc-300 block">
-            默认启动分区 (Default Startup Section):
-          </label>
-          <select
-            value={navPreferences.defaultSection}
-            onChange={(e) => setDefaultSection(e.target.value as Section)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-[12.5px] text-white focus:border-amber-500 focus:outline-none"
-          >
-            {SECTIONS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label} ({s.id})
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-zinc-500">
-            打开应用或 cold start 时自动进入的分区，已持久化于本地存储。
-          </p>
-        </div>
+      {/* 1. Default Startup Section */}
+      <div className="space-y-1.5">
+        <label htmlFor="nav-prefs-default-section-select" className="text-[12.5px] font-semibold text-[color:var(--text-secondary)] block">
+          默认启动分区 (Default Startup Section):
+        </label>
+        <select
+          id="nav-prefs-default-section-select"
+          value={navPreferences.defaultSection}
+          onChange={(e) => setDefaultSection(e.target.value as Section)}
+          className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3 py-2 text-[13px] text-[color:var(--text-primary)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+        >
+          {SECTIONS.map((s) => (
+            <option key={s.id} value={s.id} className="bg-[color:var(--surface-base)] text-[color:var(--text-primary)]">
+              {s.label} ({s.id})
+            </option>
+          ))}
+        </select>
+        <p className="text-[11.5px] text-[color:var(--text-quiet)]">
+          打开应用或 cold start 时自动进入的分区，已持久化于本地存储。
+        </p>
+      </div>
 
-        {/* 2. Hidden Sections Toggle */}
-        <div className="space-y-2 pt-2 border-t border-zinc-800">
-          <label className="text-[12px] font-semibold text-zinc-300 block">
-            导航项显示与隐藏 (Show / Hide):
-          </label>
-          <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-            {SECTIONS.map((s) => {
-              const isOverview = s.id === "overview";
-              const isHidden = navPreferences.hiddenSections.includes(s.id);
-              return (
-                <label
-                  key={s.id}
-                  className={clsx(
-                    "flex items-center justify-between p-2 rounded-lg border text-[12px] cursor-pointer transition-colors",
-                    isHidden
-                      ? "border-zinc-800/80 bg-zinc-950/40 text-zinc-500"
-                      : "border-zinc-800 bg-zinc-900/60 text-zinc-200",
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={!isHidden}
-                      disabled={isOverview}
-                      onChange={() => toggleSectionVisibility(s.id)}
-                      className="accent-amber-500"
-                    />
-                    <span className="font-medium">{s.label}</span>
-                  </div>
-                  <span className="text-[10.5px] font-mono text-zinc-500">
-                    {isOverview ? "首页固定" : isHidden ? "已隐藏" : "显示中"}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="pt-2 flex justify-end">
-          <Button size="sm" variant="primary" onClick={onClose}>
-            完成
-          </Button>
+      {/* 2. Hidden Sections Toggle */}
+      <div className="space-y-2 pt-2 border-t border-[color:var(--line-subtle)]">
+        <label className="text-[12.5px] font-semibold text-[color:var(--text-secondary)] block">
+          导航项显示与隐藏 (Show / Hide):
+        </label>
+        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+          {SECTIONS.map((s) => {
+            const isOverview = s.id === "overview";
+            const isHidden = navPreferences.hiddenSections.includes(s.id);
+            return (
+              <label
+                key={s.id}
+                className={clsx(
+                  "flex min-h-[32px] items-center justify-between p-2 rounded-lg border text-[12.5px] cursor-pointer transition-colors",
+                  isHidden
+                    ? "border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)]/40 text-[color:var(--text-quiet)]"
+                    : "border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[color:var(--text-primary)] hover:border-[color:var(--line-strong)]",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!isHidden}
+                    disabled={isOverview}
+                    onChange={() => toggleSectionVisibility(s.id)}
+                    className="accent-[color:var(--status-accent)] h-4 w-4"
+                  />
+                  <span className="font-medium">{s.label}</span>
+                </div>
+                <span className="text-[11px] font-mono text-[color:var(--text-quiet)]">
+                  {isOverview ? "首页固定" : isHidden ? "已隐藏" : "显示中"}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </div>
-    </div>
+
+      {/* 3. Comfortable Reading & Reduced Decoration Mode (Issue H06) */}
+      <div className="pt-2 border-t border-[color:var(--line-subtle)] space-y-1.5">
+        <label className="text-[12.5px] font-semibold text-[color:var(--text-secondary)] block">
+          排版舒适度模式 (Comfortable Reading):
+        </label>
+        <label className="flex min-h-[36px] items-center justify-between p-2.5 rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-raised)] text-[12.5px] text-[color:var(--text-primary)] cursor-pointer hover:border-[color:var(--line-strong)] transition-colors">
+          <div className="flex items-center gap-2.5">
+            <input
+              id="nav-prefs-reduced-decoration-checkbox"
+              type="checkbox"
+              checked={navPreferences.reducedDecoration ?? false}
+              onChange={() => toggleReducedDecoration()}
+              className="accent-[color:var(--status-accent)] h-4 w-4"
+            />
+            <div>
+              <span className="font-semibold block text-[13px]">舒适阅读模式 (Reduced Decoration)</span>
+              <span className="text-[11.5px] text-[color:var(--text-quiet)] block">
+                正文强制 ≥14px，提升 quiet 文本对比度，弱化噪点与复杂装饰
+              </span>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono text-[color:var(--text-quiet)] shrink-0 ml-2">
+            {navPreferences.reducedDecoration ? "已开启" : "已关闭"}
+          </span>
+        </label>
+      {/* 4. Multi-Profile Workspace Deferral Notice (Issue K03) */}
+      <div className="pt-2 border-t border-[color:var(--line-subtle)] space-y-1">
+        <div className="flex items-center justify-between text-[12px]">
+          <span className="font-semibold text-[color:var(--text-secondary)]">多工作区配置方案 (Profiles)</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[color:var(--surface-sunken)] text-[color:var(--text-quiet)] border border-[color:var(--line-subtle)]">
+            DEFERRED_BY_SPEC
+          </span>
+        </div>
+        <p className="text-[11.5px] text-[color:var(--text-quiet)] leading-relaxed">
+          双 Profile / 多工作区隔离与跨栈全自动组装当前按规范明确延期，应用运行于统一单工作区个人库模式下。
+        </p>
+      </div>
+
+      <div className="pt-2 flex justify-end">
+        <Button size="sm" variant="primary" onClick={onClose} className="min-h-[32px] px-4">
+          完成
+        </Button>
+      </div>
+    </AccessibleDialog>
   );
 }
 
@@ -818,44 +824,61 @@ function OverviewSection({
           )}
         </div>
 
-        {/* 3. Quick Access Grid (6 tiles) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <QuickAccessTile
-            title="找软件 / 本机清单"
-            desc="本机软件诊断、缺口补齐与 Winget 全网秒查"
-            badge="36+ 内置"
-            onClick={() => setSection("software")}
-          />
-          <QuickAccessTile
-            title="GitHub 项目探索"
-            desc="精选热门开源仓库、活跃度对比与一键克隆"
-            badge="在线 API"
-            onClick={() => setSection("repos")}
-          />
-          <QuickAccessTile
-            title="目标规划模式"
-            desc="按技术路线 (Web/AI/Rust/算法) 定制专属环境"
-            badge="6条路线"
-            onClick={() => setSection("goals")}
-          />
-          <QuickAccessTile
-            title="开发资源全库"
-            desc="380+ 精选前端组件库、设计系统与实用工具"
-            badge="386 项"
-            onClick={() => setSection("resources")}
-          />
-          <QuickAccessTile
-            title="20 套视觉体验"
-            desc="极简、复古、终端与美学，支持声明式版式"
-            badge="V2 体验"
-            onClick={() => setSection("style")}
-          />
-          <QuickAccessTile
-            title="我的个人库"
-            desc="收藏清单、最近使用足迹、开发包与 AI 导出"
-            badge="本地存储"
-            onClick={() => setSection("library")}
-          />
+        {/* 3. Primary Tasks & Quick Access (Issue K03: Setup Computer vs Creative Workbench) */}
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between text-[11.5px] font-semibold uppercase tracking-wider text-[color:var(--text-quiet)] mb-2">
+              <span>基础环境配置 // Setup Computer</span>
+              <span className="font-mono text-[10.5px] opacity-75">环境闭环 & 缺口补齐</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <QuickAccessTile
+                title="找软件 / 本机清单"
+                desc="本机软件诊断、缺口补齐与 Winget 全网秒查"
+                badge="36+ 内置"
+                onClick={() => setSection("software")}
+              />
+              <QuickAccessTile
+                title="目标规划模式"
+                desc="按技术路线 (Web/AI/Rust/算法) 定制专属环境"
+                badge="6条路线"
+                onClick={() => setSection("goals")}
+              />
+              <QuickAccessTile
+                title="环境配置与履历"
+                desc="查看环境变量、Git 配置与安装履历回溯"
+                badge="环境链路"
+                onClick={() => setSection("config")}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between text-[11.5px] font-semibold uppercase tracking-wider text-[color:var(--text-quiet)] mb-2">
+              <span>创作与工程资产 // Creative Workbench</span>
+              <span className="font-mono text-[10.5px] opacity-75">资源、零件与体验</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <QuickAccessTile
+                title="GitHub 项目探索"
+                desc="精选热门开源仓库、活跃度对比与一键克隆"
+                badge="在线 API"
+                onClick={() => setSection("repos")}
+              />
+              <QuickAccessTile
+                title="开发资源全库"
+                desc="380+ 精选前端组件库、设计系统与实用工具"
+                badge="386 项"
+                onClick={() => setSection("resources")}
+              />
+              <QuickAccessTile
+                title="UI 零部件与视觉"
+                desc="可复用组件零件与 20 套声明式视觉体验"
+                badge="零件 & 体验"
+                onClick={() => setSection("uiparts")}
+              />
+            </div>
+          </div>
         </div>
 
         {/* 4. Recent & Bookmarks Strip (if available) */}
@@ -908,6 +931,14 @@ function OverviewSection({
             重新检测
           </button>
         </div>
+
+        {/* Issue K05: Prioritize explicit blockers & unknowns over raw composite score */}
+        <HealthBlockersSummary
+          report={environment}
+          capabilities={capabilities}
+          score={overallScore}
+          onFixBlockers={() => setSection("software")}
+        />
 
         <div className="flex items-start justify-between gap-4">
           <EnvironmentScore

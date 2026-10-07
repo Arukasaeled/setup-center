@@ -404,6 +404,13 @@ export interface ExperienceProfile {
    */
   runtimeCapability?: string;
 
+  /**
+   * Numeric capability revision for strict integer-level capability gating (Issue G05).
+   * A client whose `EXPERIENCE_CAPABILITY_REVISION` is below this value will refuse
+   * rendering rather than rendering a corrupted layout.
+   */
+  capabilityRevision?: number;
+
   /** One-line notes used by the gallery specimen, so previews can be honest. */
   specimenNote?: string;
 }
@@ -451,6 +458,10 @@ export interface SetupStyle {
   designPrinciples?: string[];
   license?: string;
   updatedAt?: string;
+  /** Monotonically increasing revision counter within the runtime registry (Issue G03). */
+  revision?: number;
+  /** Base style ID for derived experiences (Issue G02). */
+  baseStyleId?: StyleId;
   /** The declarative experience. Absent only on a pre-Experience manifest. */
   experience?: ExperienceProfile;
 }

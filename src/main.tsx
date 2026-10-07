@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { ModalProvider } from "./components/ModalProvider";
 import "./styles.css";
 
 // The app is dark-only; set it before React paints. This replaces an inline
@@ -22,6 +23,8 @@ if (!root) throw new Error("#root not found");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ModalProvider>
+      <App />
+    </ModalProvider>
   </StrictMode>,
 );

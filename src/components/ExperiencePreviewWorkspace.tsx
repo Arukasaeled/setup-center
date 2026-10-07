@@ -17,6 +17,8 @@ import {
   computeRuntimeVars,
   composeShadow,
   isRenderable,
+  loadOverrides,
+  buildExperienceSpecification,
 } from "../styles/runtime";
 import { resolveSetupAction } from "../core/setup/resolver";
 import { executeSetupAction } from "../core/setup/executor";
@@ -78,6 +80,158 @@ const GRAMMAR_DOCS: Record<string, { label: string; desc: string }> = {
   },
 };
 
+interface SandboxedPreviewFrameProps {
+  style: SetupStyle;
+  vars: Record<string, string>;
+  fontSize: string;
+  children: React.ReactNode;
+}
+
+/**
+ * SandboxedPreviewFrame (Issue G06)
+ * Isolates experience specimen and scene mocks inside a dedicated sandboxed iframe.
+ * Prevents active app styles and external stylesheets from contaminating the preview,
+ * and ensures honest framing of the preview as an "体验示意" rather than a fake live app.
+ */
+function SandboxedPreviewFrame({
+  style,
+  vars,
+  fontSize,
+  children,
+}: SandboxedPreviewFrameProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [mountNode, setMountNode] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc) return;
+
+      doc.open();
+      doc.write(`<!DOCTYPE html>
+<html data-experience="${style.id}" data-style="${style.id}" ${style.baseStyleId ? `data-base-style="${style.baseStyleId}"` : ""}>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: #e4e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow-x: hidden;
+    }
+    .flex { display: flex; }
+    .flex-col { flex-direction: column; }
+    .flex-wrap { flex-wrap: wrap; }
+    .items-center { align-items: center; }
+    .items-start { align-items: flex-start; }
+    .justify-between { justify-content: space-between; }
+    .gap-1\\.5 { gap: 0.375rem; }
+    .gap-2 { gap: 0.5rem; }
+    .gap-3 { gap: 0.75rem; }
+    .gap-3\\.5 { gap: 0.875rem; }
+    .gap-4 { gap: 1rem; }
+    .gap-5 { gap: 1.25rem; }
+    .p-4 { padding: 1rem; }
+    .p-5 { padding: 1.25rem; }
+    .p-6 { padding: 1.5rem; }
+    .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .px-2\\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+    .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .py-0\\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+    .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+    .py-1\\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+    .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    .pt-2\\.5 { padding-top: 0.625rem; }
+    .pt-3 { padding-top: 0.75rem; }
+    .pb-2 { padding-bottom: 0.5rem; }
+    .pb-3 { padding-bottom: 0.75rem; }
+    .mt-1 { margin-top: 0.25rem; }
+    .mt-2 { margin-top: 0.5rem; }
+    .mt-3 { margin-top: 0.75rem; }
+    .mt-4 { margin-top: 1rem; }
+    .mb-1 { margin-bottom: 0.25rem; }
+    .mb-2 { margin-bottom: 0.5rem; }
+    .font-bold { font-weight: 700; }
+    .font-black { font-weight: 900; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .border { border: 1px solid rgba(255,255,255,0.12); }
+    .border-b { border-bottom: 1px solid rgba(255,255,255,0.12); }
+    .border-t { border-top: 1px solid rgba(255,255,255,0.12); }
+    .rounded-lg { border-radius: 0.5rem; }
+    .rounded-xl { border-radius: 0.75rem; }
+    .grid { display: grid; }
+    .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    @media (min-width: 640px) {
+      .sm\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (min-width: 768px) {
+      .md\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .md\\:flex-row { flex-direction: row; }
+      .md\\:w-1\\/3 { width: 33.333333%; }
+    }
+    .w-full { width: 100%; }
+    .flex-1 { flex: 1 1 0%; }
+    .relative { position: relative; }
+    .overflow-hidden { overflow: hidden; }
+    .uppercase { text-transform: uppercase; }
+    .tracking-wider { letter-spacing: 0.05em; }
+    .tracking-tight { letter-spacing: -0.025em; }
+    .leading-relaxed { line-height: 1.625; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .text-white { color: #ffffff; }
+    .text-zinc-300 { color: #d4d4d8; }
+    .text-zinc-400 { color: #a1a1aa; }
+    .text-zinc-500 { color: #71717a; }
+    .text-amber-400 { color: #fbbf24; }
+    .text-emerald-400 { color: #34d399; }
+    .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
+    .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+  </style>
+</head>
+<body data-preview-sandbox="true">
+  <div id="preview-mount-root"></div>
+</body>
+</html>`);
+      doc.close();
+
+      const rootEl = doc.documentElement;
+      for (const [k, v] of Object.entries(vars)) {
+        rootEl.style.setProperty(k, v);
+      }
+      doc.body.style.fontSize = fontSize;
+
+      setMountNode(doc.getElementById("preview-mount-root"));
+    } catch (e) {
+      console.warn("[ExperiencePreview] Sandbox iframe initialization fallback:", e);
+    }
+  }, [style, vars, fontSize]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      title={`体验示意沙箱 — ${style.name}`}
+      sandbox="allow-same-origin allow-scripts"
+      className="w-full min-h-[480px] border-none bg-transparent"
+      style={{ display: "block", minHeight: "500px" }}
+    >
+      {mountNode ? (
+        createPortal(children, mountNode)
+      ) : (
+        <div style={{ fontSize, ...(vars as unknown as React.CSSProperties) }}>
+          {children}
+        </div>
+      )}
+    </iframe>
+  );
+}
+
 /**
  * ExperiencePreviewWorkspace — Dedicated neutral overlay workspace for inspecting
  * full-scale visual experiences without inheriting destructive active-style styles.
@@ -118,8 +272,9 @@ export function ExperiencePreviewWorkspace({
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
+  const overrides = useMemo(() => loadOverrides(style.id), [style.id]);
   const profile = useMemo(() => resolveExperienceProfile(style), [style]);
-  const tokens = useMemo(() => resolveTokens(style), [style]);
+  const tokens = useMemo(() => resolveTokens(style, overrides), [style, overrides]);
   const vars = useMemo(() => computeRuntimeVars(tokens, profile), [tokens, profile]);
   const live = isRenderable(style);
 
@@ -192,13 +347,13 @@ export function ExperiencePreviewWorkspace({
     }
   };
 
-  // Export for AI Agent helper
+  // Export for AI Agent & design specs (Issue G07)
   const handleCopyAgentPrompt = () => {
-    const prompt = generateAgentPrompt(style);
+    const prompt = generateExperienceSpec(style, overrides);
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(prompt).then(() => {
         setCopiedPrompt(true);
-        onNotice(`已复制「${style.name}」的 AI 设计师 Prompt！`);
+        onNotice(`已复制「${style.name}」的完整体验规格！`);
         setTimeout(() => setCopiedPrompt(false), 2500);
       });
     }
@@ -306,7 +461,7 @@ export function ExperiencePreviewWorkspace({
             className="flex items-center rounded-lg bg-zinc-900/90 p-1 border border-zinc-800"
           >
             {[
-              { id: "preview", label: "体验样张" },
+              { id: "preview", label: "体验示意" },
               { id: "grammar", label: "体验语法" },
               { id: "tokens", label: "色彩与令牌" },
               { id: "principles", label: "规范与原则" },
@@ -335,11 +490,11 @@ export function ExperiencePreviewWorkspace({
             <button
               type="button"
               onClick={handleCopyAgentPrompt}
-              title="导出 AI 设计师 Prompt，可直接发给 AI 助手还原此风格"
+              title="导出当前有效体验规格，包含有效令牌覆盖与缺失清单"
               className="flex h-8 items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 text-[11.5px] font-bold text-amber-400 hover:bg-amber-500 hover:text-black transition-all cursor-pointer mr-1"
             >
               <span>⌗</span>
-              <span>{copiedPrompt ? "已复制 Prompt" : "导出 AI Prompt"}</span>
+              <span>{copiedPrompt ? "已复制规格" : "导出体验规格"}</span>
             </button>
             {onPrev && (
               <button
@@ -392,7 +547,7 @@ export function ExperiencePreviewWorkspace({
             2. SCROLLABLE BODY (Only one scrollable container)
             ================================================================== */}
         <div className="flex-1 overflow-y-auto overscroll-contain bg-[#0c0e12] p-4 sm:p-6 space-y-6">
-          {/* TAB 1: 体验样张 (PREVIEW HERO STAGE) */}
+          {/* TAB 1: 体验示意 (PREVIEW HERO STAGE) */}
           {tab === "preview" && (
             <div className="space-y-4">
               {/* Stage Top Bar: Controls */}
@@ -403,10 +558,10 @@ export function ExperiencePreviewWorkspace({
                   </span>
                   <div className="flex rounded-md bg-zinc-950 p-0.5 border border-zinc-800">
                     {[
-                      { id: "specimen", label: "体验样张 (综合模拟)" },
-                      { id: "overview", label: "场景 · 全局概览" },
-                      { id: "collection", label: "场景 · 网格资产" },
-                      { id: "detail", label: "场景 · 详情展开" },
+                      { id: "specimen", label: "体验示意 (构图与组件)" },
+                      { id: "overview", label: "场景示意 · 概览" },
+                      { id: "collection", label: "场景示意 · 资产" },
+                      { id: "detail", label: "场景示意 · 详情" },
                     ].map((m) => (
                       <button
                         key={m.id}
@@ -470,38 +625,33 @@ export function ExperiencePreviewWorkspace({
                     <span className="h-2.5 w-2.5 rounded-full bg-zinc-700/80" />
                     <span className="h-2.5 w-2.5 rounded-full bg-zinc-700/80" />
                     <span className="ml-2 font-mono text-[11.5px] text-zinc-400">
-                      Setup Center — {style.name} (仿真运行视口)
+                      Setup Center — {style.name} (体验示意 · 沙箱隔离预览)
                     </span>
                   </div>
                   <div className="font-mono text-[10.5px] text-zinc-400">
-                    外壳: {profile.shell ?? "sidebar"} · 导航: {profile.navigation ?? "sidebar"}
+                    外壳: {profile.shell ?? "sidebar"} · 导航: {profile.navigation ?? "sidebar"} · [体验示意 · 非真实系统窗口]
                   </div>
                 </div>
 
-                {/* Stage Viewport */}
-                <div
-                  className="min-h-[460px] overflow-auto p-4 sm:p-6"
-                  style={{
-                    fontSize: specimenFontSize,
-                    // Pass target style variables directly to the stage scope
-                    ...(vars as unknown as React.CSSProperties),
-                  }}
-                >
-                  {previewMode === "specimen" && (
-                    <ExperienceSpecimen style={style} scale="full" className="rounded-lg shadow-lg" />
-                  )}
+                {/* Stage Viewport with Sandboxed iframe Isolation */}
+                <div className="min-h-[460px] overflow-auto p-4 sm:p-6">
+                  <SandboxedPreviewFrame style={style} vars={vars} fontSize={specimenFontSize}>
+                    {previewMode === "specimen" && (
+                      <ExperienceSpecimen style={style} scale="full" className="rounded-lg shadow-lg" />
+                    )}
 
-                  {previewMode === "overview" && (
-                    <OverviewSceneMock style={style} vars={vars} profile={profile} />
-                  )}
+                    {previewMode === "overview" && (
+                      <OverviewSceneMock style={style} vars={vars} profile={profile} />
+                    )}
 
-                  {previewMode === "collection" && (
-                    <CollectionSceneMock style={style} vars={vars} profile={profile} />
-                  )}
+                    {previewMode === "collection" && (
+                      <CollectionSceneMock style={style} vars={vars} profile={profile} />
+                    )}
 
-                  {previewMode === "detail" && (
-                    <DetailSceneMock style={style} vars={vars} profile={profile} />
-                  )}
+                    {previewMode === "detail" && (
+                      <DetailSceneMock style={style} vars={vars} profile={profile} />
+                    )}
+                  </SandboxedPreviewFrame>
                 </div>
               </div>
 
@@ -850,59 +1000,87 @@ export function ExperiencePreviewWorkspace({
   return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
 
-/** Generates a complete AI prompt instructing an agent to replicate this exact style */
-function generateAgentPrompt(style: SetupStyle): string {
-  const profile = resolveExperienceProfile(style);
-  const tokens = resolveTokens(style);
-  return `# Setup Center Design System Specification: ${style.name} (${style.id})
+/**
+ * Generates the authoritative experience specification document (Issue G07).
+ * Encapsulates:
+ * - Active effective tokens (manifest defaults merged with user overrides)
+ * - User override deltas
+ * - Missing or non-inlined assets and platform gaps
+ * - Eight-dimensional declarative grammar
+ * - Invariant locks and principles
+ * - Concrete instructions for AI coding assistants
+ */
+function generateExperienceSpec(style: SetupStyle, overrides: TokenOverrides = {}): string {
+  const spec = buildExperienceSpecification(style, overrides);
+  const profile = spec.grammar;
+  const tokens = spec.effectiveTokens;
 
-## 1. System Identity & Philosophy
-- **Name**: ${style.name}
-- **Subtitle**: ${style.subtitle}
-- **Design Tier**: ${profile.tier} (${TIER_LABEL[profile.tier]})
-- **Family**: ${profile.family ?? "standard"}
-- **Inspiration**: ${style.inspiration}
-- **Description**: ${style.description}
+  const overridesList = Object.keys(overrides).length > 0
+    ? Object.entries(overrides).map(([k, v]) => `- **${k}**: ${JSON.stringify(v)} (已自定义覆盖)`).join("\n")
+    : "- 无自定义覆盖（当前全部遵循预设默认值）";
 
-## 2. Visual Anatomy Breakdown
-- **Scene Grammar**: ${profile.scene ?? "standard"}
-- **Shell Layout**: ${profile.shell ?? "sidebar"}
-- **Navigation Flow**: ${profile.navigationFlow ?? profile.navigation ?? "sidebar"}
-- **Hero Mode**: ${profile.heroMode ?? "standard"}
-- **Layering Depth**: ${profile.layering ?? "single-plane"}
-- **Card Language**: ${profile.card ?? "panel"}
-- **Composition Rhythm**: ${profile.composition ?? "solid-grid"}
-- **Page Transition**: ${profile.pageTransition ?? "subtle-fade"}
-- **Information Density**: ${tokens.density}
-- **Motion Dynamics**: ${tokens.motion}
+  const missingList = spec.missingAssets && spec.missingAssets.length > 0
+    ? spec.missingAssets.map((m) => `- ⚠️ ${m}`).join("\n")
+    : "- 无缺失资源（基础令牌与语法定义完备）";
 
-## 3. Semantic Palette (Tokens)
+  return `# Setup Center 体验规格 (Experience Specification): ${style.name} (${style.id})
+
+> 导出时间: ${spec.exportedAt}
+> 规范格式: v${spec.formatVersion} (${spec.kind})
+
+## 1. 体验身份与定位 (Identity)
+- **名称**: ${style.name}
+- **标识 (ID)**: ${style.id}
+- **基类标识 (BaseStyle)**: ${style.baseStyleId ?? "无 (自主定义基类)"}
+- **副标题**: ${style.subtitle}
+- **体验等级**: ${profile.tier} (${TIER_LABEL[profile.tier]})
+- **视觉风格族**: ${profile.family ?? "standard"}
+- **设计灵感**: ${style.inspiration}
+- **设计概述**: ${style.description}
+
+## 2. 视觉语法八维架构 (Visual Grammar)
+- **场景语法 (Scene)**: ${profile.scene ?? "standard"}
+- **外壳构架 (Shell)**: ${profile.shell ?? "sidebar"}
+- **导航流向 (Navigation)**: ${profile.navigationFlow ?? profile.navigation ?? "sidebar"}
+- **主焦点视界 (Hero Mode)**: ${profile.heroMode ?? "standard"}
+- **分层深度 (Layering)**: ${profile.layering ?? "single-plane"}
+- **卡片语言 (Card)**: ${profile.card ?? "panel"}
+- **版面节奏 (Composition)**: ${profile.composition ?? "solid-grid"}
+- **过渡语法 (Transition)**: ${profile.pageTransition ?? "subtle-fade"}
+- **信息密度 (Density)**: ${tokens.density}
+- **动效律动 (Motion)**: ${tokens.motion}
+
+## 3. 当前有效语义令牌 (Effective Tokens)
 - Base Background: ${style.palette.baseBg}
-- Panel Surface: ${style.palette.surface}
+- Panel Surface: ${tokens.surface}
 - Card Border: ${style.palette.cardBorder}
-- Accent Primary: ${style.palette.accent}
-- Accent Secondary: ${style.palette.accentSecondary ?? "none"}
-- Primary Text: ${style.palette.text}
-
-## 4. Geometric & Spatial Metrics
-- Panel Border Radius: ${tokens.panelRadius}
-- Control Border Radius: ${tokens.controlRadius}
+- Accent Primary: ${tokens.accent}
+- Accent Secondary: ${tokens.accentSecondary ?? "none"}
+- Primary Text: ${tokens.text}
+- Panel Radius: ${tokens.panelRadius}
+- Control Radius: ${tokens.controlRadius}
 - Border Width: ${tokens.borderWidth}
-- Shadow: ${tokens.shadow.offsetX} ${tokens.shadow.offsetY} ${tokens.shadow.blur} ${tokens.shadow.spread} ${tokens.shadow.color}
-- Heading Scale Multiplier: ${tokens.headingScale}
-- Body Scale Multiplier: ${tokens.bodyScale}
+- Heading Scale: ${tokens.headingScale}
+- Body Scale: ${tokens.bodyScale}
+- Composed Shadow: ${composeShadow(tokens.shadow)}
 
-## 5. Core Design Principles
-${style.designPrinciples ? style.designPrinciples.map((p) => `- ${p}`).join("\n") : "- None"}
+## 4. 用户有效覆盖清单 (Effective Overrides)
+${overridesList}
 
-## 6. Invariant Locks
-${Object.entries(style.experience?.locked ?? {}).map(([k, v]) => `- **${k}**: ${v}`).join("\n") || "- None"}
+## 5. 缺失资源与实现差异清单 (Missing Assets & Gaps)
+${missingList}
 
-## 7. Instructions for AI Coding Agent
-When designing or implementing pages and components under this aesthetic:
-1. Always apply the semantic variables above (--radius-panel, --border-width, --status-accent, --surface-raised).
-2. The UI must pass the Silhouette Test: even in grayscale, the unique outline geometry (${tokens.panelRadius}, ${profile.card}, ${profile.composition}) must distinctly convey the character of ${style.name}.
-3. Respect all invariant lock constraints without exception.`;
+## 6. 不变式锁定义 (Invariant Locks)
+${Object.entries(style.experience?.locked ?? {}).map(([k, v]) => `- **${k}**: ${v}`).join("\n") || "- 无任何限制锁"}
+
+## 7. 核心设计原则 (Design Principles)
+${style.designPrinciples ? style.designPrinciples.map((p) => `- ${p}`).join("\n") : "- 未定义特定原则"}
+
+## 8. AI 助手编码还原指令
+当基于此规格在外部工程还原界面时：
+1. 必须优先应用上述有效覆盖令牌，保持 ${tokens.panelRadius} 与 ${tokens.borderWidth} 几何轮廓；
+2. 尊重不变式锁，不得违背语法规则；
+3. 参考缺失清单补充对应的自定义样式表与本地字体。`;
 }
 
 /** Realistic Overview Section Mock rendered under target style tokens */

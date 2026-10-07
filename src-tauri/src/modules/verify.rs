@@ -150,6 +150,9 @@ pub fn compare_versions(observed: &str, minimum: &str) -> Option<std::cmp::Order
 /// into "Git is not installed" tells the student to reinstall working software.
 pub fn verify_package(id: SoftwareId, detected: Option<&SoftwareInfo>) -> PackageVerification {
     let name = id.display_name().to_string();
+    let cat = crate::modules::catalog::Catalog::builtin();
+    let cat_entry = cat.entry(id);
+    let is_gui = cat_entry.version_args.is_none() || id.category() == SoftwareCategory::AiCreative;
 
     let unknown = detected.is_some_and(|item| {
         !item.installed && item.confidence == Confidence::Unknown
@@ -192,45 +195,74 @@ pub fn verify_package(id: SoftwareId, detected: Option<&SoftwareInfo>) -> Packag
         },
     };
 
-    let on_path = match detected {
-        Some(item) if item.installed && item.on_path => CheckResult {
-            key: format!("{}.path", id.key()),
-            label: "已加入 PATH".into(),
-            confidence: Confidence::Ok,
-            expected: Some("在 PATH 中".into()),
-            observed: Some("在 PATH 中".into()),
-            hint: None,
-        },
-        Some(item) if item.installed => CheckResult {
-            key: format!("{}.path", id.key()),
-            label: "已加入 PATH".into(),
-            confidence: Confidence::Fail,
-            expected: Some("在 PATH 中".into()),
-            observed: Some("不在 PATH 中".into()),
-            hint: Some("关闭并重新打开终端后重试；若仍无效，需要修复 PATH。".into()),
-        },
-        Some(_) if unknown => CheckResult {
-            key: format!("{}.path", id.key()),
-            label: "已加入 PATH".into(),
-            confidence: Confidence::Unknown,
-            expected: Some("在 PATH 中".into()),
-            observed: Some("无法确认".into()),
-            hint: None,
-        },
-        _ => CheckResult {
-            key: format!("{}.path", id.key()),
-            label: "已加入 PATH".into(),
-            confidence: Confidence::Skipped,
-            expected: Some("在 PATH 中".into()),
-            observed: Some("未安装，跳过".into()),
-            hint: None,
-        },
+    let on_path = if is_gui {
+        match detected {
+            Some(item) if item.installed => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "无需 PATH (GUI应用)".into(),
+                confidence: Confidence::Ok,
+                expected: Some("桌面应用".into()),
+                observed: Some("桌面应用程序无需配置环境变量".into()),
+                hint: None,
+            },
+            Some(_) if unknown => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "无需 PATH (GUI应用)".into(),
+                confidence: Confidence::Unknown,
+                expected: Some("桌面应用".into()),
+                observed: Some("无法确认".into()),
+                hint: None,
+            },
+            _ => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "无需 PATH (GUI应用)".into(),
+                confidence: Confidence::Skipped,
+                expected: Some("桌面应用".into()),
+                observed: Some("未安装，跳过".into()),
+                hint: None,
+            },
+        }
+    } else {
+        match detected {
+            Some(item) if item.installed && item.on_path => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "已加入 PATH".into(),
+                confidence: Confidence::Ok,
+                expected: Some("在 PATH 中".into()),
+                observed: Some("在 PATH 中".into()),
+                hint: None,
+            },
+            Some(item) if item.installed => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "已加入 PATH".into(),
+                confidence: Confidence::Fail,
+                expected: Some("在 PATH 中".into()),
+                observed: Some("不在 PATH 中".into()),
+                hint: Some("关闭并重新打开终端后重试；若仍无效，需要修复 PATH。".into()),
+            },
+            Some(_) if unknown => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "已加入 PATH".into(),
+                confidence: Confidence::Unknown,
+                expected: Some("在 PATH 中".into()),
+                observed: Some("无法确认".into()),
+                hint: None,
+            },
+            _ => CheckResult {
+                key: format!("{}.path", id.key()),
+                label: "已加入 PATH".into(),
+                confidence: Confidence::Skipped,
+                expected: Some("在 PATH 中".into()),
+                observed: Some("未安装，跳过".into()),
+                hint: None,
+            },
+        }
     };
 
     let version = evaluate_version(id, detected);
 
     let passed = present.confidence.is_ok()
-        && !on_path.confidence.eq(&Confidence::Fail)
+        && (is_gui || !on_path.confidence.eq(&Confidence::Fail))
         && !version.confidence.eq(&Confidence::Fail);
 
     PackageVerification {
@@ -240,6 +272,7 @@ pub fn verify_package(id: SoftwareId, detected: Option<&SoftwareInfo>) -> Packag
         on_path,
         version,
         passed,
+        availability: detected.and_then(|d| d.availability.clone()),
     }
 }
 
@@ -442,6 +475,7 @@ mod tests {
             sources: vec![ProbeSource::Path],
             evidence: vec![],
             hints: vec![],
+            availability: None,
         }
     }
 
@@ -464,6 +498,7 @@ mod tests {
                 detail: Some("无法运行 winget".into()),
             }],
             hints: vec![],
+            availability: None,
         }
     }
 

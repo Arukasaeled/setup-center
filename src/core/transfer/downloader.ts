@@ -2,11 +2,16 @@
  * Setup Center — Direct Asset Downloader
  *
  * Downloads external archives, fonts, tools, and code templates.
- * Provides progressive feedback, cancellation support, and Transfer history logging.
+ * Enforces controlled native backend downloads with .part streaming and atomic
+ * replacement in Tauri runtime, ensuring "completed" status corresponds to actual
+ * physical disk landing (Issues B13, K07).
+ * In browser environments, falls back to chunked fetch without fabricating
+ * fake percentages when total size is unknown.
  */
 
 import type { DownloadTask } from "./types";
 import { TransferHistory } from "./history";
+import { isTauri, nativeDownload } from "../../lib/ipc";
 
 type DownloadListener = (tasks: DownloadTask[]) => void;
 
@@ -42,16 +47,22 @@ class AssetDownloaderManager {
   /**
    * Start downloading an asset
    */
-  public async startDownload(url: string, filename: string, title?: string): Promise<DownloadTask> {
+  public async startDownload(
+    url: string,
+    filename: string,
+    title?: string,
+    expectedSha256?: string,
+  ): Promise<DownloadTask> {
     const taskId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const task: DownloadTask = {
       id: taskId,
       url,
       filename,
       downloadedBytes: 0,
-      progress: 0,
+      progress: undefined,
       status: "downloading",
       startedAt: new Date().toISOString(),
+      sha256: expectedSha256,
     };
 
     this.tasks.set(taskId, task);
@@ -61,8 +72,47 @@ class AssetDownloaderManager {
     this.abortControllers.set(taskId, controller);
 
     try {
-      // If running inside browser or Tauri webview, we can stream or trigger download
-      // Simulating a robust chunked fetch with progress tracking
+      // 1. Native Tauri environment: stream to controlled .part file and atomic replace
+      if (isTauri()) {
+        const res = await nativeDownload({
+          url,
+          filename,
+          expectedSha256,
+        });
+
+        if (controller.signal.aborted) {
+          throw new Error("用户取消下载");
+        }
+
+        task.downloadedBytes = res.sizeBytes;
+        task.sizeBytes = res.sizeBytes;
+        task.progress = 100;
+        task.destinationPath = res.destinationPath;
+        task.sha256Verified = res.sha256Verified;
+        task.status = "completed";
+        task.completedAt = new Date().toISOString();
+
+        TransferHistory.record({
+          type: "download",
+          title: "资产下载完成",
+          targetId: taskId,
+          targetName: title || filename,
+          status: "success",
+          summary: `成功下载文件「${filename}」(${Math.round(task.downloadedBytes / 1024)} KB) 至磁盘 ${res.destinationPath}`,
+          metadata: {
+            url,
+            filename,
+            sizeBytes: task.downloadedBytes,
+            destinationPath: res.destinationPath,
+            sha256Verified: res.sha256Verified,
+          },
+        });
+
+        this.notify();
+        return task;
+      }
+
+      // 2. Web browser fallback: chunked fetch with honest progress tracking
       const res = await fetch(url, { signal: controller.signal, mode: "cors" });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -73,7 +123,6 @@ class AssetDownloaderManager {
       task.sizeBytes = totalBytes;
 
       if (!res.body) {
-        // Fallback for bodies without reader
         const blob = await res.blob();
         this.saveBlob(blob, filename);
         task.progress = 100;
@@ -94,8 +143,8 @@ class AssetDownloaderManager {
             if (totalBytes && totalBytes > 0) {
               task.progress = Math.min(99, Math.round((received / totalBytes) * 100));
             } else {
-              // Simulated incremental progress if no content-length
-              task.progress = Math.min(95, Math.round(received / 1024 / 10));
+              // Issue K07: Do NOT forge fake percentages when total size is unknown
+              task.progress = undefined;
             }
             this.notify();
           }
@@ -110,11 +159,11 @@ class AssetDownloaderManager {
 
       TransferHistory.record({
         type: "download",
-        title: "资产下载完成",
+        title: "资产已派发下载",
         targetId: taskId,
         targetName: title || filename,
         status: "success",
-        summary: `成功下载文件「${filename}」(${Math.round(task.downloadedBytes / 1024)} KB)`,
+        summary: `浏览器已触发保存「${filename}」(${Math.round(task.downloadedBytes / 1024)} KB)`,
         metadata: { url, filename, sizeBytes: task.downloadedBytes },
       });
 

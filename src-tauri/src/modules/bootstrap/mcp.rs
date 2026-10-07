@@ -27,15 +27,29 @@
 //!   in one is a leaked token.
 //! * **No uploading user data** — nothing here performs network I/O at all.
 
+use crate::model::{McpBootstrap, McpTransport};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub const SUPPORTED_TRANSPORTS: &[McpTransport] = &[McpTransport::Stdio];
+
+pub fn supported_transports() -> &'static [McpTransport] {
+    SUPPORTED_TRANSPORTS
+}
+
+pub fn is_transport_supported(transport: McpTransport) -> bool {
+    matches!(transport, McpTransport::Stdio)
+}
+
 /// The only server shapes V1 will write.
-///
-/// Modelled as an enum rather than a free-form string so an unsupported entry is
-/// a *parse* error, not a config file the client silently ignores.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpServerKind {
+    Structured {
+        executable: String,
+        args: Vec<String>,
+        transport: McpTransport,
+        url: Option<String>,
+    },
     /// `command: "npx"`, `args: ["-y", "<package>"]` — the shape the official
     /// reference servers ship in.
     NpmPackage { package: String, extra_args: Vec<String> },
@@ -43,15 +57,38 @@ pub enum McpServerKind {
 
 impl McpServerKind {
     /// The `command`/`args` pair this kind resolves to.
-    pub fn command_and_args(&self) -> (String, Vec<String>) {
+    pub fn command_and_args(&self) -> Result<(String, Vec<String>), McpError> {
         match self {
+            McpServerKind::Structured {
+                executable,
+                args,
+                transport,
+                ..
+            } => {
+                if !is_transport_supported(*transport) {
+                    return Err(McpError::UnsupportedKind {
+                        spec: executable.clone(),
+                        reason: format!(
+                            "传输协议 {:?} 当前尚未实现支持；目前仅支持 stdio 传输",
+                            transport
+                        ),
+                    });
+                }
+                if executable.trim().is_empty() {
+                    return Err(McpError::UnsupportedKind {
+                        spec: "<empty>".into(),
+                        reason: "未指定可执行文件 (executable)".into(),
+                    });
+                }
+                Ok((executable.clone(), args.clone()))
+            }
             McpServerKind::NpmPackage {
                 package,
                 extra_args,
             } => {
                 let mut args = vec!["-y".to_string(), package.clone()];
                 args.extend(extra_args.iter().cloned());
-                ("npx".to_string(), args)
+                Ok(("npx".to_string(), args))
             }
         }
     }
@@ -67,6 +104,8 @@ pub struct McpServer {
     pub kind: McpServerKind,
     /// Environment variables. Validated to reject secrets.
     pub env: BTreeMap<String, String>,
+    pub env_names: Vec<String>,
+    pub raw_spec: Option<String>,
 }
 
 /// Why a profile's MCP entry cannot be used.
@@ -125,19 +164,50 @@ const SECRET_MARKERS: &[&str] = &[
     "auth",
 ];
 
+/// Parses one structured `McpBootstrap` entry into a server.
+pub fn parse_bootstrap(entry: &McpBootstrap) -> Result<McpServer, McpError> {
+    validate_name(&entry.name)?;
+
+    if !entry.executable.trim().is_empty() {
+        if !is_transport_supported(entry.transport) {
+            return Err(McpError::UnsupportedKind {
+                spec: entry.name.clone(),
+                reason: format!(
+                    "传输协议 {:?} 当前尚未实现支持；目前仅支持 stdio 传输",
+                    entry.transport
+                ),
+            });
+        }
+        let env_names = entry.env_names.clone().unwrap_or_default();
+        for key in &env_names {
+            let lowered = key.to_ascii_lowercase();
+            if SECRET_MARKERS.iter().any(|marker| lowered.contains(marker)) {
+                return Err(McpError::SecretInProfile { key: key.clone() });
+            }
+        }
+        return Ok(McpServer {
+            name: entry.name.clone(),
+            kind: McpServerKind::Structured {
+                executable: entry.executable.clone(),
+                args: entry.args.clone(),
+                transport: entry.transport,
+                url: entry.url.clone(),
+            },
+            env: BTreeMap::new(),
+            env_names,
+            raw_spec: if entry.spec.is_empty() {
+                None
+            } else {
+                Some(entry.spec.clone())
+            },
+        });
+    }
+
+    // Fall back to parsing legacy raw spec string
+    parse_server(&entry.name, &entry.spec)
+}
+
 /// Parses one profile MCP entry.
-///
-/// The accepted spec forms, all of which name an npm package:
-///
-/// * `"@modelcontextprotocol/server-filesystem"`
-/// * `"npx -y @modelcontextprotocol/server-filesystem /allowed/path"`
-/// * `"npm:@modelcontextprotocol/server-filesystem"`
-///
-/// The `npx …` form is accepted because it is how the official documentation
-/// writes these entries, so a student copying from the README must not be
-/// rejected. The command word is then *stripped*, because we generate it: writing
-/// a `command` field that the profile supplied would make the profile the source
-/// of truth for how a process is launched.
 pub fn parse_server(name: &str, spec: &str) -> Result<McpServer, McpError> {
     validate_name(name)?;
 
@@ -152,50 +222,91 @@ pub fn parse_server(name: &str, spec: &str) -> Result<McpServer, McpError> {
     if spec.contains("://") {
         return Err(McpError::UnsupportedKind {
             spec: spec.to_string(),
-            reason: "第一版只支持 npm 包类型（stdio）；远程 URL 类型尚未支持".into(),
+            reason: "当前仅支持 stdio 传输；HTTP/SSE 传输尚未实现".into(),
         });
     }
 
-    let mut tokens: Vec<String> = spec.split_whitespace().map(str::to_string).collect();
-
-    // Strip a leading `npx`, `npm exec`, or a `npm:` prefix.
-    if tokens.first().map(String::as_str) == Some("npx") {
-        tokens.remove(0);
-    } else if tokens.first().map(String::as_str) == Some("npm")
-        && tokens.get(1).map(String::as_str) == Some("exec")
-    {
-        tokens.drain(0..2);
-    }
-
-    // Drop the `-y` / `--yes` flag: we always pass it ourselves.
-    tokens.retain(|t| t != "-y" && t != "--yes");
-
-    let Some(first) = tokens.first().cloned() else {
-        return Err(McpError::UnsupportedKind {
-            spec: spec.to_string(),
-            reason: "没有指明 npm 包名".into(),
-        });
-    };
-
-    let package = first
-        .strip_prefix("npm:")
-        .map(str::to_string)
-        .unwrap_or(first);
-
-    if !looks_like_npm_package(&package) {
-        return Err(McpError::UnsupportedKind {
-            spec: spec.to_string(),
-            reason: format!("{package:?} 不像一个 npm 包名"),
+    // Bare scoped package: e.g. "@modelcontextprotocol/server-filesystem"
+    if is_scoped_package(spec) {
+        return Ok(McpServer {
+            name: name.to_string(),
+            kind: McpServerKind::NpmPackage {
+                package: spec.to_string(),
+                extra_args: Vec::new(),
+            },
+            env: BTreeMap::new(),
+            env_names: Vec::new(),
+            raw_spec: Some(spec.to_string()),
         });
     }
 
-    Ok(McpServer {
-        name: name.to_string(),
-        kind: McpServerKind::NpmPackage {
-            package,
-            extra_args: tokens.into_iter().skip(1).collect(),
-        },
-        env: BTreeMap::new(),
+    // npm: prefix
+    if let Some(pkg) = spec.strip_prefix("npm:") {
+        if is_scoped_package(pkg) {
+            return Ok(McpServer {
+                name: name.to_string(),
+                kind: McpServerKind::NpmPackage {
+                    package: pkg.to_string(),
+                    extra_args: Vec::new(),
+                },
+                env: BTreeMap::new(),
+                env_names: Vec::new(),
+                raw_spec: Some(spec.to_string()),
+            });
+        }
+    }
+
+    // Well-formed documented prefix: "npx -y @scope/pkg [args...]"
+    let tokens: Vec<&str> = spec.split_whitespace().collect();
+    if tokens.first() == Some(&"npx") {
+        let mut rest = &tokens[1..];
+        if rest.first() == Some(&"-y") || rest.first() == Some(&"--yes") {
+            rest = &rest[1..];
+        }
+        if let Some(pkg) = rest.first() {
+            if is_scoped_package(pkg) {
+                let extra_args = rest[1..].iter().map(|s| s.to_string()).collect();
+                return Ok(McpServer {
+                    name: name.to_string(),
+                    kind: McpServerKind::NpmPackage {
+                        package: pkg.to_string(),
+                        extra_args,
+                    },
+                    env: BTreeMap::new(),
+                    env_names: Vec::new(),
+                    raw_spec: Some(spec.to_string()),
+                });
+            } else {
+                return Err(McpError::UnsupportedKind {
+                    spec: spec.to_string(),
+                    reason: "必须提供有效的 npm 包名（形如 @scope/name）".into(),
+                });
+            }
+        }
+    }
+
+    if tokens.first() == Some(&"npm") && tokens.get(1) == Some(&"exec") {
+        let rest = &tokens[2..];
+        if let Some(pkg) = rest.first() {
+            if is_scoped_package(pkg) {
+                let extra_args = rest[1..].iter().map(|s| s.to_string()).collect();
+                return Ok(McpServer {
+                    name: name.to_string(),
+                    kind: McpServerKind::NpmPackage {
+                        package: pkg.to_string(),
+                        extra_args,
+                    },
+                    env: BTreeMap::new(),
+                    env_names: Vec::new(),
+                    raw_spec: Some(spec.to_string()),
+                });
+            }
+        }
+    }
+
+    Err(McpError::UnsupportedKind {
+        spec: spec.to_string(),
+        reason: "无法从非结构化字符串安全解析；请提供结构化参数数组 (executable, args)".into(),
     })
 }
 
@@ -294,10 +405,10 @@ pub struct McpServerConfig {
 /// Returns the whole `{"mcpServers": {…}}` object so the caller merges one key at
 /// the top level, which keeps the merge shallow and the diff readable — and means
 /// an existing `mcpServers` map is extended rather than replaced.
-pub fn config_value(servers: &[McpServer]) -> serde_json::Value {
+pub fn config_value(servers: &[McpServer]) -> Result<serde_json::Value, McpError> {
     let mut map = serde_json::Map::new();
     for server in servers {
-        let (command, args) = server.kind.command_and_args();
+        let (command, args) = server.kind.command_and_args()?;
         let entry = McpServerConfig {
             command,
             args,
@@ -308,7 +419,7 @@ pub fn config_value(servers: &[McpServer]) -> serde_json::Value {
             serde_json::to_value(entry).unwrap_or(serde_json::Value::Null),
         );
     }
-    serde_json::json!({ "mcpServers": map })
+    Ok(serde_json::json!({ "mcpServers": map }))
 }
 
 /// Reads the server names already present in an existing config.
@@ -417,7 +528,10 @@ mod tests {
         // The profile supplies a *package*, never a command. Writing a
         // profile-supplied command would make the profile the source of truth
         // for how a process is launched.
-        let (command, args) = server("npx -y @modelcontextprotocol/server-filesystem").kind.command_and_args();
+        let (command, args) = server("npx -y @modelcontextprotocol/server-filesystem")
+            .kind
+            .command_and_args()
+            .unwrap();
         assert_eq!(command, "npx");
         assert_eq!(args, vec!["-y", "@modelcontextprotocol/server-filesystem"]);
     }

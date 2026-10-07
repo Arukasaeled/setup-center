@@ -17,6 +17,13 @@ export type ContentType =
   | "skill"
   | "learning";
 
+export type ContentLifecycleState =
+  | "discovered"
+  | "saved"
+  | "installed"
+  | "active"
+  | "archived";
+
 export interface ContentItem<TMetadata = Record<string, unknown>> {
   id: string;
   type: ContentType;
@@ -26,6 +33,7 @@ export interface ContentItem<TMetadata = Record<string, unknown>> {
   source?: string;
   author?: string;
   license?: string;
+  lifecycle?: ContentLifecycleState;
   updatedAt?: string;
   homepage?: string;
   repository?: string;

@@ -23,6 +23,7 @@ import type {
   UIPartKind,
   UIPartLifecycle,
   UIPartPackage,
+  UIPartPackageManifest,
   UIPartsRecoveryState,
   UIPartsStorageDocument,
   UIPartsStorageInfo,
@@ -34,6 +35,9 @@ import {
   readUIPartAsset,
   saveUIPartAsset,
   saveUserUIParts,
+  stageUIPartAsset,
+  commitUIPartAssets,
+  discardUIPartAssets,
 } from "../../lib/ipc";
 import {
   VALID_KINDS,
@@ -45,10 +49,13 @@ import {
   reconcileStorageState,
   validateAssetRelativePath,
   validateContract,
+  validateStorageDocument,
+  validatePackageContract,
+  deepClone,
 } from "./persistenceLogic";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 
-export { VALID_KINDS, VALID_LIFECYCLES, validateContract };
+export { VALID_KINDS, VALID_LIFECYCLES, validateContract, validateStorageDocument, deepClone };
 export type { UIPartKind, UIPartLifecycle };
 
 const CACHE_KEY = "setup-center.ui-parts.cache.v1";
@@ -63,6 +70,7 @@ export class UIPartRepositoryClass {
   private schemaVersion: number = SCHEMA_VERSION;
   private updatedAt: string = new Date().toISOString();
   private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
   private listeners: Set<Listener> = new Set();
   private assetUrlCache: Map<string, string> = new Map();
   private commitMutex: Promise<any> = Promise.resolve();
@@ -154,101 +162,131 @@ export class UIPartRepositoryClass {
    */
   public async init(): Promise<void> {
     if (this.initialized) return;
-    this.initialized = true;
+    if (this.initPromise) return this.initPromise;
 
-    // Fetch storage info in native mode
-    if (isTauri()) {
-      try {
-        const info = await getUIPartsInfo();
-        if (info) {
-          this.storageInfo = {
-            mode: "tauri-disk",
-            storageDir: info.storage_dir,
-            indexFile: info.index_file,
-            assetsDir: info.assets_dir,
-            revision: this.revision,
-            schemaVersion: this.schemaVersion,
-            updatedAt: this.updatedAt,
-          };
-        }
-      } catch (err) {
-        console.warn("Failed to get uiparts info:", err);
-      }
-    }
-
-    try {
-      const loadRes = await loadUserUIParts();
-      if (!loadRes) {
-        // Browser fallback mode
-        this.storageInfo.mode = "browser-fallback";
-        return;
-      }
-
-      let diskDoc: UIPartsStorageDocument | null = null;
-      let isCorrupted = loadRes.is_corrupted;
-
-      if (!isCorrupted && loadRes.content && loadRes.content.trim().length > 0) {
+    this.initPromise = (async () => {
+      // Fetch storage info in native mode
+      if (isTauri()) {
         try {
-          const parsed = JSON.parse(loadRes.content);
-          if (parsed && Array.isArray(parsed.parts)) {
-            diskDoc = parsed;
-          } else if (Array.isArray(parsed)) {
-            diskDoc = {
-              schemaVersion: 1,
-              revision: 1,
-              updatedAt: new Date().toISOString(),
-              parts: parsed,
+          const info = await getUIPartsInfo();
+          if (info) {
+            this.storageInfo = {
+              mode: "tauri-disk",
+              storageDir: info.storage_dir,
+              indexFile: info.index_file,
+              assetsDir: info.assets_dir,
+              revision: this.revision,
+              schemaVersion: this.schemaVersion,
+              updatedAt: this.updatedAt,
             };
-          } else {
+          }
+        } catch (err) {
+          console.warn("Failed to get uiparts info:", err);
+        }
+      }
+
+      try {
+        const loadRes = await loadUserUIParts();
+        if (!loadRes) {
+          // Browser fallback mode
+          this.storageInfo.mode = "browser-fallback";
+          this.initialized = true;
+          return;
+        }
+
+        let diskDoc: UIPartsStorageDocument | null = null;
+        let isCorrupted = loadRes.is_corrupted;
+
+        if (!isCorrupted && loadRes.content && loadRes.content.trim().length > 0) {
+          try {
+            const parsed = JSON.parse(loadRes.content);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.parts)) {
+              const validation = validateStorageDocument(parsed);
+              if (validation.valid) {
+                diskDoc = parsed;
+              } else {
+                console.warn("[UIParts] Disk storage failed validation:", validation.error);
+                isCorrupted = true;
+              }
+            } else if (Array.isArray(parsed)) {
+              const legacyDoc: UIPartsStorageDocument = {
+                schemaVersion: 1,
+                revision: 1,
+                updatedAt: new Date().toISOString(),
+                parts: parsed,
+              };
+              const validation = validateStorageDocument(legacyDoc);
+              if (validation.valid) {
+                diskDoc = legacyDoc;
+              } else {
+                console.warn("[UIParts] Legacy disk array failed validation:", validation.error);
+                isCorrupted = true;
+              }
+            } else {
+              isCorrupted = true;
+            }
+          } catch {
             isCorrupted = true;
           }
-        } catch {
-          isCorrupted = true;
         }
-      }
 
-      let cacheDoc: UIPartsStorageDocument | null = null;
-      if (this.cacheHydrationState === "valid" && typeof localStorage !== "undefined") {
-        try {
-          const raw = localStorage.getItem(CACHE_KEY);
-          if (raw) cacheDoc = JSON.parse(raw);
-        } catch {
-          // ignore cache parse error
+        let cacheDoc: UIPartsStorageDocument | null = null;
+        if (this.cacheHydrationState === "valid" && typeof localStorage !== "undefined") {
+          try {
+            const raw = localStorage.getItem(CACHE_KEY);
+            if (raw) {
+              const parsedCache = JSON.parse(raw);
+              if (validateStorageDocument(parsedCache).valid) {
+                cacheDoc = parsedCache;
+              }
+            }
+          } catch {
+            // ignore cache parse error
+          }
         }
+
+        const outcome = reconcileStorageState({
+          diskDoc,
+          cacheDoc,
+          seedParts: SEED_UI_PARTS,
+          isDiskCorrupted: isCorrupted,
+          cacheHydrationState: this.cacheHydrationState,
+          corruptBackupPath: loadRes.corrupted_backup,
+        });
+
+        this.recoveryState = outcome.recoveryState;
+
+        if (outcome.action === "use-disk") {
+          // F02: Authoritative disk state taken as-is without re-injecting seed parts!
+          this.parts = outcome.activeDoc.parts;
+          this.revision = outcome.activeDoc.revision;
+          this.schemaVersion = outcome.activeDoc.schemaVersion;
+          this.updatedAt = outcome.activeDoc.updatedAt;
+          this.storageInfo.revision = this.revision;
+          this.storageInfo.updatedAt = this.updatedAt;
+
+          // Synchronize startup cache to match disk truth
+          this.saveToStartupCacheOnly();
+          void this.migrateLegacyDataUrls();
+          this.initialized = true;
+          this.notify();
+          return;
+        }
+
+        if (outcome.shouldWriteDisk) {
+          await this.commitToStorage(outcome.activeDoc.parts);
+        }
+        this.initialized = true;
+      } catch (err) {
+        console.warn("Failed to load user uiparts from Tauri disk:", err);
+        throw err;
       }
+    })();
 
-      const outcome = reconcileStorageState({
-        diskDoc,
-        cacheDoc,
-        seedParts: SEED_UI_PARTS,
-        isDiskCorrupted: isCorrupted,
-        cacheHydrationState: this.cacheHydrationState,
-        corruptBackupPath: loadRes.corrupted_backup,
-      });
-
-      this.recoveryState = outcome.recoveryState;
-
-      if (outcome.action === "use-disk") {
-        const mergedParts = this.mergeWithSeeds(outcome.activeDoc.parts);
-        this.parts = mergedParts;
-        this.revision = outcome.activeDoc.revision;
-        this.schemaVersion = outcome.activeDoc.schemaVersion;
-        this.updatedAt = outcome.activeDoc.updatedAt;
-        this.storageInfo.revision = this.revision;
-        this.storageInfo.updatedAt = this.updatedAt;
-
-        // Synchronize startup cache to match disk truth
-        this.saveToStartupCacheOnly();
-        void this.migrateLegacyDataUrls();
-        this.notify();
-        return;
-      }
-
-      if (outcome.shouldWriteDisk) {
-        await this.commitToStorage(outcome.activeDoc.parts);
-      }
-    } catch (err) {
-      console.warn("Failed to load user uiparts from Tauri disk:", err);
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
     }
   }
 
@@ -277,6 +315,14 @@ export class UIPartRepositoryClass {
       parts: candidateParts,
     };
 
+    // Full contract validation before disk write
+    const validation = validateStorageDocument(candidateDoc);
+    if (!validation.valid) {
+      const err = new Error(`[UIParts] 提交数据契约校验失败: ${validation.error}`);
+      console.error(err);
+      throw err;
+    }
+
     // 1. Authoritative disk write FIRST in Tauri
     if (isTauri()) {
       const json = JSON.stringify(candidateDoc, null, 2);
@@ -286,17 +332,31 @@ export class UIPartRepositoryClass {
         console.error("[UIParts] Disk write failed. In-memory state preserved without taint:", err);
         throw err;
       }
+    } else {
+      // In browser fallback mode, propagate storage errors (F09)
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(candidateDoc));
+        } catch (storageErr) {
+          console.error("[UIParts] Browser storage write failed:", storageErr);
+          throw new Error(
+            `浏览器存储写入失败: ${storageErr instanceof Error ? storageErr.message : String(storageErr)}`
+          );
+        }
+      }
     }
 
-    // 2. Commit in-memory authoritative state ONLY after disk succeeds
+    // 2. Commit in-memory authoritative state ONLY after disk/storage succeeds
     this.parts = candidateParts;
     this.revision = candidateRevision;
     this.updatedAt = candidateUpdatedAt;
     this.storageInfo.revision = candidateRevision;
     this.storageInfo.updatedAt = candidateUpdatedAt;
 
-    // 3. Update fast startup cache
-    this.saveToStartupCacheOnly();
+    // 3. Update fast startup cache in Tauri
+    if (isTauri()) {
+      this.saveToStartupCacheOnly();
+    }
 
     // 4. Notify reactive UI listeners
     this.notify();
@@ -440,40 +500,40 @@ export class UIPartRepositoryClass {
     return this.storageInfo;
   }
 
-  /** List parts synchronously from memory */
+  /** List parts synchronously from memory as deep-cloned immutable snapshots */
   public listSync(query?: UIPartFilterQuery): UIPart[] {
-    let result = [...this.parts];
+    let result = this.parts;
 
-    if (!query) return result;
+    if (query) {
+      if (query.kind && query.kind !== "all") {
+        result = result.filter((p) => p.kind === query.kind);
+      }
 
-    if (query.kind && query.kind !== "all") {
-      result = result.filter((p) => p.kind === query.kind);
+      if (query.lifecycle && query.lifecycle !== "all") {
+        result = result.filter((p) => p.lifecycle === query.lifecycle);
+      }
+
+      if (query.tag && query.tag.trim()) {
+        const tagLower = query.tag.trim().toLowerCase();
+        result = result.filter((p) => p.tags.some((t) => t.toLowerCase() === tagLower));
+      }
+
+      if (query.search && query.search.trim()) {
+        const q = query.search.trim().toLowerCase();
+        result = result.filter(
+          (p) =>
+            p.title.toLowerCase().includes(q) ||
+            p.summary?.toLowerCase().includes(q) ||
+            p.tags.some((t) => t.toLowerCase() === tagLower(q)) ||
+            p.notes?.toLowerCase().includes(q) ||
+            (p.design?.portablePrinciple &&
+              (p.design.portablePrinciple.zh?.toLowerCase().includes(q) ||
+                p.design.portablePrinciple.rule?.toLowerCase().includes(q))),
+        );
+      }
     }
 
-    if (query.lifecycle && query.lifecycle !== "all") {
-      result = result.filter((p) => p.lifecycle === query.lifecycle);
-    }
-
-    if (query.tag && query.tag.trim()) {
-      const tagLower = query.tag.trim().toLowerCase();
-      result = result.filter((p) => p.tags.some((t) => t.toLowerCase() === tagLower));
-    }
-
-    if (query.search && query.search.trim()) {
-      const q = query.search.trim().toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.summary?.toLowerCase().includes(q) ||
-          p.tags.some((t) => t.toLowerCase() === tagLower(q)) ||
-          p.notes?.toLowerCase().includes(q) ||
-          (p.design?.portablePrinciple &&
-            (p.design.portablePrinciple.zh?.toLowerCase().includes(q) ||
-              p.design.portablePrinciple.rule?.toLowerCase().includes(q))),
-      );
-    }
-
-    return result;
+    return result.map((p) => deepClone(p));
   }
 
   /** Async list parts */
@@ -482,10 +542,11 @@ export class UIPartRepositoryClass {
     return this.listSync(query);
   }
 
-  /** Get part by ID */
+  /** Get part by ID as deep-cloned immutable snapshot */
   public async get(id: string): Promise<UIPart | null> {
     await this.init();
-    return this.parts.find((p) => p.id === id) || null;
+    const found = this.parts.find((p) => p.id === id);
+    return found ? deepClone(found) : null;
   }
 
   /** Create a new part */
@@ -503,7 +564,8 @@ export class UIPartRepositoryClass {
           .replace(/^-|-$/g, "") || "custom-part";
       const id = input.id || `part-${slug}-${Date.now().toString(36)}`;
 
-      // Process media assets: If thumbnail is Data URL, strictly validate MIME and save to native assets/<part-id>/
+      // Process media assets: stage thumbnail to prevent dirtying assets before index commit
+      const stagedAssets: { stagingPath: string; relativePath: string }[] = [];
       let thumbnail = input.preview?.thumbnail;
       if (thumbnail?.startsWith("data:image/")) {
         const parsedImage = parseSupportedImageDataUrl(thumbnail);
@@ -513,12 +575,12 @@ export class UIPartRepositoryClass {
           );
         }
         if (isTauri()) {
-          const assetRes = await saveUIPartAsset(id, `preview.${parsedImage.ext}`, thumbnail);
-          if (!assetRes || !assetRes.relative_path) {
-            throw new Error(`保存媒体资产到本地磁盘失败 (part: ${id})`);
+          const staged = await stageUIPartAsset(id, `preview.${parsedImage.ext}`, thumbnail);
+          if (!staged || !staged.staging_path) {
+            throw new Error(`暂存媒体资产到本地磁盘失败 (part: ${id})`);
           }
-          this.assetUrlCache.set(assetRes.relative_path, thumbnail);
-          thumbnail = assetRes.relative_path;
+          stagedAssets.push({ stagingPath: staged.staging_path, relativePath: staged.relative_path });
+          thumbnail = staged.relative_path;
         }
       }
 
@@ -548,12 +610,33 @@ export class UIPartRepositoryClass {
 
       const validation = UIPartRepositoryClass.validateContract(newPart);
       if (!validation.valid) {
+        if (stagedAssets.length > 0 && isTauri()) {
+          await discardUIPartAssets(stagedAssets.map((s) => s.stagingPath)).catch(() => {});
+        }
         throw new Error(`创建失败: ${validation.error}`);
       }
 
       const nextParts = [newPart, ...this.parts];
-      await this.commitToStorage(nextParts);
-      return newPart;
+      try {
+        await this.commitToStorage(nextParts);
+        if (stagedAssets.length > 0 && isTauri()) {
+          await commitUIPartAssets(
+            stagedAssets.map((s) => ({
+              staging_path: s.stagingPath,
+              relative_path: s.relativePath,
+            })),
+          );
+          if (thumbnail) {
+            this.assetUrlCache.set(thumbnail, input.preview?.thumbnail || "");
+          }
+        }
+      } catch (err) {
+        if (stagedAssets.length > 0 && isTauri()) {
+          await discardUIPartAssets(stagedAssets.map((s) => s.stagingPath)).catch(() => {});
+        }
+        throw err;
+      }
+      return deepClone(newPart);
     });
   }
 
@@ -569,6 +652,7 @@ export class UIPartRepositoryClass {
 
       const current = this.parts[index];
 
+      const stagedAssets: { stagingPath: string; relativePath: string }[] = [];
       let thumbnail = patch.preview?.thumbnail ?? current.preview?.thumbnail;
       if (patch.preview?.thumbnail && patch.preview.thumbnail.startsWith("data:image/")) {
         const parsedImage = parseSupportedImageDataUrl(patch.preview.thumbnail);
@@ -578,12 +662,12 @@ export class UIPartRepositoryClass {
           );
         }
         if (isTauri()) {
-          const assetRes = await saveUIPartAsset(id, `preview.${parsedImage.ext}`, patch.preview.thumbnail);
-          if (!assetRes || !assetRes.relative_path) {
-            throw new Error(`更新媒体资产到本地磁盘失败 (part: ${id})`);
+          const staged = await stageUIPartAsset(id, `preview.${parsedImage.ext}`, patch.preview.thumbnail);
+          if (!staged || !staged.staging_path) {
+            throw new Error(`暂存媒体资产到本地磁盘失败 (part: ${id})`);
           }
-          this.assetUrlCache.set(assetRes.relative_path, patch.preview.thumbnail);
-          thumbnail = assetRes.relative_path;
+          stagedAssets.push({ stagingPath: staged.staging_path, relativePath: staged.relative_path });
+          thumbnail = staged.relative_path;
         }
       }
 
@@ -602,14 +686,35 @@ export class UIPartRepositoryClass {
 
       const validation = UIPartRepositoryClass.validateContract(updated);
       if (!validation.valid) {
+        if (stagedAssets.length > 0 && isTauri()) {
+          await discardUIPartAssets(stagedAssets.map((s) => s.stagingPath)).catch(() => {});
+        }
         throw new Error(`更新失败: ${validation.error}`);
       }
 
       const nextParts = [...this.parts];
       nextParts[index] = updated;
 
-      await this.commitToStorage(nextParts);
-      return updated;
+      try {
+        await this.commitToStorage(nextParts);
+        if (stagedAssets.length > 0 && isTauri()) {
+          await commitUIPartAssets(
+            stagedAssets.map((s) => ({
+              staging_path: s.stagingPath,
+              relative_path: s.relativePath,
+            })),
+          );
+          if (thumbnail) {
+            this.assetUrlCache.set(thumbnail, patch.preview?.thumbnail || "");
+          }
+        }
+      } catch (err) {
+        if (stagedAssets.length > 0 && isTauri()) {
+          await discardUIPartAssets(stagedAssets.map((s) => s.stagingPath)).catch(() => {});
+        }
+        throw err;
+      }
+      return deepClone(updated);
     });
   }
 
@@ -641,7 +746,7 @@ export class UIPartRepositoryClass {
   }
 
   /**
-   * Exports part as Portable UIPart Package object with re-inlined media assets.
+   * Exports part as Portable UIPart Package object with all media assets and implementation references inlined.
    */
   public async exportPackage(id: string): Promise<UIPartPackage> {
     const part = await this.get(id);
@@ -651,42 +756,137 @@ export class UIPartRepositoryClass {
 
     // Clone part so export is independent
     const exportPart: UIPart = JSON.parse(JSON.stringify(part));
+    let totalMediaAssets = 0;
+    let inlinedMediaCount = 0;
+    const missingAssets: string[] = [];
 
-    // If thumbnail references a native disk asset, re-inline it as Data URL for true portability!
-    if (exportPart.preview?.thumbnail?.startsWith("assets/") && isTauri()) {
-      if (validateAssetRelativePath(exportPart.preview.thumbnail)) {
-        try {
-          const dataUrl = await readUIPartAsset(exportPart.preview.thumbnail);
-          if (dataUrl) {
-            exportPart.preview.thumbnail = dataUrl;
+    // Helper to inline an asset path
+    const inlineAsset = async (relPath: string): Promise<string | null> => {
+      if (!validateAssetRelativePath(relPath)) {
+        missingAssets.push(relPath);
+        return null;
+      }
+      if (!isTauri()) {
+        missingAssets.push(relPath);
+        return null;
+      }
+      try {
+        const dataUrl = await readUIPartAsset(relPath);
+        if (dataUrl) {
+          inlinedMediaCount++;
+          return dataUrl;
+        } else {
+          missingAssets.push(relPath);
+          return null;
+        }
+      } catch (err) {
+        console.warn(`Failed to re-inline asset "${relPath}" for export (${id}):`, err);
+        missingAssets.push(relPath);
+        return null;
+      }
+    };
+
+    // 1. preview.thumbnail
+    if (exportPart.preview?.thumbnail) {
+      totalMediaAssets++;
+      if (exportPart.preview.thumbnail.startsWith("assets/")) {
+        const inlined = await inlineAsset(exportPart.preview.thumbnail);
+        if (inlined) {
+          exportPart.preview.thumbnail = inlined;
+        }
+      } else if (exportPart.preview.thumbnail.startsWith("data:image/")) {
+        inlinedMediaCount++;
+      }
+    }
+
+    // 2. preview.screenshots
+    if (Array.isArray(exportPart.preview?.screenshots)) {
+      for (let i = 0; i < exportPart.preview.screenshots.length; i++) {
+        const item = exportPart.preview.screenshots[i];
+        if (!item) continue;
+        totalMediaAssets++;
+        if (item.startsWith("assets/")) {
+          const inlined = await inlineAsset(item);
+          if (inlined) {
+            exportPart.preview.screenshots[i] = inlined;
           }
-        } catch (err) {
-          console.warn(`Failed to re-inline thumbnail for export (${id}):`, err);
+        } else if (item.startsWith("data:image/")) {
+          inlinedMediaCount++;
         }
       }
     }
+
+    // 3. preview.sourceImages
+    if (Array.isArray(exportPart.preview?.sourceImages)) {
+      for (let i = 0; i < exportPart.preview.sourceImages.length; i++) {
+        const item = exportPart.preview.sourceImages[i];
+        if (!item) continue;
+        totalMediaAssets++;
+        if (item.startsWith("assets/")) {
+          const inlined = await inlineAsset(item);
+          if (inlined) {
+            exportPart.preview.sourceImages[i] = inlined;
+          }
+        } else if (item.startsWith("data:image/")) {
+          inlinedMediaCount++;
+        }
+      }
+    }
+
+    // 4. assets.mediaAssets
+    if (Array.isArray(exportPart.assets?.mediaAssets)) {
+      for (const mediaAsset of exportPart.assets.mediaAssets) {
+        if (!mediaAsset) continue;
+        totalMediaAssets++;
+        if (mediaAsset.relativePath && mediaAsset.relativePath.startsWith("assets/")) {
+          const inlined = await inlineAsset(mediaAsset.relativePath);
+          if (inlined) {
+            mediaAsset.dataUrl = inlined;
+          }
+        } else if (mediaAsset.dataUrl && mediaAsset.dataUrl.startsWith("data:image/")) {
+          inlinedMediaCount++;
+        }
+      }
+    }
+
+    const codeAssetCount = (exportPart.assets?.codeAssets?.length || 0) + (exportPart.assets?.svgAssets?.length || 0);
+    const totalAssets = totalMediaAssets + codeAssetCount;
+
+    let integrity: "complete" | "partial" | "metadata-only" = "complete";
+    if (totalAssets === 0) {
+      integrity = "metadata-only";
+    } else if (missingAssets.length > 0) {
+      integrity = "partial";
+    } else {
+      integrity = "complete";
+    }
+
+    const manifest: UIPartPackageManifest = {
+      totalAssets,
+      inlinedMediaCount,
+      codeAssetCount,
+      integrity,
+      ...(missingAssets.length > 0 ? { missingAssets } : {}),
+    };
 
     return {
       format: "uipart-package.v1",
       exportedAt: new Date().toISOString(),
       part: exportPart,
+      manifest,
     };
   }
 
   /**
-   * Handles collision without silent overwrites, extracts inlined assets to local storage.
+   * Handles collision without silent overwrites, extracts all inlined assets to local storage.
    */
   public async importPackage(pkg: UIPartPackage): Promise<UIPart> {
     await this.init();
 
     return this.runExclusive(async () => {
-      if (!pkg || pkg.format !== "uipart-package.v1" || !pkg.part) {
-        throw new Error("非法包格式: 必须包含 format: 'uipart-package.v1' 与 part 字段");
-      }
-
-      const validation = UIPartRepositoryClass.validateContract(pkg.part);
-      if (!validation.valid) {
-        throw new Error(`导入包校验失败: ${validation.error}`);
+      const packageValidation = validatePackageContract(pkg);
+      if (!packageValidation.valid) {
+        throw new Error(`非法包格式: ${packageValidation.error}`);
       }
 
       const incoming: UIPart = JSON.parse(JSON.stringify(pkg.part));
@@ -702,29 +902,93 @@ export class UIPartRepositoryClass {
         partToInsert = collision.part;
       }
 
-      // If thumbnail has inlined Data URL, validate and write to local asset file in Tauri
-      if (partToInsert.preview?.thumbnail?.startsWith("data:image/")) {
-        const parsedImage = parseSupportedImageDataUrl(partToInsert.preview.thumbnail);
-        if (!parsedImage) {
-          throw new Error(
-            "导入包包含不支持的图片格式。UI Parts V1 仅支持 PNG, JPEG, WebP, GIF 格式。"
-          );
-        }
-        if (isTauri()) {
-          const assetRes = await saveUIPartAsset(partToInsert.id, `preview.${parsedImage.ext}`, partToInsert.preview.thumbnail);
-          if (!assetRes || !assetRes.relative_path) {
-            throw new Error(`导入包媒体资产落盘失败 (part: ${partToInsert.id})`);
+      // If media assets have inlined Data URLs, validate and stage to local asset files in Tauri
+      const stagedAssets: { stagingPath: string; relativePath: string; dataUrl: string }[] = [];
+
+      try {
+        const stageMediaItem = async (dataUrl: string, defaultName: string): Promise<string> => {
+          const parsedImage = parseSupportedImageDataUrl(dataUrl);
+          if (!parsedImage) {
+            throw new Error(
+              `导入包包含不支持的图片格式 (${defaultName})。UI Parts 仅支持 PNG, JPEG, WebP, GIF 格式。`
+            );
           }
-          this.assetUrlCache.set(assetRes.relative_path, partToInsert.preview.thumbnail);
-          partToInsert.preview.thumbnail = assetRes.relative_path;
+          if (isTauri()) {
+            const fileName = `${defaultName}.${parsedImage.ext}`;
+            const staged = await stageUIPartAsset(partToInsert.id, fileName, dataUrl);
+            if (!staged || !staged.staging_path) {
+              throw new Error(`导入包媒体资产暂存失败 (${fileName}, part: ${partToInsert.id})`);
+            }
+            stagedAssets.push({ stagingPath: staged.staging_path, relativePath: staged.relative_path, dataUrl });
+            return staged.relative_path;
+          }
+          return dataUrl;
+        };
+
+        // 1. Thumbnail
+        if (partToInsert.preview?.thumbnail?.startsWith("data:image/")) {
+          const stagedRel = await stageMediaItem(partToInsert.preview.thumbnail, "preview");
+          partToInsert.preview.thumbnail = stagedRel;
         }
+
+        // 2. Screenshots
+        if (Array.isArray(partToInsert.preview?.screenshots)) {
+          for (let i = 0; i < partToInsert.preview.screenshots.length; i++) {
+            const item = partToInsert.preview.screenshots[i];
+            if (item?.startsWith("data:image/")) {
+              const stagedRel = await stageMediaItem(item, `screenshot-${i + 1}`);
+              partToInsert.preview.screenshots[i] = stagedRel;
+            }
+          }
+        }
+
+        // 3. Source Images
+        if (Array.isArray(partToInsert.preview?.sourceImages)) {
+          for (let i = 0; i < partToInsert.preview.sourceImages.length; i++) {
+            const item = partToInsert.preview.sourceImages[i];
+            if (item?.startsWith("data:image/")) {
+              const stagedRel = await stageMediaItem(item, `source-${i + 1}`);
+              partToInsert.preview.sourceImages[i] = stagedRel;
+            }
+          }
+        }
+
+        // 4. Media Assets
+        if (Array.isArray(partToInsert.assets?.mediaAssets)) {
+          for (let i = 0; i < partToInsert.assets.mediaAssets.length; i++) {
+            const ma = partToInsert.assets.mediaAssets[i];
+            if (ma?.dataUrl?.startsWith("data:image/")) {
+              const cleanName = ma.name ? ma.name.replace(/[^a-zA-Z0-9_-]/g, "_") : `media-${i + 1}`;
+              const stagedRel = await stageMediaItem(ma.dataUrl, cleanName);
+              ma.relativePath = stagedRel;
+              delete ma.dataUrl;
+            }
+          }
+        }
+
+        partToInsert.updatedAt = new Date().toISOString();
+        const nextParts = [partToInsert, ...this.parts];
+
+        await this.commitToStorage(nextParts);
+        if (stagedAssets.length > 0 && isTauri()) {
+          await commitUIPartAssets(
+            stagedAssets.map((s) => ({
+              staging_path: s.stagingPath,
+              relative_path: s.relativePath,
+            })),
+          );
+          for (const s of stagedAssets) {
+            this.assetUrlCache.set(s.relativePath, s.dataUrl);
+          }
+        }
+      } catch (err) {
+        if (stagedAssets.length > 0 && isTauri()) {
+          await discardUIPartAssets(stagedAssets.map((s) => s.stagingPath)).catch(() => {});
+        }
+        throw err;
       }
 
-      partToInsert.updatedAt = new Date().toISOString();
-      const nextParts = [partToInsert, ...this.parts];
-
-      await this.commitToStorage(nextParts);
-      return partToInsert;
+      return deepClone(partToInsert);
     });
   }
 

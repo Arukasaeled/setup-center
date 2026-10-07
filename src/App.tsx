@@ -52,6 +52,8 @@ import { getStyle, STYLE_REGISTRY } from "./styles/registry";
 import { readEntryChoice } from "./lib/entry";
 import { VaultSync } from "./core/vault";
 import { CommandPalette } from "./components/CommandPalette";
+import { useModalStack } from "./components/ModalProvider";
+import { isHotkeyAllowed } from "./lib/keyboard";
 
 /**
  * The wizard's steps.
@@ -89,6 +91,7 @@ export default function App() {
   const theme = useApp((s) => s.theme);
   const activeStyle = useApp((s) => s.activeStyle);
   const styleOverrides = useApp((s) => s.styleOverrides);
+  const styleRegistryVersion = useApp((s) => s.styleRegistryVersion);
   const entitlements = useApp((s) => s.entitlements);
   /**
    * Subscribed, not read via `getState()` inside the effect.
@@ -143,15 +146,24 @@ export default function App() {
    */
   const [forcedGate, setForcedGate] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const { hasOpenModal } = useModalStack();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isHotkeyAllowed(e)) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        if (hasOpenModal && !commandPaletteOpen) {
+          return;
+        }
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
       }
     };
-    const handleCustomOpen = () => setCommandPaletteOpen(true);
+    const handleCustomOpen = () => {
+      if (!hasOpenModal || commandPaletteOpen) {
+        setCommandPaletteOpen(true);
+      }
+    };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("setup:open-palette", handleCustomOpen);
@@ -159,7 +171,7 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("setup:open-palette", handleCustomOpen);
     };
-  }, []);
+  }, [hasOpenModal, commandPaletteOpen]);
 
   useEffect(() => {
     // Register any derived experiences the user saved, and delete the v1 tweaker
@@ -175,13 +187,12 @@ export default function App() {
   useEffect(() => {
     void loadStatus();
     // Checks for an interrupted run left by a previous launch. This is what
-    // makes "可恢复" survive a crash: the session lives in the Rust state, so a
-    // student whose machine rebooted mid-install is offered "继续安装" rather
-    // than having to work out which programs landed.
+    // makes "可恢复" survive a crash: persisted task document on disk is reloaded
+    // and validated on startup, so a student whose machine rebooted mid-install
+    // is offered "继续安装" rather than having to work out which programs landed.
     void loadResumable();
     if (useApp.getState().entitlementsPhase === "idle") void loadEntitlements();
-    VaultSync.hydrateFromCache();
-    void VaultSync.sync();
+    void VaultSync.initialize();
   }, [loadStatus, loadResumable, loadEntitlements]);
 
   /**
@@ -280,10 +291,14 @@ export default function App() {
   // `styleOverrides` is a dependency because overrides are part of the active
   // experience, not a separate concern: switching experience and reloading that
   // experience's own overrides must land in the same paint.
+  //
+  // Issue G03: `styleRegistryVersion` ensures that remote style updates with the
+  // same styleId (e.g. Vault sync) immediately trigger a re-application of runtime
+  // variables and data attributes with fresh revisions.
   useEffect(() => {
     const style = getStyle(activeStyle) ?? getStyle("phantom-comic") ?? STYLE_REGISTRY[0];
     applyExperience(style, styleOverrides);
-  }, [activeStyle, styleOverrides]);
+  }, [activeStyle, styleOverrides, styleRegistryVersion]);
 
   return (
     <div className="app-field relative flex h-full flex-col overflow-hidden">

@@ -1462,4 +1462,83 @@ html[data-scene="instrument-panel"] [data-shell-root] {
   user-select: none;
 }
 
+/* ==========================================================================
+   Protected UI Isolation — Critical Interface Shield (Issue D10, G08)
+   ==========================================================================
+   Guarantees that essential application controls, titlebar window buttons,
+   accessibility dialogs, license activation modals, execution consoles, and
+   system notifications maintain standard contrast, geometry, typography, and
+   click targets regardless of active theme or remote CSS overrides.
+   ========================================================================== */
+
+[data-protected-ui],
+[data-protected-ui] * {
+  box-sizing: border-box;
+}
+
+dialog[data-protected-ui],
+div[data-protected-ui][role="dialog"],
+[data-protected-ui] [role="dialog"] {
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif) !important;
+  color: var(--text-primary, #e4e7eb);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+[data-protected-ui]#titlebar,
+#titlebar[data-protected-ui],
+#titlebar button {
+  font-family: system-ui, -apple-system, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+[data-protected-ui] button,
+[data-protected-ui] input {
+  text-transform: none !important;
+}
+
+/* ==========================================================================
+   COMFORTABLE READING & REDUCED DECORATION MODE (Issue H06)
+   ==========================================================================
+   Guarantees body text readability (>= 14px), increases contrast for quiet/
+   tertiary text, suppresses heavy backgrounds/textures/scans/halftones, and
+   relieves visual fatigue in information-dense views.
+   ========================================================================== */
+
+:root[data-reduced-decoration="true"],
+html[data-reduced-decoration="true"] {
+  /* Suppress noisy background textures and scanlines */
+  --ornament-decoration: none !important;
+
+  /* Elevate quiet/tertiary text contrast */
+  --text-quiet: var(--text-secondary);
+  --text-tertiary: var(--text-secondary);
+
+  /* Increase comfortable body leading */
+  --type-body-leading: 1.65;
+}
+
+:root[data-reduced-decoration="true"] [data-shell-root],
+html[data-reduced-decoration="true"] [data-shell-root] {
+  font-size: 14px;
+}
+
+:root[data-reduced-decoration="true"] [data-page] p,
+:root[data-reduced-decoration="true"] [data-page] .text-quiet,
+:root[data-reduced-decoration="true"] [data-page] [data-resource-card] p,
+:root[data-reduced-decoration="true"] [data-detail] p {
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+/* Reset rotating tilts and jitter on composition items in comfortable reading */
+:root[data-reduced-decoration="true"] [data-composition-grid] > * {
+  transform: none !important;
+}
+
+:root[data-reduced-decoration="true"] :is([data-page], [data-detail], [data-nav]) {
+  background-image: none !important;
+}
+
 

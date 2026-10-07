@@ -6,10 +6,11 @@
  * - Clone Repo via native CLI
  * - Personal Note editing
  * - Side-by-side Compare entry
+ *
+ * Implements Issue H01 (semantic tokens) and H05 (AccessibleDialog + accessibility names).
  */
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import clsx from "clsx";
 import type { DiscoveryItem } from "../core/discovery/types";
 import { Bookmarks } from "../core/transfer/bookmarks";
@@ -17,6 +18,7 @@ import { PersonalNotes } from "../core/transfer/notes";
 import { TransferInbox } from "../core/transfer/inbox";
 import { CustomPacks } from "../core/transfer/packs";
 import { CloneRepoModal } from "./CloneRepoModal";
+import { AccessibleDialog } from "./AccessibleDialog";
 
 export interface RepoDetailModalProps {
   isOpen: boolean;
@@ -95,286 +97,285 @@ export function RepoDetailModal({
     }
   };
 
-  const content = (
+  return (
     <>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="repo-detail-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      <AccessibleDialog
+        isOpen={isOpen}
+        onClose={onClose}
+        titleId="repo-detail-title"
+        dataProtectedUi={true}
+        maxWidth="max-w-2xl"
+        panelClassName="relative z-10 flex h-full w-full max-h-[88vh] max-w-2xl flex-col overflow-hidden rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] text-[color:var(--text-primary)] shadow-2xl"
       >
-        <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-
-        <div className="relative z-10 flex h-full w-full max-h-[88vh] max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-[#12151b] text-zinc-100 shadow-2xl">
-          {/* Header */}
-          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-800 bg-[#141820] px-6 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h3 id="repo-detail-title" className="text-[18px] font-bold text-white truncate">
-                  {item.title}
-                </h3>
-                {origin?.stars && (
-                  <span className="rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-bold text-amber-300">
-                    ★ {origin.stars}
-                  </span>
-                )}
-                {item.health === "archived" && (
-                  <span className="rounded bg-rose-950/60 border border-rose-800/50 px-2 py-0.5 text-[11px] font-bold text-rose-300">
-                    已归档 (Archived)
-                  </span>
-                )}
-                {item.health === "quiet" && (
-                  <span className="rounded bg-zinc-800 border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-400">
-                    久未活跃
-                  </span>
-                )}
-              </div>
-              <p className="font-mono text-[12px] text-zinc-400 mt-1 truncate">
-                {origin?.author ? `${origin.author} / ` : ""}{item.title} · {origin?.language || "通用"}
-              </p>
+        {/* Header */}
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/80 px-6 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 id="repo-detail-title" className="text-[18px] font-bold text-[color:var(--text-strong)] truncate">
+                {item.title}
+              </h3>
+              {origin?.stars && (
+                <span className="rounded bg-[color:var(--surface-sunken)] border border-[color:var(--line-default)] px-2 py-0.5 text-[11px] font-bold text-[color:var(--status-warn)]">
+                  ★ {origin.stars}
+                </span>
+              )}
+              {item.health === "archived" && (
+                <span className="rounded bg-[color:var(--surface-sunken)] border border-[color:var(--status-bad)]/40 px-2 py-0.5 text-[11px] font-bold text-[color:var(--status-bad)]">
+                  已归档 (Archived)
+                </span>
+              )}
+              {item.health === "quiet" && (
+                <span className="rounded bg-[color:var(--surface-sunken)] border border-[color:var(--line-subtle)] px-2 py-0.5 text-[11px] text-[color:var(--text-quiet)]">
+                  久未活跃
+                </span>
+              )}
             </div>
+            <p className="font-mono text-[12px] text-[color:var(--text-tertiary)] mt-1 truncate">
+              {origin?.author ? `${origin.author} / ` : ""}{item.title} · {origin?.language || "通用"}
+            </p>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleToggleStar}
-                title={isBookmarked ? "取消收藏" : "加入收藏"}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 px-2.5 text-[12px] font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
-              >
-                <span>{isBookmarked ? "★ 已收藏" : "☆ 收藏"}</span>
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleStar}
+              aria-label={isBookmarked ? "取消收藏" : "加入收藏"}
+              title={isBookmarked ? "取消收藏" : "加入收藏"}
+              className="flex min-h-[32px] items-center gap-1.5 rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-2.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+            >
+              <span>{isBookmarked ? "★ 已收藏" : "☆ 收藏"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭仓库详情"
+              className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+            >
+              <span className="text-[13px] leading-none">✕</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Description */}
+          <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4 space-y-2">
+            <div className="text-[11.5px] font-bold uppercase tracking-wider text-[color:var(--text-tertiary)]">
+              项目说明
             </div>
-          </header>
+            <p className="text-[13.5px] text-[color:var(--text-primary)] leading-relaxed">
+              {item.description}
+            </p>
+          </div>
 
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-5">
-            {/* Description */}
-            <div className="rounded-xl border border-zinc-800 bg-[#0e1116] p-4.5 space-y-2">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                项目说明
-              </div>
-              <p className="text-[13.5px] text-zinc-200 leading-relaxed">
-                {item.description}
-              </p>
-            </div>
-
-            {/* Facts Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="rounded-lg border border-zinc-800 bg-[#0e1116] p-3">
-                <div className="text-[11px] text-zinc-400">主要语言</div>
-                <div className="text-[13.5px] font-bold text-white mt-1">
-                  {origin?.language || "未知"}
-                </div>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-[#0e1116] p-3">
-                <div className="text-[11px] text-zinc-400">开源协议</div>
-                <div className="text-[13.5px] font-bold text-white mt-1">
-                  {origin?.license || "未声明"}
-                </div>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-[#0e1116] p-3">
-                <div className="text-[11px] text-zinc-400">最近更新</div>
-                <div className="text-[13px] font-bold text-white mt-1">
-                  {origin?.lastUpdated || "近期"}
-                </div>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-[#0e1116] p-3">
-                <div className="text-[11px] text-zinc-400">收录状态</div>
-                <div className="text-[13px] font-bold text-emerald-400 mt-1">
-                  {item.isCurated ? "✓ 精选收录" : transferDone ? "已转入库" : "公开探索"}
-                </div>
+          {/* Facts Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3">
+              <div className="text-[11px] text-[color:var(--text-quiet)]">主要语言</div>
+              <div className="text-[13.5px] font-bold text-[color:var(--text-strong)] mt-1">
+                {origin?.language || "未知"}
               </div>
             </div>
-
-            {/* Topics */}
-            {item.tags && item.tags.length > 0 && (
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                  标签与主题 (Topics)
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.tags.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded bg-zinc-800/80 px-2 py-0.5 font-mono text-[11px] text-zinc-300 border border-zinc-700/60"
-                    >
-                      #{t}
-                    </span>
-                  ))}
-                </div>
+            <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3">
+              <div className="text-[11px] text-[color:var(--text-quiet)]">开源协议</div>
+              <div className="text-[13.5px] font-bold text-[color:var(--text-strong)] mt-1">
+                {origin?.license || "未声明"}
               </div>
-            )}
+            </div>
+            <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3">
+              <div className="text-[11px] text-[color:var(--text-quiet)]">最近更新</div>
+              <div className="text-[13px] font-bold text-[color:var(--text-strong)] mt-1">
+                {origin?.lastUpdated || "近期"}
+              </div>
+            </div>
+            <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3">
+              <div className="text-[11px] text-[color:var(--text-quiet)]">收录状态</div>
+              <div className="text-[13px] font-bold text-[color:var(--status-ok)] mt-1">
+                {item.isCurated ? "✓ 精选收录" : transferDone ? "已转入库" : "公开探索"}
+              </div>
+            </div>
+          </div>
 
-            {/* Personal Note */}
-            <div className="rounded-xl border border-zinc-800 bg-[#0e1116] p-4.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                  个人随手笔记 (Personal Note)
-                </div>
-                {!isEditingNote && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingNote(true)}
-                    className="text-[11px] text-blue-400 hover:underline cursor-pointer"
+          {/* Topics */}
+          {item.tags && item.tags.length > 0 && (
+            <div>
+              <div className="text-[11.5px] font-bold uppercase tracking-wider text-[color:var(--text-tertiary)] mb-2">
+                标签与主题 (Topics)
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {item.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded bg-[color:var(--surface-sunken)] px-2 py-0.5 font-mono text-[11px] text-[color:var(--text-secondary)] border border-[color:var(--line-subtle)]"
                   >
-                    {note ? "修改备注" : "+ 添加备注"}
-                  </button>
-                )}
+                    #{t}
+                  </span>
+                ))}
               </div>
+            </div>
+          )}
 
-              {isEditingNote ? (
-                <div className="space-y-2">
-                  <textarea
-                    rows={2}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="例如：用于团队 AI 评审，支持导出追踪..."
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 p-2.5 text-[12.5px] text-white focus:border-blue-500 focus:outline-hidden"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingNote(false)}
-                      className="px-2.5 py-1 text-[11.5px] text-zinc-400 hover:text-white"
-                    >
-                      取消
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveNote}
-                      className="rounded bg-blue-600 px-3 py-1 text-[11.5px] font-bold text-white hover:bg-blue-500"
-                    >
-                      保存备注
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-[12.5px] text-zinc-300 italic">
-                  {note || "暂无备注。点击「+ 添加备注」写下你的想法，保存在本机。"}
-                </p>
+          {/* Personal Note */}
+          <div className="rounded-xl border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[11.5px] font-bold uppercase tracking-wider text-[color:var(--text-tertiary)]">
+                个人随手笔记 (Personal Note)
+              </div>
+              {!isEditingNote && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingNote(true)}
+                  className="text-[11.5px] text-[color:var(--status-accent)] hover:underline cursor-pointer"
+                >
+                  {note ? "修改备注" : "+ 添加备注"}
+                </button>
               )}
             </div>
 
-            {/* Pack Picker Popover */}
-            {showPackPicker && (
-              <div className="rounded-xl border border-blue-500/40 bg-[#151c28] p-4 space-y-3 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12.5px] font-bold text-blue-200">
-                    选择要收录进的开发套件:
-                  </span>
+            {isEditingNote ? (
+              <div className="space-y-2">
+                <textarea
+                  id="repo-note-textarea"
+                  rows={2}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="例如：用于团队 AI 评审，支持导出追踪..."
+                  className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] p-2.5 text-[12.5px] text-[color:var(--text-primary)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+                />
+                <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowPackPicker(false)}
-                    className="text-zinc-400 hover:text-white text-[12px] cursor-pointer"
+                    onClick={() => setIsEditingNote(false)}
+                    className="flex min-h-[32px] items-center px-2.5 py-1 text-[11.5px] text-[color:var(--text-quiet)] hover:text-[color:var(--text-primary)] cursor-pointer"
                   >
-                    ✕
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveNote}
+                    className="flex min-h-[32px] items-center rounded bg-[color:var(--status-accent)] px-3 py-1 text-[11.5px] font-bold text-black hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    保存备注
                   </button>
                 </div>
-                {packs.length === 0 ? (
-                  <p className="text-[12px] text-zinc-400">尚未创建任何开发套件，请先至「我的库」新建开发包。</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {packs.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => handleAddToPack(p.id)}
-                        className="rounded-lg border border-zinc-700 bg-zinc-800/70 p-2.5 text-left hover:border-blue-500/50 hover:bg-zinc-800 transition-colors cursor-pointer"
-                      >
-                        <div className="font-bold text-[12.5px] text-white truncate">{p.title}</div>
-                        <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{p.items.length} 项工具</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
+            ) : (
+              <p className="text-[12.5px] text-[color:var(--text-secondary)] italic">
+                {note || "暂无备注。点击「+ 添加备注」写下你的想法，保存在本机。"}
+              </p>
             )}
           </div>
 
-          {/* Footer Actions */}
-          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-zinc-800 bg-[#141820] px-6 py-3.5">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowPackPicker((prev) => !prev)}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
-              >
-                + 加入开发套件
-              </button>
-
-              {!item.isCurated && (
+          {/* Pack Picker Popover */}
+          {showPackPicker && (
+            <div className="rounded-xl border border-[color:var(--status-accent)]/40 bg-[color:var(--surface-raised)] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] font-bold text-[color:var(--text-strong)]">
+                  选择要收录进的开发套件:
+                </span>
                 <button
                   type="button"
-                  onClick={handleTransferIntoSetup}
-                  disabled={transferDone}
-                  className={clsx(
-                    "rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors cursor-pointer",
-                    transferDone
-                      ? "border-emerald-600/40 bg-emerald-900/20 text-emerald-300"
-                      : "border-zinc-700 bg-zinc-800/80 text-zinc-200 hover:bg-zinc-700 hover:text-white",
-                  )}
+                  onClick={() => setShowPackPicker(false)}
+                  aria-label="关闭套件选择器"
+                  className="text-[color:var(--text-quiet)] hover:text-[color:var(--text-primary)] text-[12px] cursor-pointer"
                 >
-                  {transferDone ? "✓ 已收录至 Setup Center" : "+ 收录进 Setup Center"}
+                  ✕
                 </button>
-              )}
-
-              {onStartCompare && (
-                <button
-                  type="button"
-                  onClick={() => onStartCompare(item)}
-                  className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
-                >
-                  加入横向对比
-                </button>
+              </div>
+              {packs.length === 0 ? (
+                <p className="text-[12px] text-[color:var(--text-quiet)]">尚未创建任何开发套件，请先至「我的库」新建开发包。</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {packs.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleAddToPack(p.id)}
+                      className="min-h-[36px] rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] p-2.5 text-left hover:border-[color:var(--status-accent)]/50 hover:bg-[color:var(--surface-hover)] transition-colors cursor-pointer"
+                    >
+                      <div className="font-bold text-[12.5px] text-[color:var(--text-strong)] truncate">{p.title}</div>
+                      <div className="text-[11px] text-[color:var(--text-quiet)] mt-0.5 truncate">{p.items.length} 项工具</div>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={handleCopyClone}
-                className="rounded-lg border border-zinc-700 bg-transparent px-3 py-1.5 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
-              >
-                复制 Clone 命令
-              </button>
-
-              <a
-                href={repoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors cursor-pointer"
-              >
-                在 GitHub 打开 ↗
-              </a>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (onClone) {
-                    onClone();
-                  } else {
-                    setIsCloneOpen(true);
-                  }
-                }}
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-[12.5px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shadow-sm"
-              >
-                克隆到本机 (Clone)
-              </button>
-            </div>
-          </footer>
+          )}
         </div>
-      </div>
+
+        {/* Footer Actions */}
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[color:var(--line-subtle)] bg-[color:var(--surface-raised)]/90 px-6 py-3.5">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowPackPicker((prev) => !prev)}
+              className="flex min-h-[32px] items-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+            >
+              + 加入开发套件
+            </button>
+
+            {!item.isCurated && (
+              <button
+                type="button"
+                onClick={handleTransferIntoSetup}
+                disabled={transferDone}
+                className={clsx(
+                  "flex min-h-[32px] items-center rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors cursor-pointer",
+                  transferDone
+                    ? "border-[color:var(--status-ok)]/40 bg-[color:var(--surface-sunken)] text-[color:var(--status-ok)]"
+                    : "border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)]",
+                )}
+              >
+                {transferDone ? "✓ 已收录至 Setup Center" : "+ 收录进 Setup Center"}
+              </button>
+            )}
+
+            {onStartCompare && (
+              <button
+                type="button"
+                onClick={() => onStartCompare(item)}
+                className="flex min-h-[32px] items-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+              >
+                加入横向对比
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleCopyClone}
+              className="flex min-h-[32px] items-center rounded-lg border border-[color:var(--line-subtle)] bg-transparent px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+            >
+              复制 Clone 命令
+            </button>
+
+            <a
+              href={repoUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-[32px] items-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+            >
+              在 GitHub 打开 ↗
+            </a>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onClone) {
+                  onClone();
+                } else {
+                  setIsCloneOpen(false);
+                  setIsCloneOpen(true);
+                }
+              }}
+              className="flex min-h-[32px] items-center rounded-lg bg-[color:var(--status-accent)] px-4 py-1.5 text-[12.5px] font-bold text-black hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+            >
+              克隆到本机 (Clone)
+            </button>
+          </div>
+        </footer>
+      </AccessibleDialog>
 
       {isCloneOpen && (
         <CloneRepoModal
@@ -386,6 +387,4 @@ export function RepoDetailModal({
       )}
     </>
   );
-
-  return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }

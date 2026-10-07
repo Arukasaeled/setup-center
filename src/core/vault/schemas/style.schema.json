@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SetupCenterStyleSchema",
+  "description": "Setup Center Style Contract V2. A style manifest describes a whole declarative Experience.",
+  "type": "object",
+  "required": ["id", "name", "version", "description", "palette", "tokens", "cssPath"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "subtitle": { "type": "string" },
+    "description": { "type": "string" },
+    "author": { "type": "string" },
+    "license": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "implemented": { "type": "boolean" },
+    "inspiration": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "features": { "type": "array", "items": { "type": "string" } },
+    "cssPath": { "type": "string" },
+    "palette": {
+      "type": "object",
+      "required": ["bg", "text", "primary", "surface", "border"],
+      "properties": {
+        "bg": { "type": "string" },
+        "text": { "type": "string" },
+        "primary": { "type": "string" },
+        "surface": { "type": "string" },
+        "border": { "type": "string" }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "properties": {
+        "cardRadius": { "type": "string" },
+        "borderWidth": { "type": "string" },
+        "shadowDepth": { "type": "string" },
+        "fontHeading": { "type": "string" },
+        "fontBody": { "type": "string" }
+      }
+    },
+    "designPrinciples": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "experience": {
+      "type": "object",
+      "required": ["tier"],
+      "properties": {
+        "tier": {
+          "enum": ["token", "component", "composition", "experience"]
+        },
+        "shell": {
+          "enum": ["sidebar", "topbar", "dock", "dual-pane", "windowed", "command-centered", "editorial", "canvas", "stacked"]
+        },
+        "navigation": {
+          "enum": ["sidebar", "topbar", "dock", "tab-strip", "command-bar", "menu-bar", "keyboard-menu"]
+        },
+        "detail": {
+          "enum": ["rail", "modal", "sheet", "floating-inspector", "window", "inline", "full-page"]
+        },
+        "card": {
+          "enum": ["panel", "flat-row", "editorial-block", "poster", "terminal-line", "window", "tile", "index-entry", "floating-surface", "borderless-group", "sticker"]
+        },
+        "composition": {
+          "enum": ["solid-grid", "magazine-index", "news-columns", "character-list", "finder-list", "poster-wall", "drafting-index", "floating-panels", "ledger", "roadmap"]
+        },
+        "density": { "enum": ["compact", "normal", "spacious"] },
+        "motion": { "enum": ["reduced", "normal", "expressive"] },
+        "typography": {
+          "type": "object",
+          "properties": {
+            "headingFamily": { "type": "string" },
+            "bodyFamily": { "type": "string" },
+            "monoFamily": { "type": "string" },
+            "headingScale": { "type": "number", "minimum": 0.85, "maximum": 1.35 },
+            "bodyScale": { "type": "number", "minimum": 0.9, "maximum": 1.15 },
+            "headingWeight": { "type": "number" },
+            "headingTracking": { "type": "string" },
+            "headingTransform": { "enum": ["none", "uppercase", "lowercase"] },
+            "bodyLeading": { "type": "number" }
+          }
+        },
+        "ornament": {
+          "type": "object",
+          "properties": {
+            "rule": { "enum": ["none", "hairline", "double", "dashed", "ascii", "heavy"] },
+            "corner": { "enum": ["square", "bevel", "notch", "rounded"] },
+            "decoration": { "enum": ["none", "grid", "pinstripe", "scanline", "blueprint", "noise", "halftone"] },
+            "chrome": { "enum": ["none", "title", "menu", "status", "title-menu", "full"] }
+          }
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "panelRadius": { "type": "string" },
+            "controlRadius": { "type": "string" },
+            "borderWidth": { "type": "string" },
+            "shadow": {
+              "type": "object",
+              "required": ["offsetX", "offsetY", "blur", "spread", "color"],
+              "properties": {
+                "offsetX": { "type": "string" },
+                "offsetY": { "type": "string" },
+                "blur": { "type": "string" },
+                "spread": { "type": "string" },
+                "color": { "type": "string" }
+              }
+            },
+            "accent": { "type": "string" },
+            "accentSecondary": { "type": "string" },
+            "surface": { "type": "string" },
+            "text": { "type": "string" },
+            "density": { "enum": ["compact", "normal", "spacious"] },
+            "headingScale": { "type": "number", "minimum": 0.85, "maximum": 1.35 },
+            "bodyScale": { "type": "number", "minimum": 0.9, "maximum": 1.15 },
+            "motion": { "enum": ["reduced", "normal", "expressive"] }
+          }
+        },
+        "tweakable": {
+          "type": "array",
+          "items": {
+            "enum": ["panelRadius", "controlRadius", "borderWidth", "shadow", "accent", "accentSecondary", "surface", "text", "density", "headingScale", "bodyScale", "motion"]
+          }
+        },
+        "locked": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "runtimeCapability": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "specimenNote": {
+          "type": "string"
+        }
+      }
+    },
+    "preview": {
+      "type": "object",
+      "properties": {
+        "note": { "type": "string" },
+        "imagePath": { "type": "string" },
+        "swatches": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "extensions": {
+      "type": "object"
+    }
+  }
+}

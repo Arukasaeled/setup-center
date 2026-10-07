@@ -3,29 +3,77 @@ name: Release Setup Center App
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (must strictly match v<semver>, e.g. v0.2.4)"
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-and-release:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
         with:
           node-version: 20
           cache: npm
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e67f08d017be7b270a6c6e1db78e1b6f005a9094 # stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - name: Verify Strict Three-way Version Consistency
+        shell: bash
+        run: |
+          TARGET_TAG="${{ github.event.inputs.release_tag || github.ref_name }}"
+          echo "Target Release Tag: $TARGET_TAG"
+
+          # Enforce v<semver> format, rejecting branch names (Issue J01)
+          if ! [[ "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Release tag '$TARGET_TAG' is invalid. Must strictly follow 'v<semver>' (e.g. v0.2.4). Branch names are prohibited."
+            exit 1
+          fi
+
+          RAW_VER="${TARGET_TAG#v}"
+
+          PKG_VER=$(node -e "console.log(require('./package.json').version)")
+          CARGO_VER=$(node -e "console.log(require('fs').readFileSync('src-tauri/Cargo.toml', 'utf8').match(/version\s*=\s*\"([^\"]+)\"/)[1])")
+          TAURI_VER=$(node -e "console.log(require('./src-tauri/tauri.conf.json').version)")
+
+          echo "package.json version:       $PKG_VER"
+          echo "Cargo.toml version:         $CARGO_VER"
+          echo "tauri.conf.json version:    $TAURI_VER"
+          echo "Target release version:     $RAW_VER"
+
+          if [ "$PKG_VER" != "$RAW_VER" ]; then
+            echo "::error::package.json version ($PKG_VER) does not match target release version ($RAW_VER)"
+            exit 1
+          fi
+          if [ "$CARGO_VER" != "$RAW_VER" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VER) does not match target release version ($RAW_VER)"
+            exit 1
+          fi
+          if [ "$TAURI_VER" != "$RAW_VER" ]; then
+            echo "::error::tauri.conf.json version ($TAURI_VER) does not match target release version ($RAW_VER)"
+            exit 1
+          fi
+
+          echo "All three version declarations match $RAW_VER perfectly!"
 
       - name: Install dependencies
         run: npm ci
@@ -34,12 +82,12 @@ jobs:
         run: npm run build
 
       - name: Build Tauri Desktop Binary & NSIS Installer
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@03bf7d1c68e98ec71ec3d272186ee943809aaefc # v0.5.15
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Setup Center ${{ github.ref_name }}"
+          tagName: ${{ github.event.inputs.release_tag || github.ref_name }}
+          releaseName: "Setup Center ${{ github.event.inputs.release_tag || github.ref_name }}"
           releaseBody: "Setup Center — Creative & Development Bootstrap Hub + Transfer Runtime"
           releaseDraft: false
           prerelease: false

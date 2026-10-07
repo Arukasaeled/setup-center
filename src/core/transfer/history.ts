@@ -1,5 +1,5 @@
 /**
- * Setup Center — Unified Transfer History
+ * Setup Center — Unified Transfer History (Issues F09, K06)
  *
  * Records all concrete transfer events:
  * - Software installations
@@ -7,46 +7,31 @@
  * - Template project scaffolds
  * - Vault content synchronizations
  * - Design system style activations
+ *
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  */
 
 import type { TransferHistoryEntry } from "./types";
+import { PersonalStateManager } from "./personalState";
 
-const HISTORY_STORAGE_KEY = "setup-center.transfer-history.v1";
 const MAX_HISTORY_ENTRIES = 200;
 
 type HistoryListener = (history: TransferHistoryEntry[]) => void;
 
 class TransferHistoryManager {
-  private entries: TransferHistoryEntry[] = [];
   private listeners: Set<HistoryListener> = new Set();
 
   constructor() {
-    this.load();
+    PersonalStateManager.subscribe((doc) => {
+      this.notify(doc.history);
+    });
   }
 
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (raw) {
-        this.entries = JSON.parse(raw);
-      }
-    } catch {
-      this.entries = [];
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(this.entries.slice(0, MAX_HISTORY_ENTRIES)));
-    } catch {
-      // quota or local storage restriction
-    }
-  }
-
-  private notify(): void {
+  private notify(history?: TransferHistoryEntry[]): void {
+    const list = history || this.getEntries();
     for (const listener of this.listeners) {
       try {
-        listener(this.getEntries());
+        listener(list);
       } catch (err) {
         console.error("[TransferHistory] Listener error:", err);
       }
@@ -59,7 +44,7 @@ class TransferHistoryManager {
   }
 
   public getEntries(): TransferHistoryEntry[] {
-    return [...this.entries];
+    return [...PersonalStateManager.get().history];
   }
 
   public record(entry: Omit<TransferHistoryEntry, "id" | "timestamp">): TransferHistoryEntry {
@@ -68,16 +53,21 @@ class TransferHistoryManager {
       id: `tf:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
     };
-    this.entries.unshift(fullEntry);
-    this.save();
-    this.notify();
+
+    PersonalStateManager.update((doc) => {
+      doc.history.unshift(fullEntry);
+      if (doc.history.length > MAX_HISTORY_ENTRIES) {
+        doc.history = doc.history.slice(0, MAX_HISTORY_ENTRIES);
+      }
+    });
+
     return fullEntry;
   }
 
   public clear(): void {
-    this.entries = [];
-    this.save();
-    this.notify();
+    PersonalStateManager.update((doc) => {
+      doc.history = [];
+    });
   }
 }
 

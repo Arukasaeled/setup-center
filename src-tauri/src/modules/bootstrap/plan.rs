@@ -716,7 +716,7 @@ fn plan_mcp(ctx: &PlanContext<'_>, bootstrap: &ProfileBootstrap, steps: &mut Vec
     let mut blocked_reasons: Vec<String> = Vec::new();
 
     for entry in &bootstrap.mcp {
-        match mcp::parse_server(&entry.name, &entry.spec) {
+        match mcp::parse_bootstrap(entry) {
             Ok(server) => servers.push(server),
             Err(e) => blocked_reasons.push(e.message()),
         }
@@ -756,7 +756,8 @@ fn plan_mcp(ctx: &PlanContext<'_>, bootstrap: &ProfileBootstrap, steps: &mut Vec
         action: BootstrapAction::FileWrite {
             path: target.clone(),
             adapter: "json",
-            values: mcp::config_value(&servers)["mcpServers"]
+            values: mcp::config_value(&servers)
+                .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }))["mcpServers"]
                 .clone()
                 .as_object()
                 .map(|map| {

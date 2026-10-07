@@ -60,7 +60,22 @@ fn main() -> ExitCode {
         }
     };
 
-    let path = ledger_path.unwrap_or_else(ledger::default_path);
+    let path = match ledger_path {
+        Some(p) => {
+            if let Err(e) = validate_external_ledger_path(&p) {
+                eprintln!("error: {e}");
+                return ExitCode::from(2);
+            }
+            p
+        }
+        None => {
+            eprintln!(
+                "error: 经营账本必须显式指定 --ledger <PATH> (或 --ledger-path <PATH>)，\
+                 且必须存放于公共源码仓库与公开构建目录之外。没有参数拒绝执行，不再回退内置账本路径。"
+            );
+            return ExitCode::from(2);
+        }
+    };
     let book = match ledger::open(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -122,6 +137,11 @@ fn list(book: &ledger::Ledger, args: &[String]) -> Result<(), String> {
     );
     println!("{}", "-".repeat(110));
     for entry in &rows {
+        let masked_device = if entry.device_hash.is_empty() {
+            "-".to_string()
+        } else {
+            "[bound]".to_string()
+        };
         println!(
             "{:<5} {:<8} {:<4} {:<5} {:<20} {:<10} {:<12} {}",
             entry.id,
@@ -130,7 +150,7 @@ fn list(book: &ledger::Ledger, args: &[String]) -> Result<(), String> {
             entry.status.as_str(),
             shorten(&entry.created_at, 19),
             shorten(&entry.activated_at, 10),
-            shorten(&entry.device_hash, 12),
+            shorten(&masked_device, 12),
             // Truncated for readability; `verify` does the full comparison. The
             // prefix is enough to spot a duplicate row by eye.
             &entry.code_hash[..entry.code_hash.len().min(12)],
@@ -305,7 +325,7 @@ fn mark(book: &ledger::Ledger, args: &[String]) -> Result<(), String> {
 
     println!("marked {} as {}", marked_id, new_status.as_str());
     if !marked_device.is_empty() {
-        println!("device : {marked_device}");
+        println!("device : [bound]");
     }
     println!("backup : {}.bak", book.path.display());
     Ok(())
@@ -338,16 +358,16 @@ fn rewrite(book: &ledger::Ledger, entries: &[ledger::Entry]) -> Result<(), Strin
     Ok(())
 }
 
-/// Pulls `--ledger <path>` out of the argument list.
+/// Pulls `--ledger <path>`, `--ledger-path <path>`, or `-LedgerPath <path>` out of the argument list.
 fn extract_ledger(args: &[String]) -> Result<(Option<PathBuf>, Vec<String>), String> {
     let mut path = None;
     let mut rest = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        if args[i] == "--ledger" {
+        if args[i] == "--ledger" || args[i] == "--ledger-path" || args[i] == "-LedgerPath" {
             i += 1;
             let Some(value) = args.get(i) else {
-                return Err("--ledger needs a file path".into());
+                return Err("--ledger 需要指定文件路径".into());
             };
             path = Some(PathBuf::from(value));
         } else {
@@ -356,6 +376,29 @@ fn extract_ledger(args: &[String]) -> Result<(Option<PathBuf>, Vec<String>), Str
         i += 1;
     }
     Ok((path, rest))
+}
+
+/// Validates that the operational ledger path is external to the repositories and public build roots.
+fn validate_external_ledger_path(path: &std::path::Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_ascii_lowercase();
+    let norm = path_str.replace('\\', "/");
+
+    // Prohibit locating inside repo trees or public output directories
+    if norm.contains("ai-student-setup")
+        || norm.contains("setup-center-vault")
+        || norm.contains("/target/")
+        || norm.contains("/dist/")
+        || norm.contains("/build/")
+        || norm.contains("license-export")
+        || norm.ends_with("/src-tauri/license_inventory.csv")
+    {
+        return Err(format!(
+            "经营账本路径必须位于公共源码仓库 (ai-student-setup / setup-center-vault) 及公开构建目录之外，拒绝访问内部路径: {}",
+            path.display()
+        ));
+    }
+
+    Ok(())
 }
 
 fn extract_note(args: &[String]) -> Result<Option<String>, String> {
@@ -377,7 +420,7 @@ const USAGE: &str = "\
 license_admin — Setup Center issuance ledger (author side, never bundled)
 
 usage:
-  license_admin <command> [args] [--ledger <file>]
+  license_admin <command> [args] --ledger <external_file>
 
 commands:
   status                       counts: unused / activated / revoked, by tier
@@ -387,15 +430,16 @@ commands:
                                update a row (backs up the ledger first)
 
 examples:
-  cargo run --example license_admin -- status
-  cargo run --example license_admin -- list --unused
-  cargo run --example license_admin -- verify SC-ABCDE-23456-FGHJK-23456
-  cargo run --example license_admin -- mark 137 activated dbe44ff0 --note alice
+  license_admin status --ledger C:\\private_ops\\license_inventory.csv
+  license_admin list --unused --ledger C:\\private_ops\\license_inventory.csv
+  license_admin verify SC-ABCDE-23456-FGHJK-23456 --ledger C:\\private_ops\\license_inventory.csv
+  license_admin mark 137 activated dbe44ff0 --note alice --ledger C:\\private_ops\\license_inventory.csv
 
 notes:
-  The ledger stores HASHES, not codes, so `verify` identifies a code by
-  recomputing its hash. `mark` is the only command that rewrites the file and
-  it writes <ledger>.bak first.
+  --ledger <path> (or --ledger-path / -LedgerPath) is MANDATORY and must point
+  to an external file outside public source repositories and build export directories.
+  The ledger stores HASHES, not codes.
+  Device identifiers and secrets are never printed in plaintext.
 ";
 
 #[cfg(test)]
@@ -404,17 +448,42 @@ mod tests {
 
     #[test]
     fn the_ledger_flag_is_stripped_from_subcommand_arguments() {
-        let args: Vec<String> = ["list", "--ledger", "D:\\x.csv", "--unused"]
+        let args: Vec<String> = ["list", "--ledger", "C:\\private\\x.csv", "--unused"]
             .iter()
             .map(|s| s.to_string())
             .collect();
         let (path, rest) = extract_ledger(&args).unwrap();
-        assert_eq!(path, Some(PathBuf::from("D:\\x.csv")));
+        assert_eq!(path, Some(PathBuf::from("C:\\private\\x.csv")));
         assert_eq!(
             rest,
             vec!["list", "--unused"],
             "the subcommand must not see --ledger"
         );
+    }
+
+    #[test]
+    fn the_ledger_path_flag_variant_is_supported() {
+        let args: Vec<String> = ["status", "--ledger-path", "C:\\private\\x.csv"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let (path, rest) = extract_ledger(&args).unwrap();
+        assert_eq!(path, Some(PathBuf::from("C:\\private\\x.csv")));
+        assert_eq!(rest, vec!["status"]);
+    }
+
+    #[test]
+    fn validate_external_ledger_path_rejects_repo_paths() {
+        assert!(validate_external_ledger_path(std::path::Path::new(
+            "d:\\AI-Vault\\DeepSeek\\ai-student-setup\\src-tauri\\license_inventory.csv"
+        ))
+        .is_err());
+        assert!(validate_external_ledger_path(std::path::Path::new(
+            "D:\\AI-Vault\\DeepSeek\\setup-center-vault\\license_inventory.csv"
+        ))
+        .is_err());
+        assert!(validate_external_ledger_path(std::path::Path::new("D:\\license-export\\ledger.csv")).is_err());
+        assert!(validate_external_ledger_path(std::path::Path::new("C:\\secure_ops\\ledger.csv")).is_ok());
     }
 
     #[test]

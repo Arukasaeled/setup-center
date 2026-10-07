@@ -1,5 +1,6 @@
 import type { SetupStyle, StyleId } from "./types";
 import { loadVaultCache } from "../core/vault/cache";
+import { sanitizeTokenOverrides } from "./tokenValidation";
 
 // Auto-load all style CSS files dynamically across any style folder
 // Vite bundles every matched CSS file into the application stylesheet automatically
@@ -73,6 +74,18 @@ export function mountDynamicStyleCss(styleId: string, cssContent: string): void 
 }
 
 /**
+ * Unmount dynamic style CSS from DOM.
+ */
+export function unmountDynamicStyleCss(styleId: string): void {
+  if (typeof document === "undefined") return;
+  const tagId = `vault-style-${styleId}`;
+  const styleTag = document.getElementById(tagId);
+  if (styleTag) {
+    styleTag.remove();
+  }
+}
+
+/**
  * Style Registry Manager — Unified Reactive Design System Registry
  *
  * Emits change events whenever built-ins, remote Vault styles, or local
@@ -81,7 +94,15 @@ export function mountDynamicStyleCss(styleId: string, cssContent: string): void 
 export class StyleRegistryManager {
   private version = 1;
   private listeners = new Set<RegistryListener>();
+  private styleRevisions = new Map<StyleId, number>();
   private styles: SetupStyle[] = [...discoveredStyles];
+
+  constructor() {
+    for (const s of this.styles) {
+      s.revision = 1;
+      this.styleRevisions.set(s.id, 1);
+    }
+  }
 
   public getVersion(): number {
     return this.version;
@@ -89,6 +110,11 @@ export class StyleRegistryManager {
 
   public getStyles(): SetupStyle[] {
     return this.styles;
+  }
+
+  public getStyleRevision(id: StyleId): number {
+    const normalized = id === "p5-comic" ? "phantom-comic" : id;
+    return this.styleRevisions.get(normalized) ?? 1;
   }
 
   public getStyle(id: StyleId): SetupStyle | undefined {
@@ -117,15 +143,26 @@ export class StyleRegistryManager {
   }
 
   public registerStyleInternal(style: SetupStyle, shouldNotify = true): void {
-    const existingIdx = this.styles.findIndex((s) => s.id === style.id);
+    const normalizedId = style.id === "p5-comic" ? "phantom-comic" : style.id;
+    const prevRev = this.styleRevisions.get(normalizedId) ?? 0;
+    const nextRev = prevRev + 1;
+    this.styleRevisions.set(normalizedId, nextRev);
+
+    const styleWithRev: SetupStyle = {
+      ...style,
+      revision: nextRev,
+    };
+
+    const existingIdx = this.styles.findIndex((s) => s.id === normalizedId);
     if (existingIdx < 0) {
-      this.styles.push(style);
+      this.styles.push(styleWithRev);
     } else {
       const existing = this.styles[existingIdx];
       this.styles[existingIdx] = {
-        ...style,
-        implemented: style.implemented || existing.implemented,
-        experience: style.experience ?? existing.experience,
+        ...styleWithRev,
+        baseStyleId: styleWithRev.baseStyleId ?? existing.baseStyleId,
+        implemented: styleWithRev.implemented || existing.implemented,
+        experience: styleWithRev.experience ?? existing.experience,
       };
     }
     if (shouldNotify) {
@@ -141,6 +178,7 @@ export class StyleRegistryManager {
     const idx = this.styles.findIndex((s) => s.id === id);
     if (idx >= 0) {
       this.styles.splice(idx, 1);
+      this.styleRevisions.delete(id);
       this.notify();
     }
   }
@@ -154,6 +192,11 @@ export const STYLE_REGISTRY: SetupStyle[] = StyleRegistry.getStyles();
 /** Retrieve a style by its registered identifier */
 export function getStyle(id: StyleId): SetupStyle | undefined {
   return StyleRegistry.getStyle(id);
+}
+
+/** Retrieve the current revision of a registered style (Issue G03) */
+export function getStyleRevision(id: StyleId): number {
+  return StyleRegistry.getStyleRevision(id);
 }
 
 /**
@@ -230,18 +273,33 @@ export function hydrateRegistrySync(): void {
     console.warn("[StyleRegistry] Failed to hydrate vault cache synchronously:", err);
   }
 
-  // 2. Hydrate Custom Experiences synchronously from localStorage
+  // 2. Hydrate Custom Experiences synchronously from localStorage (Issue G01, G04)
   try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem("setup-center.custom-experiences.v2") : null;
+    const CANONICAL_KEY = "setup-center.experience.custom.v2";
+    const LEGACY_KEY = "setup-center.custom-experiences.v2";
+    let raw = typeof localStorage !== "undefined" ? localStorage.getItem(CANONICAL_KEY) : null;
+    if (!raw && typeof localStorage !== "undefined") {
+      raw = localStorage.getItem(LEGACY_KEY);
+      if (raw) {
+        try {
+          localStorage.setItem(CANONICAL_KEY, raw);
+          localStorage.removeItem(LEGACY_KEY);
+        } catch {
+          // ignore
+        }
+      }
+    }
     if (raw) {
       const customs = JSON.parse(raw);
       if (Array.isArray(customs)) {
         for (const custom of customs) {
           const base = StyleRegistry.getStyle(custom.baseStyleId);
           if (!base) continue;
+          const sanitizedOverrides = sanitizeTokenOverrides(custom.overrides);
           StyleRegistry.registerStyleInternal({
             ...base,
             id: custom.id,
+            baseStyleId: custom.baseStyleId,
             name: custom.name,
             subtitle: `${base.subtitle} · 派生`,
             description: `基于「${base.name}」的派生体验，仅覆盖令牌，不复制样式表。`,
@@ -250,7 +308,7 @@ export function hydrateRegistrySync(): void {
             implemented: true,
             experience: base.experience ? {
               ...base.experience,
-              tokens: { ...base.experience.tokens, ...custom.overrides },
+              tokens: { ...base.experience.tokens, ...sanitizedOverrides },
               specimenNote: `派生自 ${base.name}`,
             } : undefined,
           }, false);

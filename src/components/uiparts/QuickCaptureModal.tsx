@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { AccessibleDialog } from "../AccessibleDialog";
 import type { UIPartKind } from "../../core/uiparts/types";
 import { UIPartRepository } from "../../core/uiparts/repository";
 import {
@@ -169,38 +170,45 @@ export function QuickCaptureModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-lg rounded-2xl border border-white/15 bg-[#0f141f] p-6 shadow-2xl text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-3 border-b border-white/10">
-          <div>
-            <h2 className="text-base font-semibold text-white">
-              + 快速收集视觉零件 (Quick Capture)
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              灵感即时入库 · 初始状态为 RAW，支持日后渐进式提炼与原型化
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded transition"
-          >
-            ✕
-          </button>
+    <AccessibleDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      titleId="quick-capture-title"
+      contentClassName="relative w-full max-w-lg rounded-2xl border border-white/15 bg-[#0f141f] p-6 shadow-2xl text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto"
+    >
+      <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <div>
+          <h2 id="quick-capture-title" className="text-base font-semibold text-white">
+            + 快速收集视觉零件 (Quick Capture)
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            灵感即时入库 · 初始状态为 RAW，支持日后渐进式提炼与原型化
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭快速收集"
+          className="min-h-[32px] min-w-[32px] flex items-center justify-center text-slate-400 hover:text-white p-1 rounded-md transition cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
 
-        {error && (
-          <div className="mt-3 p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-            {error}
-          </div>
-        )}
+      {error && (
+        <div className="mt-3 p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+          {error}
+        </div>
+      )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {/* Title */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">
+            <label htmlFor="quick-capture-title-input" className="block text-xs font-medium text-slate-300 mb-1">
               零件标题 <span className="text-rose-400">*</span>
             </label>
             <input
+              id="quick-capture-title-input"
               type="text"
               required
               value={title}
@@ -212,10 +220,11 @@ export function QuickCaptureModal({
 
           {/* Kind */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">
+            <label htmlFor="quick-capture-kind-select" className="block text-xs font-medium text-slate-300 mb-1">
               零件分类 (Kind)
             </label>
             <select
+              id="quick-capture-kind-select"
               value={kind}
               onChange={(e) => setKind(e.target.value as UIPartKind)}
               className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
@@ -301,10 +310,11 @@ export function QuickCaptureModal({
           {/* Source Link */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label htmlFor="quick-capture-source-url" className="block text-xs font-medium text-slate-300 mb-1">
                 来源 URL
               </label>
               <input
+                id="quick-capture-source-url"
                 type="url"
                 value={sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
@@ -313,10 +323,11 @@ export function QuickCaptureModal({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label htmlFor="quick-capture-source-title" className="block text-xs font-medium text-slate-300 mb-1">
                 来源标题 / 站点
               </label>
               <input
+                id="quick-capture-source-title"
                 type="text"
                 value={sourceTitle}
                 onChange={(e) => setSourceTitle(e.target.value)}
@@ -328,10 +339,11 @@ export function QuickCaptureModal({
 
           {/* Tags */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">
+            <label htmlFor="quick-capture-tags-input" className="block text-xs font-medium text-slate-300 mb-1">
               标签 (以逗号或空格分隔)
             </label>
             <input
+              id="quick-capture-tags-input"
               type="text"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
@@ -342,10 +354,11 @@ export function QuickCaptureModal({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">
+            <label htmlFor="quick-capture-notes-input" className="block text-xs font-medium text-slate-300 mb-1">
               速记笔记 / 启发点
             </label>
             <textarea
+              id="quick-capture-notes-input"
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -359,20 +372,21 @@ export function QuickCaptureModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition"
+              aria-label="取消收集并关闭窗口"
+              className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-md shadow-sky-500/20 transition disabled:opacity-50"
+              aria-label="保存到零件库"
+              className="min-h-[32px] px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-md shadow-sky-500/20 transition disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting ? "入库中..." : "保存到零件库 (RAW)"}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </AccessibleDialog>
   );
 }

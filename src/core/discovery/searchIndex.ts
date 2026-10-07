@@ -20,6 +20,7 @@ import { resolveSetupAction } from "../setup/resolver";
 import { PersonalCatalog } from "../transfer/catalog";
 import { SETUP_COLLECTIONS } from "../setup/collections";
 import { useApp } from "../../lib/store";
+import { ContentRegistry } from "../../content/registry";
 import type { DiscoveryItem, DiscoveryFilter } from "./types";
 
 // Curated developer prompt skills
@@ -98,6 +99,9 @@ class SearchIndexManager {
 
   public init(): void {
     if (this.initialized) return;
+    ContentRegistry.subscribe(() => {
+      this.rebuild();
+    });
     this.rebuild();
   }
 
@@ -263,17 +267,34 @@ class SearchIndexManager {
       });
     }
 
-    // 6. Skills
+    // 6. Skills (Built-in + Synced from Vault / ContentRegistry)
+    const allSkills = new Map<string, { id: string; name: string; category?: string; description: string; tags?: string[]; prompt: string }>();
     for (const sk of BUILTIN_SKILLS) {
+      allSkills.set(sk.id, sk);
+    }
+    for (const item of ContentRegistry.listByType("skill")) {
+      const meta = item.metadata as Record<string, unknown> | undefined;
+      const prompt = (meta?.prompt as string) || item.description;
+      allSkills.set(item.id, {
+        id: item.id,
+        name: item.name,
+        category: (meta?.category as string) || "AI 技能",
+        description: item.description,
+        tags: item.tags,
+        prompt,
+      });
+    }
+
+    for (const sk of allSkills.values()) {
       list.push({
         id: sk.id,
         type: "skill",
         title: sk.name,
-        subtitle: `${sk.category} · AI 协同技能`,
+        subtitle: `${sk.category || "开发技能"} · AI 协同技能`,
         description: sk.description,
         category: "skill",
         categoryLabel: "开发技能",
-        tags: ["技能", sk.category, ...sk.tags],
+        tags: ["技能", sk.category || "", ...(sk.tags || [])],
         origin: {
           type: "community",
           author: "Setup Center",
@@ -290,17 +311,34 @@ class SearchIndexManager {
       });
     }
 
-    // 7. Patterns
+    // 7. Patterns (Built-in + Synced from Vault / ContentRegistry)
+    const allPatterns = new Map<string, { id: string; name: string; category?: string; description: string; tags?: string[]; snippet: string }>();
     for (const pat of BUILTIN_PATTERNS) {
+      allPatterns.set(pat.id, pat);
+    }
+    for (const item of ContentRegistry.listByType("pattern")) {
+      const meta = item.metadata as Record<string, unknown> | undefined;
+      const snippet = (meta?.cssRules as string) || (meta?.codeSnippet as string) || "";
+      allPatterns.set(item.id, {
+        id: item.id,
+        name: item.name,
+        category: (meta?.category as string) || "UI 版式",
+        description: item.description,
+        tags: item.tags,
+        snippet,
+      });
+    }
+
+    for (const pat of allPatterns.values()) {
       list.push({
         id: pat.id,
         type: "pattern",
         title: pat.name,
-        subtitle: `${pat.category} · 视觉代码模式`,
+        subtitle: `${pat.category || "UI 版式"} · 视觉代码模式`,
         description: pat.description,
         category: "pattern",
         categoryLabel: "版式模式",
-        tags: ["版式", pat.category, ...pat.tags],
+        tags: ["版式", pat.category || "", ...(pat.tags || [])],
         origin: {
           type: "community",
           author: "Setup Center",
@@ -314,6 +352,37 @@ class SearchIndexManager {
         health: "ready",
         isCurated: true,
         raw: pat,
+      });
+    }
+
+    // 8. Templates (Synced from Vault / ContentRegistry)
+    for (const tplItem of ContentRegistry.listByType("template")) {
+      const meta = tplItem.metadata as Record<string, unknown> | undefined;
+      const scaffold = meta?.scaffold as { command?: string; defaultDir?: string } | undefined;
+      const cmd = scaffold?.command || `git clone ${tplItem.repository || tplItem.source || ""}`;
+      list.push({
+        id: tplItem.id,
+        type: "template",
+        title: tplItem.name,
+        subtitle: `${tplItem.author || "开源社区"} · 工程脚手架`,
+        description: tplItem.description,
+        category: "template",
+        categoryLabel: "工程模板",
+        tags: ["模板", "脚手架", ...(tplItem.tags || [])],
+        origin: {
+          type: "community",
+          repository: tplItem.repository,
+          url: tplItem.homepage,
+        },
+        action: {
+          id: `prepare:template:${tplItem.id}`,
+          label: "准备脚手架工程",
+          type: "copy",
+          payload: cmd,
+        },
+        health: "ready",
+        isCurated: true,
+        raw: tplItem,
       });
     }
 

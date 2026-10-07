@@ -134,7 +134,7 @@ export function ActivationCard({
 
   if (isPro && entitlements) {
     return (
-      <div className="glass-soft rounded-[12px] p-5">
+      <div data-protected-ui="true" className="glass-soft rounded-[12px] p-5">
         <div
           data-testid="license-pro-state"
           className="text-[color:var(--text-primary)] text-[13.5px] font-medium"
@@ -167,7 +167,7 @@ export function ActivationCard({
   }
 
   return (
-    <div className="glass-soft rounded-[12px] p-5">
+    <div data-protected-ui="true" className="glass-soft rounded-[12px] p-5">
       {mismatch && (
         <div
           data-testid="license-mismatch"
@@ -180,6 +180,38 @@ export function ActivationCard({
             {entitlements?.deviceReliable
               ? `本机设备标识为 ${device?.shortId ?? "未知"}。若这是你的原设备，请联系作者处理；若你换了新电脑，需要一份新的激活码。`
               : "本机硬件信息读取不完整，可能是驱动或 WMI 限制导致误判。请联系作者处理。"}
+          </p>
+        </div>
+      )}
+      {entitlements?.state === "needs_attention" && (
+        <div
+          data-testid="license-needs-attention"
+          className="border-[color:var(--status-warn)] mb-4 border-l-2 pl-3"
+        >
+          <div className="text-[color:var(--text-primary)] text-[12.5px] font-medium">
+            硬件特征发生变动或证据不足，需人工核验
+          </div>
+          <p className="text-[color:var(--text-tertiary)] mt-1 text-[12px] leading-relaxed">
+            本机检测到的硬件证据不足或检测到重大硬件变动。若这是你的原设备，请联系作者核验处理。
+          </p>
+        </div>
+      )}
+      {(entitlements?.state === "unreadable" ||
+        entitlements?.state === "corrupt" ||
+        entitlements?.state === "invalid") && (
+        <div
+          data-testid="license-file-error"
+          className="border-[color:var(--status-warn)] mb-4 border-l-2 pl-3"
+        >
+          <div className="text-[color:var(--text-primary)] text-[12.5px] font-medium">
+            {entitlements?.state === "unreadable"
+              ? "授权文件无法读取"
+              : entitlements?.state === "corrupt"
+                ? "授权文件损坏或解密失败"
+                : "授权记录格式无效"}
+          </div>
+          <p className="text-[color:var(--text-tertiary)] mt-1 text-[12px] leading-relaxed">
+            {entitlements?.loadError ?? "授权记录异常，原文件已保留，可重新输入激活码激活。"}
           </p>
         </div>
       )}
@@ -467,14 +499,22 @@ export function LicenseSection() {
             ? "自动安装与配置功能已解锁。"
             : mismatch
               ? "授权验证失败，该授权已绑定其他设备。"
-              : // Derived from the gate rather than written as a fixed sentence.
-                // A hard-coded "不包含自动安装" was the first version of this
-                // line, and it was a real bug: it kept asserting that
-                // installation was locked even in a build where `canInstall`
-                // was true, so the screen contradicted the button below it.
-                entitlements.canInstall
-                ? "本构建未启用限制，全部功能可用。"
-                : "可检测环境与查看软件推荐，不包含自动安装。"}
+              : entitlements.state === "needs_attention"
+                ? "硬件特征发生变更或证据不足，需要人工核验。"
+                : entitlements.state === "unreadable"
+                  ? "授权文件无法读取，请检查权限。"
+                  : entitlements.state === "corrupt"
+                    ? "授权文件已损坏，请重新激活。"
+                    : entitlements.state === "invalid"
+                      ? "授权版本无效，请重新激活。"
+                      : // Derived from the gate rather than written as a fixed sentence.
+                        // A hard-coded "不包含自动安装" was the first version of this
+                        // line, and it was a real bug: it kept asserting that
+                        // installation was locked even in a build where `canInstall`
+                        // was true, so the screen contradicted the button below it.
+                        entitlements.canInstall
+                        ? "本构建未启用限制，全部功能可用。"
+                        : "可检测环境与查看软件推荐，不包含自动安装。"}
         </p>
       </header>
 

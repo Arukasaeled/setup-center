@@ -39,6 +39,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use toml_edit::{DocumentMut, Item, Table, Value};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -154,6 +155,28 @@ pub struct ConfigOutcome {
     pub path: String,
     /// How many bytes the file is now.
     pub bytes_written: usize,
+    #[serde(default)]
+    pub transaction_id: Option<String>,
+}
+
+/// One entry in a transaction journal tracking modified files.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigJournalEntry {
+    pub path: String,
+    pub existed_before: bool,
+    pub tx_backup_path: Option<String>,
+    pub initial_backup_path: Option<String>,
+    pub written: bool,
+}
+
+/// Journal tracking changes and rollbacks for a batch configuration transaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigTransactionJournal {
+    pub transaction_id: String,
+    pub entries: Vec<ConfigJournalEntry>,
+    pub rollback_errors: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -924,173 +947,137 @@ impl ConfigAdapter for TomlAdapter {
         values: &BTreeMap<String, serde_json::Value>,
     ) -> Result<(String, Vec<ConfigChange>), ConfigError> {
         let original = existing.unwrap_or("");
-        // Validate what is already there before touching it. A TOML file we
-        // cannot read is one we must not rewrite.
-        if !original.trim().is_empty() {
-            if let Err(reason) = validate_toml(original) {
-                return Err(ConfigError::Unparsable {
-                    path: "<existing>".into(),
-                    reason,
-                });
-            }
-        }
+        let mut doc: DocumentMut = if original.trim().is_empty() {
+            DocumentMut::new()
+        } else {
+            original.parse::<DocumentMut>().map_err(|e| ConfigError::Unparsable {
+                path: "<existing>".into(),
+                reason: format!("TOML 解析失败: {e}"),
+            })?
+        };
 
-        let mut lines: Vec<String> = original.lines().map(str::to_string).collect();
         let mut changes = Vec::new();
 
-        for (key, value) in values {
-            let text = render_toml_value(value)?;
-            let dotted = key.clone();
-            let (table, bare_key) = split_table_key(&dotted);
-            let before = toml_lookup(original, table.as_deref(), bare_key);
+        for (dotted_key, json_val) in values {
+            let segments: Vec<&str> = dotted_key.split('.').filter(|s| !s.is_empty()).collect();
+            if segments.is_empty() {
+                continue;
+            }
+
+            let before = toml_lookup_doc(&doc, &segments);
+            let toml_val = json_to_toml_value(json_val)?;
+
+            toml_insert_doc(&mut doc, &segments, toml_val)?;
+
+            let after = toml_lookup_doc(&doc, &segments);
 
             changes.push(ConfigChange {
                 path: String::new(),
-                key: dotted.clone(),
+                key: dotted_key.clone(),
                 before,
-                after: Some(text.clone()),
+                after,
             });
-
-            set_toml_line(&mut lines, table.as_deref(), bare_key, &text);
         }
 
-        let mut out = lines.join("\n");
-        if !out.ends_with('\n') {
-            out.push('\n');
-        }
+        let out = doc.to_string();
         Ok((out, changes))
     }
 
-    fn probe(&self, path: &Path, _text: &str) -> bool {
+    fn probe(&self, path: &Path, text: &str) -> bool {
         path.extension().and_then(|e| e.to_str()) == Some("toml")
+            && text.parse::<DocumentMut>().is_ok()
     }
 }
 
-/// Validates TOML well enough to refuse a rewrite we would get wrong.
-///
-/// Deliberately not a full parser: it checks the structural properties a merge
-/// can damage — a table header on its own line, and a `key = value` form for
-/// every non-comment line. Anything that fails this is left alone.
-fn validate_toml(text: &str) -> Result<(), String> {
-    for (index, raw) in text.lines().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with('[') {
-            let Some(end) = line.find(']') else {
-                return Err(format!("第 {} 行：section 头缺少 `]`", index + 1));
-            };
-            if line[end + 1..].trim().is_empty() || line[end + 1..].trim_start().starts_with('#') {
-                continue;
-            }
-            return Err(format!("第 {} 行：section 头后有意外内容", index + 1));
-        }
-        if !line.contains('=') {
-            return Err(format!("第 {} 行：既不是 section 也不是 key = value", index + 1));
-        }
+fn toml_lookup_doc(doc: &DocumentMut, segments: &[&str]) -> Option<String> {
+    if segments.is_empty() {
+        return None;
     }
-    Ok(())
-}
-
-/// Splits a dotted key into an optional `[table]` and the bare key inside it.
-///
-/// `user.name` → `[user]`, `name`. A single segment has no table.
-fn split_table_key(key: &str) -> (Option<String>, &str) {
-    match key.rfind('.') {
-        Some(index) if index > 0 => (Some(key[..index].to_string()), &key[index + 1..]),
-        _ => (None, key),
-    }
-}
-
-fn toml_lookup(text: &str, table: Option<&str>, key: &str) -> Option<String> {
-    let mut current_table: Option<String> = None;
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.starts_with('[') && line.ends_with(']') {
-            current_table = Some(line[1..line.len() - 1].trim().to_string());
-            continue;
-        }
-        if current_table.as_deref() == table || (table.is_none() && current_table.is_none()) {
-            if let Some((k, v)) = line.split_once('=') {
-                if k.trim() == key {
-                    return Some(v.trim().to_string());
+    let mut current_item = doc.as_item();
+    for (i, seg) in segments.iter().enumerate() {
+        let is_last = i == segments.len() - 1;
+        match current_item {
+            Item::Table(t) => {
+                if is_last {
+                    return t.get(seg).map(|it| it.to_string().trim().to_string());
+                } else {
+                    current_item = t.get(seg)?;
                 }
             }
+            Item::Value(Value::InlineTable(it)) => {
+                if is_last {
+                    return it.get(seg).map(|v| v.to_string().trim().to_string());
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
         }
     }
     None
 }
 
-fn set_toml_line(lines: &mut Vec<String>, table: Option<&str>, key: &str, rendered: &str) {
-    let new_line = format!("{key} = {rendered}");
-
-    // Walk to the target section, replacing an existing key in it.
-    let mut current_table: Option<String> = None;
-    let mut section_end = lines.len();
-
-    for index in 0..lines.len() {
-        let line = lines[index].trim().to_string();
-        if line.starts_with('[') && line.ends_with(']') {
-            let name = line[1..line.len() - 1].trim().to_string();
-            if current_table.as_deref() == table {
-                section_end = index;
-                break;
-            }
-            current_table = Some(name);
-            continue;
-        }
-        if current_table.as_deref() == table {
-            if let Some((k, _)) = line.split_once('=') {
-                if k.trim() == key {
-                    lines[index] = new_line;
-                    return;
-                }
-            }
-        }
+fn toml_insert_doc(
+    doc: &mut DocumentMut,
+    segments: &[&str],
+    value: Value,
+) -> Result<(), ConfigError> {
+    if segments.is_empty() {
+        return Ok(());
     }
+    let (table_segs, key_slice) = segments.split_at(segments.len() - 1);
+    let key = key_slice[0];
 
-    match table {
-        None => {
-            // Top-level keys go before the first section header.
-            let insert_at = lines
-                .iter()
-                .position(|l| {
-                    let t = l.trim();
-                    t.starts_with('[') && t.ends_with(']')
-                })
-                .unwrap_or(lines.len());
-            lines.insert(insert_at, new_line);
+    let mut current_table = doc.as_table_mut();
+    for seg in table_segs {
+        if !current_table.contains_key(seg) {
+            current_table.insert(seg, Item::Table(Table::new()));
         }
-        Some(name) => {
-            let header = format!("[{name}]");
-            let has_section = lines.iter().any(|l| l.trim() == header);
-            if has_section {
-                let at = lines
-                    .iter()
-                    .rposition(|l| l.trim() == header)
-                    .map(|i| {
-                        // Append at the end of that section.
-                        let mut j = i + 1;
-                        while j < lines.len() {
-                            let t = lines[j].trim();
-                            if t.starts_with('[') && t.ends_with(']') {
-                                break;
-                            }
-                            j += 1;
-                        }
-                        j
-                    })
-                    .unwrap_or(section_end);
-                lines.insert(at, new_line);
+        let item = current_table.get_mut(seg).unwrap();
+        if !item.is_table() {
+            return Err(ConfigError::InvalidChange {
+                reason: format!("路径段 {seg} 已存在但不是表，无法继续嵌套"),
+            });
+        }
+        current_table = item.as_table_mut().unwrap();
+    }
+    current_table.insert(key, Item::Value(value));
+    Ok(())
+}
+
+fn json_to_toml_value(value: &serde_json::Value) -> Result<Value, ConfigError> {
+    match value {
+        serde_json::Value::String(s) => {
+            let rendered = toml_string(s);
+            rendered.parse::<Value>().map_err(|e| ConfigError::InvalidChange {
+                reason: format!("字符串转 TOML 失败: {e}"),
+            })
+        }
+        serde_json::Value::Bool(b) => Ok(Value::from(*b)),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::from(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::from(f))
             } else {
-                if !lines.is_empty() && !lines.last().is_some_and(|l| l.trim().is_empty()) {
-                    lines.push(String::new());
-                }
-                lines.push(header);
-                lines.push(new_line);
+                Err(ConfigError::InvalidChange {
+                    reason: format!("无效数值: {n}"),
+                })
             }
         }
+        serde_json::Value::Array(items) => {
+            let mut arr = toml_edit::Array::new();
+            for item in items {
+                arr.push(json_to_toml_value(item)?);
+            }
+            Ok(Value::Array(arr))
+        }
+        serde_json::Value::Null => Err(ConfigError::InvalidChange {
+            reason: "TOML 没有 null 字面量；请改用空字符串或删除该项".into(),
+        }),
+        serde_json::Value::Object(_) => Err(ConfigError::InvalidChange {
+            reason: "该 TOML 写入器不支持嵌套对象；请用 `表名.键` 形式表达".into(),
+        }),
     }
 }
 
@@ -1187,15 +1174,9 @@ impl ConfigWriter {
 
     /// Whether `path` is inside one of the allowed roots.
     ///
-    /// Compares canonicalised prefixes where possible and falls back to a
-    /// lexical comparison for a path that does not exist yet (which is the
-    /// normal case for "create this config file").
+    /// Uses component-based containment and rejects symlink/junction reparse chains.
     pub fn is_allowed(&self, path: &Path) -> bool {
-        let normalised = normalise(path);
-        self.allowed_roots.iter().any(|root| {
-            let root = normalise(root);
-            normalised.starts_with(&root)
-        })
+        crate::modules::path_policy::is_within_allowed_roots(path, &self.allowed_roots)
     }
 
     /// Writes `values` into `path`, merging with whatever is there.
@@ -1204,6 +1185,200 @@ impl ConfigWriter {
         path: &Path,
         values: &BTreeMap<String, serde_json::Value>,
     ) -> Result<ConfigOutcome, ConfigError> {
+        let results = self.apply_batch(&[(path.to_path_buf(), values.clone())])?;
+        results.into_iter().next().ok_or_else(|| ConfigError::InvalidChange {
+            reason: "空执行结果".into(),
+        })
+    }
+
+    /// Writes batch configuration changes transactionally with pre-flight parsing and journal rollback.
+    pub fn apply_batch(
+        &self,
+        targets: &[(PathBuf, BTreeMap<String, serde_json::Value>)],
+    ) -> Result<Vec<ConfigOutcome>, ConfigError> {
+        let tx_id = generate_tx_id();
+
+        // 1. Pre-flight validation & parsing for ALL targets before writing anything
+        struct PlannedWrite {
+            path: PathBuf,
+            existing_text: Option<String>,
+            new_text: String,
+            changes: Vec<ConfigChange>,
+            changed: bool,
+        }
+
+        let mut planned_writes = Vec::with_capacity(targets.len());
+
+        for (path, values) in targets {
+            if !self.is_allowed(path) {
+                return Err(ConfigError::OutsideAllowedRoot {
+                    path: path.to_string_lossy().to_string(),
+                    root: self
+                        .allowed_roots
+                        .first()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "<none>".into()),
+                });
+            }
+
+            let existing = match std::fs::read_to_string(path) {
+                Ok(text) => Some(text),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => {
+                    return Err(ConfigError::WriteFailed {
+                        path: path.to_string_lossy().to_string(),
+                        reason: e.to_string(),
+                    });
+                }
+            };
+
+            let adapter = adapter_for(path, existing.as_deref());
+            let (new_text, mut changes) = adapter.merge(existing.as_deref(), values)?;
+
+            for change in changes.iter_mut() {
+                change.path = path.to_string_lossy().to_string();
+            }
+
+            let unchanged = existing.as_deref() == Some(new_text.as_str());
+            let changed = !unchanged;
+
+            planned_writes.push(PlannedWrite {
+                path: path.clone(),
+                existing_text: existing,
+                new_text,
+                changes,
+                changed,
+            });
+        }
+
+        if self.dry_run {
+            return Ok(planned_writes
+                .into_iter()
+                .map(|p| ConfigOutcome {
+                    changed: p.changed,
+                    changes: p.changes,
+                    backup_path: None,
+                    path: p.path.to_string_lossy().to_string(),
+                    bytes_written: p.new_text.len(),
+                    transaction_id: Some(tx_id.clone()),
+                })
+                .collect());
+        }
+
+        // 2. Execute writes with transaction journal and rollback
+        let mut journal = ConfigTransactionJournal {
+            transaction_id: tx_id.clone(),
+            entries: Vec::new(),
+            rollback_errors: Vec::new(),
+        };
+
+        let mut outcomes = Vec::new();
+
+        for planned in planned_writes {
+            if !planned.changed {
+                outcomes.push(ConfigOutcome {
+                    changed: false,
+                    changes: planned.changes,
+                    backup_path: None,
+                    path: planned.path.to_string_lossy().to_string(),
+                    bytes_written: planned.new_text.len(),
+                    transaction_id: Some(tx_id.clone()),
+                });
+                continue;
+            }
+
+            let existed_before = planned.existing_text.is_some();
+            let mut initial_backup_path_str = None;
+            let mut tx_backup_path_buf = None;
+
+            if existed_before {
+                // Initial backup: created once, never overwritten
+                let init_backup = backup_path_for(&planned.path);
+                let _ = crate::modules::atomic_file::create_first_backup(&planned.path, &init_backup);
+                initial_backup_path_str = Some(init_backup.to_string_lossy().to_string());
+
+                // Per-transaction backup: distinct per transaction
+                let tx_bak = tx_backup_path_for(&planned.path, &tx_id);
+                if let Err(e) = std::fs::copy(&planned.path, &tx_bak) {
+                    Self::rollback_journal(&mut journal);
+                    return Err(ConfigError::WriteFailed {
+                        path: planned.path.to_string_lossy().to_string(),
+                        reason: format!("创建事务备份失败: {e}"),
+                    });
+                }
+                tx_backup_path_buf = Some(tx_bak);
+            }
+
+            let entry_idx = journal.entries.len();
+            journal.entries.push(ConfigJournalEntry {
+                path: planned.path.to_string_lossy().to_string(),
+                existed_before,
+                tx_backup_path: tx_backup_path_buf.as_ref().map(|p| p.to_string_lossy().to_string()),
+                initial_backup_path: initial_backup_path_str.clone(),
+                written: false,
+            });
+
+            if let Err(e) = crate::modules::atomic_file::write_atomic(&planned.path, planned.new_text.as_bytes()) {
+                Self::rollback_journal(&mut journal);
+                let rollback_msg = if journal.rollback_errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("；回滚失败项: {}", journal.rollback_errors.join("; "))
+                };
+                return Err(ConfigError::WriteFailed {
+                    path: planned.path.to_string_lossy().to_string(),
+                    reason: format!("写入失败: {e}{rollback_msg}"),
+                });
+            }
+
+            journal.entries[entry_idx].written = true;
+
+            outcomes.push(ConfigOutcome {
+                changed: true,
+                changes: planned.changes,
+                backup_path: initial_backup_path_str,
+                path: planned.path.to_string_lossy().to_string(),
+                bytes_written: planned.new_text.len(),
+                transaction_id: Some(tx_id.clone()),
+            });
+        }
+
+        Ok(outcomes)
+    }
+
+    fn rollback_journal(journal: &mut ConfigTransactionJournal) {
+        for entry in journal.entries.iter().rev() {
+            if !entry.written {
+                continue;
+            }
+            let target_path = PathBuf::from(&entry.path);
+            if entry.existed_before {
+                if let Some(ref bak) = entry.tx_backup_path {
+                    let bak_path = PathBuf::from(bak);
+                    if bak_path.exists() {
+                        if let Err(e) = crate::modules::atomic_file::restore_atomic(&bak_path, &target_path) {
+                            journal.rollback_errors.push(format!("恢复 {} 失败: {e}", entry.path));
+                        }
+                    } else {
+                        journal.rollback_errors.push(format!("事务备份文件丢失: {}", bak));
+                    }
+                }
+            } else {
+                if target_path.exists() {
+                    if let Err(e) = std::fs::remove_file(&target_path) {
+                        journal.rollback_errors.push(format!("清理新建文件 {} 失败: {e}", entry.path));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Restores a file from its backup atomically.
+    ///
+    /// Returns `false` when there is nothing to restore, which the caller should
+    /// report rather than treat as success — "restored nothing" and "restored
+    /// the original" are different answers to "is my file safe".
+    pub fn restore(&self, path: &Path) -> Result<bool, ConfigError> {
         if !self.is_allowed(path) {
             return Err(ConfigError::OutsideAllowedRoot {
                 path: path.to_string_lossy().to_string(),
@@ -1214,100 +1389,35 @@ impl ConfigWriter {
                     .unwrap_or_else(|| "<none>".into()),
             });
         }
-
-        let existing = match std::fs::read_to_string(path) {
-            Ok(text) => Some(text),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => {
-                return Err(ConfigError::WriteFailed {
-                    path: path.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                })
-            }
-        };
-
-        let adapter = adapter_for(path, existing.as_deref());
-        let (new_text, mut changes) = adapter.merge(existing.as_deref(), values)?;
-
-        for change in changes.iter_mut() {
-            change.path = path.to_string_lossy().to_string();
-        }
-
-        let unchanged = existing.as_deref() == Some(new_text.as_str());
-        let changed = !unchanged;
-
-        let backup = if self.dry_run || !changed {
-            None
-        } else {
-            match existing.as_ref() {
-                Some(text) => {
-                    let backup_path = backup_path_for(path);
-                    std::fs::write(&backup_path, text).map_err(|e| ConfigError::WriteFailed {
-                        path: backup_path.to_string_lossy().to_string(),
-                        reason: e.to_string(),
-                    })?;
-                    Some(backup_path)
-                }
-                None => None,
-            }
-        };
-
-        if !self.dry_run && changed {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| ConfigError::WriteFailed {
-                    path: parent.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                })?;
-            }
-
-            if let Err(e) = std::fs::write(path, &new_text) {
-                // Roll back immediately: a partially written config is worse
-                // than either version. The original bytes are in `existing`, so
-                // the restoration does not depend on the backup file existing.
-                if let Some(text) = existing.as_ref() {
-                    let _ = std::fs::write(path, text);
-                } else {
-                    let _ = std::fs::remove_file(path);
-                }
-                return Err(ConfigError::WriteFailed {
-                    path: path.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                });
-            }
-        }
-
-        Ok(ConfigOutcome {
-            changed,
-            changes,
-            backup_path: backup.map(|p| p.to_string_lossy().to_string()),
-            path: path.to_string_lossy().to_string(),
-            bytes_written: new_text.len(),
-        })
-    }
-
-    /// Restores a file from its backup.
-    ///
-    /// Returns `false` when there is nothing to restore, which the caller should
-    /// report rather than treat as success — "restored nothing" and "restored
-    /// the original" are different answers to "is my file safe".
-    pub fn restore(&self, path: &Path) -> Result<bool, ConfigError> {
         let backup = backup_path_for(path);
-        let text = match std::fs::read_to_string(&backup) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(e) => {
-                return Err(ConfigError::WriteFailed {
-                    path: backup.to_string_lossy().to_string(),
-                    reason: e.to_string(),
-                })
-            }
-        };
-        std::fs::write(path, text).map_err(|e| ConfigError::WriteFailed {
+        if !self.is_allowed(&backup) {
+            return Err(ConfigError::OutsideAllowedRoot {
+                path: backup.to_string_lossy().to_string(),
+                root: self
+                    .allowed_roots
+                    .first()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "<none>".into()),
+            });
+        }
+        if !backup.exists() {
+            return Ok(false);
+        }
+        crate::modules::atomic_file::restore_atomic(&backup, path).map_err(|e| ConfigError::WriteFailed {
             path: path.to_string_lossy().to_string(),
             reason: e.to_string(),
         })?;
         Ok(true)
     }
+}
+
+fn generate_tx_id() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    format!("cfg-tx-{now}-{pid}")
 }
 
 /// The backup path for a file: a sibling with a fixed suffix.
@@ -1317,6 +1427,16 @@ pub fn backup_path_for(path: &Path) -> PathBuf {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "config".into());
     name.push_str(".aissetup-backup");
+    path.with_file_name(name)
+}
+
+/// Per-transaction backup path for rollback within a specific transaction.
+pub fn tx_backup_path_for(path: &Path, tx_id: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "config".into());
+    name.push_str(&format!(".aissetup-tx-{tx_id}.bak"));
     path.with_file_name(name)
 }
 

@@ -3,6 +3,9 @@ import clsx from "clsx";
 import { searchUnified, type UnifiedSearchResult } from "../core/setup/search";
 import { executeSetupAction } from "../core/setup/executor";
 
+import { useModalStack } from "./ModalProvider";
+import { isHotkeyAllowed } from "../lib/keyboard";
+
 export interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
@@ -15,17 +18,23 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const { pushModal, popModal, isTopModal } = useModalStack();
+
   const results = searchUnified(query, 16);
 
-  // Auto focus input when opened
+  // Auto focus input when opened and register with modal stack
   useEffect(() => {
     if (isOpen) {
+      pushModal("command-palette");
       setQuery("");
       setSelectedIndex(0);
       setFeedback(null);
       setTimeout(() => inputRef.current?.focus(), 50);
+      return () => {
+        popModal("command-palette");
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, pushModal, popModal]);
 
   // Keep selected index in bounds when results change
   useEffect(() => {
@@ -46,6 +55,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isTopModal("command-palette")) return;
+      if (!isHotkeyAllowed(e, { allowInInputs: true })) return;
+
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
@@ -68,7 +80,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, results, selectedIndex]);
+  }, [isOpen, results, selectedIndex, isTopModal, onClose]);
 
   const handleExecute = async (item: UnifiedSearchResult) => {
     try {
@@ -122,6 +134,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
           <span className="text-[14px] text-[color:var(--text-tertiary)] font-mono">⌘K</span>
           <input
             ref={inputRef}
+            id="command-palette-search-input"
+            aria-label="全局指令与资源搜索"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -132,7 +146,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="text-[11px] font-mono text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] px-1.5 py-0.5 rounded bg-[color:var(--surface-inset)]"
+              aria-label="清除搜索输入"
+              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-[11px] font-mono text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] px-2 py-1 rounded-md bg-[color:var(--surface-inset)] transition-colors"
             >
               清除
             </button>

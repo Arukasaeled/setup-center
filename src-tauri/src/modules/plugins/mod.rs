@@ -445,6 +445,7 @@ pub enum RunStatus {
     Succeeded,
     Refused,
     Failed,
+    RollbackPartial,
 }
 
 /// 一次插件运行的完整记录。
@@ -464,6 +465,8 @@ pub struct PluginRun {
     pub restored: bool,
     /// 是否需要"重新检测"按钮（失败/拒绝时为 true）。
     pub offer_retry: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<String>,
 }
 
 impl PluginRun {
@@ -518,6 +521,8 @@ pub struct InstalledRecord {
     /// 实际生效的层（Claude Code）。
     #[serde(default)]
     pub layers: Vec<CodeLayer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<String>,
 }
 
 /// 读取已安装记录。
@@ -536,7 +541,9 @@ pub fn write_state(records: &[InstalledRecord]) -> std::io::Result<()> {
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(&p, serde_json::to_string_pretty(records).map_err(std::io::Error::other)?)
+    let body = serde_json::to_string_pretty(records).map_err(std::io::Error::other)? + "\n";
+    crate::modules::atomic_file::write_atomic(&p, body.as_bytes())
+        .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 /// 记录中某个插件的条目。

@@ -2,10 +2,11 @@
  * Setup Center — Clone GitHub Repository Modal
  *
  * Prompts for destination directory and launches native git clone with live console feedback.
+ * Implements Issue H01 (semantic tokens) and H05 (AccessibleDialog + accessibility names).
  */
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { AccessibleDialog } from "./AccessibleDialog";
 import { ExecutionConsoleModal } from "./ExecutionConsoleModal";
 
 export interface CloneRepoModalProps {
@@ -35,89 +36,84 @@ export function CloneRepoModal({
     setIsExecuting(true);
   };
 
-  const content = (
+  return (
     <>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="clone-modal-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      <AccessibleDialog
+        isOpen={isOpen}
+        onClose={onClose}
+        titleId="clone-modal-title"
+        dataProtectedUi={true}
+        maxWidth="max-w-lg"
+        panelClassName="relative w-full max-w-lg rounded-2xl border border-[color:var(--line-strong)] bg-[color:var(--surface-base)] p-6 text-[color:var(--text-primary)] shadow-2xl space-y-5"
       >
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-          onClick={onClose}
-          aria-hidden="true"
-        />
+        <div className="flex items-center justify-between border-b border-[color:var(--line-subtle)] pb-3">
+          <h3 id="clone-modal-title" className="text-[16px] font-bold text-[color:var(--text-strong)]">
+            克隆 GitHub 仓库到本机
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭克隆窗口"
+            className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-inset)] text-[color:var(--text-quiet)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+          >
+            <span className="text-[13px] leading-none">✕</span>
+          </button>
+        </div>
 
-        {/* Surface */}
-        <div className="relative z-10 w-full max-w-lg rounded-xl border border-zinc-700 bg-[#12151b] p-6 text-zinc-100 shadow-2xl space-y-5">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <h3 id="clone-modal-title" className="text-[16px] font-bold text-white">
-              克隆 GitHub 仓库到本机
-            </h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-zinc-400 hover:text-white transition-colors"
-            >
-              ✕
-            </button>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="clone-git-url-input" className="text-[12.5px] font-semibold text-[color:var(--text-secondary)] block mb-1">
+              远程仓库链接 (Git URL)
+            </label>
+            <input
+              id="clone-git-url-input"
+              type="text"
+              readOnly
+              value={repoUrl}
+              className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3.5 py-2 font-mono text-[12.5px] text-[color:var(--text-secondary)] select-all focus:outline-none"
+            />
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="text-[12px] font-semibold text-zinc-300 block mb-1">
-                远程仓库链接 (Git URL)
-              </label>
-              <input
-                type="text"
-                readOnly
-                value={repoUrl}
-                className="w-full rounded-lg border border-zinc-800 bg-[#0a0c0f] px-3.5 py-2 font-mono text-[12.5px] text-zinc-300 select-all focus:outline-hidden"
-              />
-            </div>
-
-            <div>
-              <label className="text-[12px] font-semibold text-zinc-300 block mb-1">
-                本机目标目录 (Destination Path)
-              </label>
-              <input
-                type="text"
-                value={destPath}
-                onChange={(e) => setDestPath(e.target.value)}
-                placeholder="例如: D:\Projects\my-repo"
-                className="w-full rounded-lg border border-zinc-700 bg-[#0a0c0f] px-3.5 py-2 font-mono text-[12.5px] text-white focus:border-blue-500 focus:outline-hidden"
-              />
-              <p className="text-[11px] text-zinc-400 mt-1">
-                系统将在此目录下创建完整工程代码与 Git 历史。
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-zinc-800 bg-[#0e1116] p-3 text-[12px] text-zinc-400 font-mono">
-              <span className="text-zinc-500">$ </span>
-              <span className="text-blue-300">git clone {repoUrl} {destPath}</span>
-            </div>
+          <div>
+            <label htmlFor="clone-dest-path-input" className="text-[12.5px] font-semibold text-[color:var(--text-secondary)] block mb-1">
+              本机目标目录 (Destination Path)
+            </label>
+            <input
+              id="clone-dest-path-input"
+              type="text"
+              value={destPath}
+              onChange={(e) => setDestPath(e.target.value)}
+              placeholder="例如: D:\Projects\my-repo"
+              className="w-full rounded-lg border border-[color:var(--line-default)] bg-[color:var(--surface-inset)] px-3.5 py-2 font-mono text-[12.5px] text-[color:var(--text-primary)] focus:border-[color:var(--status-accent)] focus:outline-none transition-colors"
+            />
+            <p className="text-[11.5px] text-[color:var(--text-quiet)] mt-1">
+              系统将在此目录下创建完整工程代码与 Git 历史。
+            </p>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-zinc-700 bg-transparent px-4 py-1.5 text-[12.5px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={handleStartClone}
-              className="rounded-lg bg-blue-600 px-4 py-1.5 text-[12.5px] font-bold text-white hover:bg-blue-500 transition-colors cursor-pointer shadow-sm"
-            >
-              开始克隆
-            </button>
+          <div className="rounded-lg border border-[color:var(--line-subtle)] bg-[color:var(--surface-sunken)] p-3 text-[12px] text-[color:var(--text-tertiary)] font-mono">
+            <span className="text-[color:var(--text-quiet)]">$ </span>
+            <span className="text-[color:var(--status-accent)]">git clone {repoUrl} {destPath}</span>
           </div>
         </div>
-      </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex min-h-[32px] items-center rounded-lg border border-[color:var(--line-default)] bg-transparent px-4 py-1.5 text-[12.5px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-hover)] hover:text-[color:var(--text-strong)] transition-colors cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleStartClone}
+            className="flex min-h-[32px] items-center rounded-lg bg-[color:var(--status-accent)] px-4 py-1.5 text-[12.5px] font-bold text-black hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+          >
+            开始克隆
+          </button>
+        </div>
+      </AccessibleDialog>
 
       {isExecuting && (
         <ExecutionConsoleModal
@@ -126,7 +122,7 @@ export function CloneRepoModal({
             setIsExecuting(false);
             onClose();
           }}
-          title={`克隆仓库: ${repoName}`}
+          title={`克隆仓库: ${repoName || name}`}
           command="git"
           args={["clone", repoUrl, destPath]}
           targetPath={destPath}
@@ -134,6 +130,4 @@ export function CloneRepoModal({
       )}
     </>
   );
-
-  return typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }

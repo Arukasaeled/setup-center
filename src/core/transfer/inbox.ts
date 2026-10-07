@@ -1,49 +1,27 @@
 /**
- * Setup Center — Transfer Inbox
+ * Setup Center — Transfer Inbox (Issues F09, K06)
  *
  * Captures raw external URLs, design inspirations, and candidate tools
  * into a staging queue before normalization into the Vault or App.
+ * Backed by PersonalStateManager single document transactions (`setup-center.personal-state.v2`).
  */
 
 import type { TransferInboxItem } from "./types";
-
-const INBOX_STORAGE_KEY = "setup-center.transfer-inbox.v1";
+import { PersonalStateManager } from "./personalState";
 
 type InboxListener = (items: TransferInboxItem[]) => void;
 
 class TransferInboxManager {
-  private items: TransferInboxItem[] = [];
   private listeners: Set<InboxListener> = new Set();
 
   constructor() {
-    this.load();
+    PersonalStateManager.subscribe((doc) => {
+      this.notify(doc.inbox);
+    });
   }
 
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(INBOX_STORAGE_KEY);
-      if (raw) {
-        this.items = JSON.parse(raw);
-      } else {
-        // Production Inbox defaults to empty
-        this.items = [];
-        this.save();
-      }
-    } catch {
-      this.items = [];
-    }
-  }
-
-  private save(): void {
-    try {
-      localStorage.setItem(INBOX_STORAGE_KEY, JSON.stringify(this.items));
-    } catch {
-      // ignore
-    }
-  }
-
-  private notify(): void {
-    const current = this.getAll();
+  private notify(items?: TransferInboxItem[]): void {
+    const current = items || this.getAll();
     for (const listener of this.listeners) {
       try {
         listener(current);
@@ -59,7 +37,7 @@ class TransferInboxManager {
   }
 
   public getAll(): TransferInboxItem[] {
-    return [...this.items];
+    return [...PersonalStateManager.get().inbox];
   }
 
   public add(item: Omit<TransferInboxItem, "id" | "capturedAt" | "status">): TransferInboxItem {
@@ -69,25 +47,27 @@ class TransferInboxManager {
       capturedAt: new Date().toISOString(),
       status: "pending",
     };
-    this.items.unshift(newItem);
-    this.save();
-    this.notify();
+
+    PersonalStateManager.update((doc) => {
+      doc.inbox.unshift(newItem);
+    });
+
     return newItem;
   }
 
   public updateStatus(id: string, status: "pending" | "processed" | "rejected"): void {
-    const item = this.items.find((i) => i.id === id);
-    if (item) {
-      item.status = status;
-      this.save();
-      this.notify();
-    }
+    PersonalStateManager.update((doc) => {
+      const item = doc.inbox.find((i) => i.id === id);
+      if (item) {
+        item.status = status;
+      }
+    });
   }
 
   public remove(id: string): void {
-    this.items = this.items.filter((i) => i.id !== id);
-    this.save();
-    this.notify();
+    PersonalStateManager.update((doc) => {
+      doc.inbox = doc.inbox.filter((i) => i.id !== id);
+    });
   }
 }
 

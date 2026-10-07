@@ -26,16 +26,44 @@
 //!   leave a half-populated skill the agent will try to load.
 
 use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
+
+pub const SKILL_OWNERSHIP_FILE: &str = ".setup-center-skill.json";
+
+/// Ownership record persisted in an installed skill directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillOwnershipManifest {
+    pub name: String,
+    pub source_id: String,
+    pub version: Option<String>,
+    pub installed_by: String,
+    pub installed_at: String,
+}
+
+/// The status outcome of a skill installation attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SkillOutcomeStatus {
+    Installed,
+    AlreadyPresent,
+    Conflict,
+    Failed,
+}
 
 /// Why a skill could not be prepared or installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkillError {
+    /// Invalid skill name / identifier.
+    InvalidName { name: String, reason: String },
     /// The source directory is missing.
     SourceMissing { path: String },
     /// The source has no `SKILL.md`, so it is not a skill.
     NotASkill { path: String, reason: String },
     /// A skill with this name is already installed.
     AlreadyInstalled { name: String, path: String },
+    /// Destination directory conflicts with existing user content.
+    Conflict { name: String, path: String, reason: String },
     /// The copy or the move failed.
     CopyFailed { path: String, reason: String },
 }
@@ -43,6 +71,9 @@ pub enum SkillError {
 impl SkillError {
     pub fn message(&self) -> String {
         match self {
+            SkillError::InvalidName { name, reason } => {
+                format!("技能名称 {name} 不合法：{reason}")
+            }
             SkillError::SourceMissing { path } => {
                 format!("技能源目录不存在：{path}")
             }
@@ -50,7 +81,10 @@ impl SkillError {
                 format!("{path} 不是一个有效技能：{reason}")
             }
             SkillError::AlreadyInstalled { name, path } => {
-                format!("技能 {name} 已存在于 {path}，为保留你的本地修改，本次未覆盖。")
+                format!("技能 {name} 已存在于 {path}，版本一致，未做重复操作。")
+            }
+            SkillError::Conflict { name, path, reason } => {
+                format!("技能 {name} 目标目录 {path} 冲突：{reason}")
             }
             SkillError::CopyFailed { path, reason } => {
                 format!("复制技能到 {path} 失败：{reason}")
@@ -59,12 +93,6 @@ impl SkillError {
     }
 
     /// Whether this is a "nothing was wrong, we just did not act" case.
-    ///
-    /// Reported as a *skipped success* rather than a failure: the desired end
-    /// state already holds, and making it red would train students to ignore red.
-    ///
-    /// Takes `&self` so a caller can ask and still use the error afterwards — the
-    /// trace needs the message either way.
     pub fn is_benign(&self) -> bool {
         matches!(self, SkillError::AlreadyInstalled { .. })
     }
@@ -167,14 +195,71 @@ pub fn is_installed(target_root: &Path, name: &str) -> bool {
 ///    either absent or complete, never half-written.
 ///
 /// A pre-existing destination is *not* overwritten: see [`SkillError::AlreadyInstalled`].
+/// The result of an install operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInstalled {
+    pub status: SkillOutcomeStatus,
+    pub name: String,
+    pub path: PathBuf,
+    /// How many files were copied.
+    pub files: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Copies a skill directory into `target_root/<name>`.
+///
+/// Preserves existing user directories under all circumstances:
+/// 1. Validates name through path_policy::validate_identifier.
+/// 2. Resolves destination under target_root securely.
+/// 3. If destination already exists:
+///    - If identical application ownership manifest exists -> returns AlreadyPresent.
+///    - If user folder (with or without SKILL.md) -> NEVER deletes! Returns Conflict.
+/// 4. If destination does not exist -> writes to unique staging directory,
+///    writes ownership manifest, and atomically moves into place without overwriting.
 pub fn install(request: &SkillRequest, target_root: &Path) -> Result<SkillInstalled, SkillError> {
     validate_source(&request.source)?;
 
-    let destination = target_root.join(&request.name);
-    if is_installed(target_root, &request.name) {
-        return Err(SkillError::AlreadyInstalled {
+    let valid_name = crate::modules::path_policy::validate_identifier(&request.name).map_err(|e| {
+        SkillError::InvalidName {
             name: request.name.clone(),
-            path: destination.to_string_lossy().to_string(),
+            reason: e.to_string(),
+        }
+    })?;
+
+    let destination = crate::modules::path_policy::resolve_under_root(target_root, &valid_name).map_err(|e| {
+        SkillError::CopyFailed {
+            path: target_root.join(&valid_name).to_string_lossy().to_string(),
+            reason: format!("路径安全策略拒绝：{e}"),
+        }
+    })?;
+
+    // 目标已经存在：无论是否有 SKILL.md，都绝不删除！
+    if destination.exists() {
+        let manifest_path = destination.join(SKILL_OWNERSHIP_FILE);
+        if manifest_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(manifest) = serde_json::from_str::<SkillOwnershipManifest>(&content) {
+                    if manifest.installed_by == "setup-center" && manifest.name == valid_name {
+                        return Ok(SkillInstalled {
+                            status: SkillOutcomeStatus::AlreadyPresent,
+                            name: valid_name,
+                            path: destination.clone(),
+                            files: count_files(&destination),
+                            detail: Some("已存在相同版本".into()),
+                        });
+                    }
+                }
+            }
+        }
+        // 同名用户目录或无清单/不同版本 -> Conflict
+        return Ok(SkillInstalled {
+            status: SkillOutcomeStatus::Conflict,
+            name: valid_name,
+            path: destination.clone(),
+            files: count_files(&destination),
+            detail: Some("目标技能目录已存在（同名用户目录或版本冲突），未做覆盖。可在独立界面中重命名或确认替换。".into()),
         });
     }
 
@@ -183,9 +268,12 @@ pub fn install(request: &SkillRequest, target_root: &Path) -> Result<SkillInstal
         reason: e.to_string(),
     })?;
 
-    let staging = target_root.join(format!(".{}.incoming", request.name));
-    // A stale staging directory from an interrupted run would make `create_dir`
-    // fail; clearing it first is what makes the retry work.
+    let pid = std::process::id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let staging = target_root.join(format!(".{}.incoming-{pid}-{now}", valid_name));
     let _ = std::fs::remove_dir_all(&staging);
 
     if let Err(e) = copy_tree(&request.source, &staging) {
@@ -196,10 +284,27 @@ pub fn install(request: &SkillRequest, target_root: &Path) -> Result<SkillInstal
         });
     }
 
-    // An existing *directory* with no SKILL.md is not an installed skill, but
-    // `rename` will not replace it either. Clear it so the install can proceed.
-    if destination.exists() && !is_installed(target_root, &request.name) {
-        let _ = std::fs::remove_dir_all(&destination);
+    // Write ownership manifest into staging before atomic rename
+    let ownership = SkillOwnershipManifest {
+        name: valid_name.clone(),
+        source_id: valid_name.clone(),
+        version: None,
+        installed_by: "setup-center".to_string(),
+        installed_at: crate::modules::detect::now_iso8601(),
+    };
+    if let Ok(serialized) = serde_json::to_string_pretty(&ownership) {
+        let _ = std::fs::write(staging.join(SKILL_OWNERSHIP_FILE), serialized);
+    }
+
+    if destination.exists() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Ok(SkillInstalled {
+            status: SkillOutcomeStatus::Conflict,
+            name: valid_name,
+            path: destination.clone(),
+            files: count_files(&destination),
+            detail: Some("目标目录在预备期间已存在，未覆盖。".into()),
+        });
     }
 
     if let Err(e) = std::fs::rename(&staging, &destination) {
@@ -212,27 +317,15 @@ pub fn install(request: &SkillRequest, target_root: &Path) -> Result<SkillInstal
 
     let files = count_files(&destination);
     Ok(SkillInstalled {
-        name: request.name.clone(),
+        status: SkillOutcomeStatus::Installed,
+        name: valid_name,
         path: destination,
         files,
+        detail: None,
     })
 }
 
-/// The result of a successful install.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkillInstalled {
-    pub name: String,
-    pub path: PathBuf,
-    /// How many files were copied, reported so an empty skill is visible in the
-    /// trace rather than silently "succeeding".
-    pub files: usize,
-}
-
-/// Recursive directory copy.
-///
-/// Follows no symlinks: a link inside a skill directory that pointed outside it
-/// would copy unrelated files into the agent's skill folder. Skipping links is
-/// the conservative choice, and no real skill needs one.
+/// Recursive directory copy without following symlinks or junctions.
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
 
@@ -244,6 +337,11 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         if file_type.is_symlink() {
             continue;
         }
+
+        if crate::modules::path_policy::reject_reparse_chain(&entry.path()).is_err() {
+            continue;
+        }
+
         if file_type.is_dir() {
             copy_tree(&entry.path(), &target)?;
         } else if file_type.is_file() {
@@ -318,14 +416,13 @@ mod tests {
         make_skill(&target, "my-skill");
         std::fs::write(target.join("my-skill").join("SKILL.md"), "---\nname: mine\n---\nEDITED").unwrap();
 
-        let err = install(&SkillRequest::new("my-skill", &source), &target).unwrap_err();
-        assert!(matches!(err, SkillError::AlreadyInstalled { .. }));
-        assert!(err.is_benign(), "a conflict is not a failure");
+        let res = install(&SkillRequest::new("my-skill", &source), &target).unwrap();
+        assert_eq!(res.status, SkillOutcomeStatus::Conflict);
         assert!(
             std::fs::read_to_string(target.join("my-skill").join("SKILL.md"))
                 .unwrap()
                 .contains("EDITED"),
-            "the student's edit was overwritten"
+            "the student's edit was preserved"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -380,17 +477,22 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_directory_where_the_skill_goes_is_replaced() {
-        // A directory with no SKILL.md is not an installed skill, so it must not
-        // block the install.
-        let dir = tempdir("barerename");
+    fn a_bare_directory_where_the_skill_goes_is_preserved_as_conflict() {
+        // A directory with no SKILL.md is treated as user content and must NOT be deleted.
+        let dir = tempdir("bareconflict");
         let source = make_skill(&dir.join("source"), "my-skill");
         let target = dir.join("target");
-        std::fs::create_dir_all(target.join("my-skill")).unwrap();
+        let user_skill_dir = target.join("my-skill");
+        std::fs::create_dir_all(&user_skill_dir).unwrap();
+        std::fs::write(user_skill_dir.join("custom.txt"), "user content").unwrap();
 
-        assert!(!is_installed(&target, "my-skill"));
-        assert!(install(&SkillRequest::new("my-skill", &source), &target).is_ok());
-        assert!(is_installed(&target, "my-skill"));
+        let outcome = install(&SkillRequest::new("my-skill", &source), &target).unwrap();
+        assert_eq!(outcome.status, SkillOutcomeStatus::Conflict);
+        assert!(user_skill_dir.exists(), "existing user directory must not be deleted");
+        assert_eq!(
+            std::fs::read_to_string(user_skill_dir.join("custom.txt")).unwrap(),
+            "user content"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

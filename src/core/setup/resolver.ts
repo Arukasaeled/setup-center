@@ -18,7 +18,7 @@ import {
   SHELL_LABEL,
 } from "../../styles/runtime";
 import type { VaultPatternItem, VaultTemplateItem } from "../vault/types";
-import type { SoftwareId, SoftwareInventory } from "../../lib/types";
+import type { CapabilityStatus, SoftwareId, SoftwareInventory } from "../../lib/types";
 import { KID_SOFTWARE_MAP } from "../../lib/softwareMeta";
 import type {
   PackageManager,
@@ -43,27 +43,34 @@ const SOFTWARE_DISPLAY_NAMES: Partial<Record<SoftwareId, string>> = {
 };
 
 /**
- * Checks environmental prerequisites against current software inventory.
+ * Checks environmental prerequisites against current software inventory and capabilities.
+ *
+ * Implements Issue E05:
+ * - When environment/inventory is not loaded, returns unknown rather than unconditionally satisfied.
+ * - Concurrently evaluates requiredCapabilities against live system capability signals.
  */
 export function evaluatePrerequisites(
   prereq?: SetupPrerequisite,
   inventory?: SoftwareInventory | null,
+  capabilities?: CapabilityStatus[] | null,
 ): PrerequisitesStatus {
   if (!prereq || (!prereq.requiredSoftwareIds?.length && !prereq.requiredCapabilities?.length)) {
     return {
+      status: "satisfied",
       satisfied: true,
       missingSoftwareIds: [],
       missingNames: [],
     };
   }
 
+  // Issue E05: If environment not yet loaded, treat as unknown rather than unconditionally satisfied
   if (!inventory || !Array.isArray(inventory.items)) {
-    // If inventory not yet loaded, assume satisfied with non-blocking guidance
     return {
-      satisfied: true,
+      status: "unknown",
+      satisfied: false,
       missingSoftwareIds: [],
       missingNames: [],
-      warningHint: prereq.hint,
+      warningHint: prereq.hint ? `${prereq.hint} (环境信息尚未加载，状态待检测)` : "环境信息尚未加载，状态待检测",
     };
   }
 
@@ -72,7 +79,9 @@ export function evaluatePrerequisites(
   );
 
   const missingSoftwareIds: SoftwareId[] = [];
+  const missingCapabilities: string[] = [];
   const missingNames: string[] = [];
+  const unknownCapabilities: string[] = [];
 
   for (const reqId of prereq.requiredSoftwareIds || []) {
     if (!installedMap.has(reqId)) {
@@ -81,17 +90,68 @@ export function evaluatePrerequisites(
     }
   }
 
-  const satisfied = missingSoftwareIds.length === 0;
-  let warningHint = prereq.hint;
-  if (!satisfied && !warningHint) {
-    warningHint = `运行此项需要先安装 ${missingNames.join("、")}`;
+  if (prereq.requiredCapabilities && prereq.requiredCapabilities.length > 0) {
+    if (!capabilities || capabilities.length === 0) {
+      for (const capId of prereq.requiredCapabilities) {
+        unknownCapabilities.push(capId);
+      }
+    } else {
+      const capMap = new Map(capabilities.map((c) => [c.id.toLowerCase(), c]));
+      for (const capId of prereq.requiredCapabilities) {
+        const cap = capMap.get(capId.toLowerCase());
+        if (!cap) {
+          if (!installedMap.has(capId as SoftwareId)) {
+            missingCapabilities.push(capId);
+            missingNames.push(capId);
+          }
+        } else if (cap.status === "unavailable") {
+          missingCapabilities.push(capId);
+          missingNames.push(cap.name || capId);
+        } else if (cap.status === "unknown") {
+          unknownCapabilities.push(capId);
+        }
+      }
+    }
+  }
+
+  const hasMissing = missingSoftwareIds.length > 0 || missingCapabilities.length > 0;
+  const hasUnknown = unknownCapabilities.length > 0;
+
+  if (hasMissing) {
+    let warningHint = prereq.hint;
+    if (!warningHint) {
+      warningHint = `运行此项需要先安装或配置 ${missingNames.join("、")}`;
+    }
+    return {
+      status: "missing",
+      satisfied: false,
+      missingSoftwareIds,
+      missingCapabilities,
+      missingNames,
+      unknownCapabilities,
+      warningHint,
+    };
+  }
+
+  if (hasUnknown) {
+    return {
+      status: "unknown",
+      satisfied: false,
+      missingSoftwareIds: [],
+      missingCapabilities: [],
+      missingNames: [],
+      unknownCapabilities,
+      warningHint: prereq.hint ? `${prereq.hint} (部分环境能力未完成检测)` : "部分环境能力未完成检测",
+    };
   }
 
   return {
-    satisfied,
-    missingSoftwareIds,
-    missingNames,
-    warningHint,
+    status: "satisfied",
+    satisfied: true,
+    missingSoftwareIds: [],
+    missingCapabilities: [],
+    missingNames: [],
+    unknownCapabilities: [],
   };
 }
 
@@ -161,6 +221,7 @@ export function resolveSetupAction(
     | { type: "generic"; id: string; name: string; category?: string; url?: string; snippet?: string },
   inventory?: SoftwareInventory | null,
   preferredPm: PackageManager = "pnpm",
+  capabilities?: CapabilityStatus[] | null,
 ): SetupResolutionResult {
   // 1. Software item
   if (item.type === "software") {
@@ -299,11 +360,29 @@ export function resolveSetupAction(
   // 3. Template item
   if (item.type === "template") {
     const t = item.data;
+    const requiredSoftware: SoftwareId[] = [];
+    if (t.scaffold.type === "git-clone") {
+      requiredSoftware.push("git");
+    }
+    if (t.scaffold.requiredCapabilities) {
+      for (const cap of t.scaffold.requiredCapabilities) {
+        if (["node", "npm", "pnpm", "git", "python", "uv", "rust", "docker", "wsl"].includes(cap)) {
+          if (!requiredSoftware.includes(cap as SoftwareId)) {
+            requiredSoftware.push(cap as SoftwareId);
+          }
+        }
+      }
+    }
+    if (requiredSoftware.length === 0 && t.scaffold.type !== "git-clone") {
+      requiredSoftware.push("node");
+    }
+
     const prereq: SetupPrerequisite = {
-      requiredSoftwareIds: t.scaffold.type === "git-clone" ? ["git"] : ["node", "git"],
-      hint: "脚手架生成工程需要 Git 和 Node.js 环境",
+      requiredSoftwareIds: requiredSoftware,
+      requiredCapabilities: t.scaffold.requiredCapabilities ?? (t.requirements ? t.requirements.map((r) => r.toLowerCase()) : undefined),
+      hint: t.requirements?.join("、") || "脚手架生成工程需要相应的开发语言与工具环境",
     };
-    const prereqStatus = evaluatePrerequisites(prereq, inventory);
+    const prereqStatus = evaluatePrerequisites(prereq, inventory, capabilities);
 
     const primaryAction: SetupAction = {
       id: `template-scaffold-${t.id}`,
@@ -351,6 +430,7 @@ export function resolveSetupAction(
       primaryAction,
       secondaryActions,
       prerequisites: prereqStatus,
+      availablePackageManagers: (t.scaffold.supportedPackageManagers as PackageManager[]) || undefined,
     };
   }
 

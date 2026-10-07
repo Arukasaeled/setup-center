@@ -171,10 +171,18 @@ pub struct InstallStrategy {
 /// enforced by the type system here rather than by a comment nobody reads.
 pub enum StrategySource {
     Winget(&'static str),
-    /// Official installer URL. Downloaded at run time, never shipped.
-    OfficialInstaller(&'static str),
+    /// Official installer URL with explicit installer kind and vendor id. Downloaded at run time, never shipped.
+    OfficialInstaller {
+        url: &'static str,
+        kind: InstallerKind,
+        vendor_id: &'static str,
+    },
     /// A command that uses a package manager already required by the plan.
-    Command(&'static str),
+    Command {
+        command: &'static str,
+        program_kind: ScriptProgramKind,
+        args: &'static [&'static str],
+    },
 }
 
 impl StrategySource {
@@ -326,6 +334,12 @@ impl Default for Catalog {
 }
 
 impl Catalog {
+    pub const REVISION: &'static str = "2026.10.07.1";
+
+    pub fn revision(&self) -> &'static str {
+        Self::REVISION
+    }
+
     /// Every catalogued program, matching `SoftwareId::ALL` order.
     pub fn builtin() -> Self {
         Self {
@@ -360,6 +374,23 @@ impl Catalog {
     /// for an id the catalog does not know — a programmer error, and one that
     /// should surface immediately rather than produce a silently empty result.
     pub fn entry(&self, id: SoftwareId) -> &CatalogEntry {
+        if id == SoftwareId::Dynamic {
+            static DYNAMIC_ENTRY: std::sync::LazyLock<CatalogEntry> = std::sync::LazyLock::new(|| CatalogEntry {
+                id: SoftwareId::Dynamic,
+                install_location: InstallLocationSupport::DefaultOnly,
+                storage_subdir: None,
+                winget_ids: &[],
+                executables: &[],
+                name_patterns: &[],
+                location_markers: &[],
+                install_roots: &[],
+                version_args: None,
+                version_env: &[],
+                version_via_shim: false,
+                install: &[],
+            });
+            return &DYNAMIC_ENTRY;
+        }
         self.entries
             .iter()
             .find(|e| e.id == id)
@@ -441,9 +472,11 @@ fn entries() -> Vec<CatalogEntry> {
                     rationale: "优先使用 winget 安装，自动更新、免手动下载",
                 },
                 InstallStrategy {
-                    source: StrategySource::OfficialInstaller(
-                        "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
-                    ),
+                    source: StrategySource::OfficialInstaller {
+                        url: "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
+                        kind: InstallerKind::Exe,
+                        vendor_id: "microsoft",
+                    },
                     rationale: "winget 不可用时改用 VS Code 官方用户级安装包",
                 },
             ],
@@ -475,9 +508,11 @@ fn entries() -> Vec<CatalogEntry> {
                     // program. `latest/download/<asset>` is GitHub's own stable
                     // redirect to the newest release's named asset, so this stays
                     // current without pinning a version.
-                    source: StrategySource::OfficialInstaller(
-                        "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe",
-                    ),
+                    source: StrategySource::OfficialInstaller {
+                        url: "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe",
+                        kind: InstallerKind::Exe,
+                        vendor_id: "git-for-windows",
+                    },
                     rationale: "回退到 Git for Windows 官方安装包",
                 },
             ],
@@ -511,9 +546,11 @@ fn entries() -> Vec<CatalogEntry> {
                     // The versioned installer, not `/downloads/windows/`, which
                     // is a landing page. Verified: this URL returns
                     // `application/octet-stream`, 28 MB.
-                    source: StrategySource::OfficialInstaller(
-                        "https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe",
-                    ),
+                    source: StrategySource::OfficialInstaller {
+                        url: "https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe",
+                        kind: InstallerKind::Exe,
+                        vendor_id: "python-software-foundation",
+                    },
                     rationale: "回退到 python.org 官方安装包",
                 },
             ],
@@ -572,9 +609,11 @@ fn entries() -> Vec<CatalogEntry> {
                     // reported a failure the student could do nothing with.
                     // Verified: this endpoint returns
                     // `application/octet-stream`, 132 MB.
-                    source: StrategySource::OfficialInstaller(
-                        "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe",
-                    ),
+                    source: StrategySource::OfficialInstaller {
+                        url: "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe",
+                        kind: InstallerKind::Exe,
+                        vendor_id: "anthropic",
+                    },
                     rationale: "winget 无对应包或需要管理员时，改用 Claude 官方安装包（无需管理员）",
                 },
             ],
@@ -593,11 +632,19 @@ fn entries() -> Vec<CatalogEntry> {
             version_via_shim: false,
             install: &[
                 InstallStrategy {
-                    source: StrategySource::Command("npm install -g @anthropic-ai/claude-code"),
+                    source: StrategySource::Command {
+                        command: "npm install -g @anthropic-ai/claude-code",
+                        program_kind: ScriptProgramKind::Npm,
+                        args: &["install", "-g", "@anthropic-ai/claude-code"],
+                    },
                     rationale: "通过 npm 全局安装官方 CLI（需要 Node.js）",
                 },
                 InstallStrategy {
-                    source: StrategySource::OfficialInstaller("https://claude.ai/install.ps1"),
+                    source: StrategySource::OfficialInstaller {
+                        url: "https://claude.ai/install.ps1",
+                        kind: InstallerKind::Ps1,
+                        vendor_id: "anthropic",
+                    },
                     rationale: "npm 不可用时改用官方 PowerShell 安装脚本",
                 },
             ],
@@ -667,7 +714,11 @@ fn entries() -> Vec<CatalogEntry> {
             version_via_shim: false,
             install: &[
                 InstallStrategy {
-                    source: StrategySource::Command("npm install -g @openai/codex"),
+                    source: StrategySource::Command {
+                        command: "npm install -g @openai/codex",
+                        program_kind: ScriptProgramKind::Npm,
+                        args: &["install", "-g", "@openai/codex"],
+                    },
                     rationale: "通过 npm 全局安装官方 CLI（需要 Node.js）",
                 },
                 InstallStrategy {
@@ -1173,7 +1224,11 @@ fn entries() -> Vec<CatalogEntry> {
             version_env: &[],
             version_via_shim: false,
             install: &[InstallStrategy {
-                source: StrategySource::Command("npm install -g @qwen-code/qwen-code"),
+                source: StrategySource::Command {
+                    command: "npm install -g @qwen-code/qwen-code",
+                    program_kind: ScriptProgramKind::Npm,
+                    args: &["install", "-g", "@qwen-code/qwen-code"],
+                },
                 rationale: "通过官方 npm 包安装（@qwen-code/qwen-code，官方仓库 QwenLM/qwen-code）",
             }],
         },
@@ -1238,7 +1293,11 @@ fn entries() -> Vec<CatalogEntry> {
             version_env: &[],
             version_via_shim: false,
             install: &[InstallStrategy {
-                source: StrategySource::Command("npm install -g @charmland/crush"),
+                source: StrategySource::Command {
+                    command: "npm install -g @charmland/crush",
+                    program_kind: ScriptProgramKind::Npm,
+                    args: &["install", "-g", "@charmland/crush"],
+                },
                 rationale: "通过官方 npm 包安装（@charmland/crush，官方仓库 charmbracelet/crush）",
             }],
         },
@@ -1562,8 +1621,8 @@ mod tests {
                             "{id:?} has an empty winget package id"
                         );
                     }
-                    StrategySource::Command(_) => {}
-                    StrategySource::OfficialInstaller(url) => {
+                    StrategySource::Command { .. } => {}
+                    StrategySource::OfficialInstaller { url, .. } => {
                         assert!(
                             url.starts_with("https://"),
                             "{id:?} has a non-https installer URL: {url}"

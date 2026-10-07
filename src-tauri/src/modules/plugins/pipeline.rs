@@ -68,6 +68,70 @@ fn staged_source(entry: &PluginEntry, opts: &RunOptions) -> PathBuf {
     source_root().join(name)
 }
 
+use serde::{Deserialize, Serialize};
+
+/// Allowed root directories for plugin operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginRootId {
+    DesktopResources,
+    ClaudeHome,
+    PluginCache,
+}
+
+pub fn resolve_plugin_root(root_id: PluginRootId, version: Option<&str>) -> Option<PathBuf> {
+    match root_id {
+        PluginRootId::DesktopResources => active_desktop_resources(version),
+        PluginRootId::ClaudeHome => claude_home(),
+        PluginRootId::PluginCache => claude_home().map(|h| h.join("plugins").join("cache")),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ManifestEntryKind {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestEntryV2 {
+    pub root_id: PluginRootId,
+    pub relative_path: String,
+    pub kind: ManifestEntryKind,
+    pub existed_before: bool,
+    pub backup_file_or_dir: Option<String>,
+    pub applied: bool,
+    pub restored: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionManifestV2 {
+    pub version: u32,
+    pub transaction_id: String,
+    pub plugin_id: String,
+    pub target: PluginTarget,
+    pub claude_version: Option<String>,
+    pub created_at: String,
+    pub entries: Vec<ManifestEntryV2>,
+}
+
+pub fn tx_backup_dir_for(entry: &PluginEntry, tx_id: &str) -> PathBuf {
+    backup_root().join(&entry.id).join(tx_id)
+}
+
+fn generate_tx_id() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    format!("tx-{now}-{pid}")
+}
+
 // ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
@@ -151,7 +215,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
                 "未检测到可接管的汉化状态（验证未通过），未写入任何记录。",
             );
         }
-        if let Err(e) = record(entry, target, version.as_deref(), None, &[], &default_layers(entry)) {
+        if let Err(e) = record(entry, target, version.as_deref(), None, &[], &default_layers(entry), None) {
             stages.push(StageOutcome::fail("adopt", "接管登记", e.clone()));
             return refuse(entry, mode, stages, modified, target, &e);
         }
@@ -170,6 +234,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
             backup: existing_backup(entry, target, version.as_deref()),
             restored: false,
             offer_retry: false,
+            transaction_id: None,
         };
     }
 
@@ -244,6 +309,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
             backup: existing_backup(entry, target, version.as_deref()),
             restored: false,
             offer_retry: true,
+            transaction_id: None,
         };
     }
 
@@ -252,13 +318,18 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
     }
 
     // --- 6. backup（失败即中止，绝不带伤安装）------------------------------
-    let backup_dir = backup_dir_for(entry, target, version.as_deref());
-    match take_backup(entry, target, &src, &backup_dir, version.as_deref()) {
-        Ok(files) => stages.push(StageOutcome::ok(
-            "backup",
-            "备份",
-            format!("{} 个文件 → {}", files.len(), backup_dir.display()),
-        )),
+    let tx_id = generate_tx_id();
+    let backup_dir = tx_backup_dir_for(entry, &tx_id);
+    let mut manifest = match take_backup_v2(entry, target, &src, &backup_dir, version.as_deref(), &tx_id) {
+        Ok(m) => {
+            let count = m.entries.iter().filter(|e| e.existed_before).count();
+            stages.push(StageOutcome::ok(
+                "backup",
+                "备份",
+                format!("{} 个现有文件/目录已备份（事务 {}）→ {}", count, tx_id, backup_dir.display()),
+            ));
+            m
+        }
         Err(why) => {
             stages.push(StageOutcome::fail("backup", "备份", why.clone()));
             return PluginRun {
@@ -271,13 +342,14 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
                 backup: None,
                 restored: false,
                 offer_retry: true,
+                transaction_id: Some(tx_id),
             };
         }
-    }
+    };
 
     // --- 7. apply --------------------------------------------------------
     let layers = opts.layers.clone().unwrap_or_else(|| default_layers(entry));
-    match apply(entry, target, &src, version.as_deref(), &layers) {
+    match apply(entry, target, &src, version.as_deref(), &layers, &mut manifest, &backup_dir) {
         Ok(written) => {
             stages.push(StageOutcome::ok(
                 "apply",
@@ -289,22 +361,33 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
         Err(why) => {
             stages.push(StageOutcome::fail("apply", "安装插件", why.clone()));
             // 安装失败 → 立即回滚，避免"汉化失败以后 Claude 也打不开"。
-            let restored = restore(&backup_dir);
-            stages.push(StageOutcome::ok(
-                "rollback",
-                "回滚",
-                if restored { "已恢复原始文件" } else { "无文件需要恢复" },
-            ));
+            let (restored, errs) = restore_v2(&backup_dir, version.as_deref());
+            let status = if errs.is_empty() {
+                stages.push(StageOutcome::ok(
+                    "rollback",
+                    "回滚",
+                    if restored { "已恢复原始文件" } else { "无文件需要恢复" },
+                ));
+                RunStatus::Failed
+            } else {
+                stages.push(StageOutcome::fail(
+                    "rollback",
+                    "回滚",
+                    format!("回滚未完全成功（{} 项错误）：{}", errs.len(), errs.join("; ")),
+                ));
+                RunStatus::RollbackPartial
+            };
             return PluginRun {
                 plugin_id: entry.id.clone(),
                 mode,
-                status: RunStatus::Failed,
-                reason: format!("安装失败，已回滚（{why}）。"),
+                status,
+                reason: format!("安装失败，已尝试回滚（{why}）。"),
                 stages,
                 modified: Vec::new(),
                 backup: Some(backup_dir.display().to_string()),
                 restored,
                 offer_retry: true,
+                transaction_id: Some(tx_id),
             };
         }
     }
@@ -315,27 +398,38 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
     stages.push(v);
 
     if !ok {
-        let restored = restore(&backup_dir);
-        stages.push(StageOutcome::ok(
-            "rollback",
-            "回滚",
-            if restored { "验证失败，已恢复原始文件" } else { "无文件需要恢复" },
-        ));
+        let (restored, errs) = restore_v2(&backup_dir, version.as_deref());
+        let status = if errs.is_empty() {
+            stages.push(StageOutcome::ok(
+                "rollback",
+                "回滚",
+                if restored { "验证失败，已恢复原始文件" } else { "无文件需要恢复" },
+            ));
+            RunStatus::Failed
+        } else {
+            stages.push(StageOutcome::fail(
+                "rollback",
+                "回滚",
+                format!("验证失败后回滚未完全成功（{} 项错误）：{}", errs.len(), errs.join("; ")),
+            ));
+            RunStatus::RollbackPartial
+        };
         return PluginRun {
             plugin_id: entry.id.clone(),
             mode,
-            status: RunStatus::Failed,
+            status,
             reason: "安装后验证未通过，已回滚，原 Claude 未受影响。".into(),
             stages,
             modified: Vec::new(),
             backup: Some(backup_dir.display().to_string()),
             restored,
             offer_retry: true,
+            transaction_id: Some(tx_id),
         };
     }
 
     // 记录"针对哪个版本安装"——第七条的版本漂移检测靠它。
-    if let Err(e) = record(entry, target, version.as_deref(), Some(&backup_dir), &modified, &layers) {
+    if let Err(e) = record(entry, target, version.as_deref(), Some(&backup_dir), &modified, &layers, Some(&tx_id)) {
         stages.push(StageOutcome::warn(
             "state",
             "记录状态",
@@ -353,6 +447,7 @@ pub fn run(entry: &PluginEntry, mode: RunMode, opts: &RunOptions) -> PluginRun {
         backup: Some(backup_dir.display().to_string()),
         restored: false,
         offer_retry: false,
+        transaction_id: Some(tx_id),
     }
 }
 
@@ -483,141 +578,249 @@ fn log_says_installed(p: &std::path::Path) -> bool {
     String::from_utf8_lossy(body).contains("安装完成")
 }
 
-/// 需要备份的文件 —— **按插件声明，不按猜测**。
-fn backup_targets(
-    entry: &PluginEntry,
-    _target: PluginTarget,
-    src: &Path,
-    version: Option<&str>,
-) -> Vec<PathBuf> {
-    match entry.installer.as_str() {
-        // Desktop：上游只改**生效的** resources 目录下的语言资源与 `app.asar`。
-        "external-windows-bat" => {
-            let mut out = Vec::new();
-            if let Some(res) = active_desktop_resources(version) {
-                for name in ["app.asar", "zh-CN.json", "en-US.json"] {
-                    let p = res.join(name);
-                    if p.is_file() {
-                        out.push(p);
-                    }
-                }
-                // 上游自己的备份目录也一并备份：回滚时要把"被汉化过的状态"也
-                // 还原回去，否则只还原 app.asar 会留下半套中文资源。
-                let bak = res.join(".zh-cn-backups");
-                if bak.is_dir() {
-                    out.push(bak);
-                }
-            }
-            out
-        }
-        // Claude Code Layer 1–3：全部在 `~/.claude` 下，逐个按需存在。
-        "claude-code-layers" => {
-            let mut out = Vec::new();
-            if let Some(home) = claude_home() {
-                let settings = home.join("settings.json");
-                if settings.is_file() {
-                    out.push(settings);
-                }
-                let plug = home.join("plugins").join(code_plugin_dir(entry));
-                if plug.is_dir() {
-                    out.push(plug);
-                }
-            }
-            let _ = src;
-            out
-        }
-        _ => Vec::new(),
-    }
+fn plugin_source_version(src: &Path, entry: &PluginEntry) -> String {
+    std::fs::read_to_string(src.join("plugin").join("manifest.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| entry.version.clone())
 }
 
-/// 把 `backup_targets` 复制进备份目录，返回实际复制的清单。
-///
-/// **一个文件都复制不了就算失败** —— 空备份等于没有备份，而接下来要做的事是
-/// 改写别人的安装文件。返回 `Ok(vec![])` 是不可能的路径，除非目标本来就没有
-/// 任何文件可备份，那种情况 `backup_targets` 会给出空清单，由调用方判定。
-fn take_backup(
+pub fn save_manifest_v2(dest: &Path, manifest: &TransactionManifestV2) -> Result<(), String> {
+    let manifest_path = dest.join("manifest.json");
+    let json = serde_json::to_string_pretty(manifest)
+        .map_err(|e| format!("序列化备份清单失败：{e}"))? + "\n";
+    crate::modules::atomic_file::write_atomic(&manifest_path, json.as_bytes())
+        .map_err(|e| format!("写入备份清单失败：{e}"))
+}
+
+pub fn take_backup_v2(
     entry: &PluginEntry,
     target: PluginTarget,
     src: &Path,
     dest: &Path,
     version: Option<&str>,
-) -> Result<Vec<PathBuf>, String> {
-    let targets = backup_targets(entry, target, src, version);
-    if targets.is_empty() {
-        // 没有既有文件 = 全新安装，写入的都是新文件，回滚只需删除它们。
-        std::fs::create_dir_all(dest).map_err(|e| format!("创建备份目录失败：{e}"))?;
-        return Ok(Vec::new());
-    }
+    tx_id: &str,
+) -> Result<TransactionManifestV2, String> {
     std::fs::create_dir_all(dest).map_err(|e| format!("创建备份目录失败：{e}"))?;
-    let mut done = Vec::new();
-    for (i, file) in targets.iter().enumerate() {
-        let name = format!("{i:03}_{}", file_name(file));
-        let to = dest.join(&name);
-        let res = if file.is_dir() {
-            copy_dir(file, &to)
-        } else {
-            std::fs::copy(file, &to).map(|_| ()).map_err(|e| e.to_string())
-        };
-        if let Err(e) = res {
-            return Err(format!("备份 {} 失败：{e}", file.display()));
+
+    let planned_entries: Vec<(PluginRootId, String, ManifestEntryKind)> = match (entry.installer.as_str(), target) {
+        ("claude-code-layers", PluginTarget::ClaudeCode) => {
+            let src_ver = plugin_source_version(src, entry);
+            vec![
+                (PluginRootId::ClaudeHome, "settings.json".into(), ManifestEntryKind::File),
+                (PluginRootId::ClaudeHome, format!("plugins/{}", code_plugin_dir(entry)), ManifestEntryKind::Directory),
+                (PluginRootId::ClaudeHome, "plugins/known_marketplaces.json".into(), ManifestEntryKind::File),
+                (PluginRootId::ClaudeHome, "plugins/installed_plugins.json".into(), ManifestEntryKind::File),
+                (PluginRootId::PluginCache, format!("{}/{}/{}", ZH_MARKETPLACE, entry.id, src_ver), ManifestEntryKind::Directory),
+            ]
         }
-        done.push(file.clone());
+        ("external-windows-bat", PluginTarget::ClaudeDesktop) => {
+            vec![
+                (PluginRootId::DesktopResources, "app.asar".into(), ManifestEntryKind::File),
+                (PluginRootId::DesktopResources, "zh-CN.json".into(), ManifestEntryKind::File),
+                (PluginRootId::DesktopResources, "en-US.json".into(), ManifestEntryKind::File),
+                (PluginRootId::DesktopResources, ".zh-cn-backups".into(), ManifestEntryKind::Directory),
+            ]
+        }
+        _ => Vec::new(),
+    };
+
+    let mut entries = Vec::new();
+
+    for (i, (root_id, rel, kind)) in planned_entries.into_iter().enumerate() {
+        let root = resolve_plugin_root(root_id, version)
+            .ok_or_else(|| format!("无法定位根目录 {:?}", root_id))?;
+        let abs_path = crate::modules::path_policy::resolve_under_root(&root, &rel)
+            .map_err(|e| format!("路径校验失败 {} under {}: {}", rel, root.display(), e))?;
+
+        let existed = abs_path.exists();
+        let backup_sub = if existed {
+            let backup_name = format!("{i:03}_{}", file_name(&abs_path));
+            let to = dest.join(&backup_name);
+            if kind == ManifestEntryKind::Directory {
+                copy_dir(&abs_path, &to)?;
+            } else {
+                std::fs::copy(&abs_path, &to)
+                    .map_err(|e| format!("备份文件 {} 失败：{e}", abs_path.display()))?;
+            }
+            Some(backup_name)
+        } else {
+            None
+        };
+
+        entries.push(ManifestEntryV2 {
+            root_id,
+            relative_path: rel,
+            kind,
+            existed_before: existed,
+            backup_file_or_dir: backup_sub,
+            applied: false,
+            restored: false,
+            error: None,
+        });
     }
-    // 写一份清单，让回滚知道每个编号对应哪个原路径。
-    let manifest: Vec<Value> = targets
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            json!({
-                "index": i,
-                "name": format!("{i:03}_{}", file_name(p)),
-                "path": p.display().to_string(),
-            })
-        })
-        .collect();
-    if let Err(e) = std::fs::write(
-        dest.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest).unwrap_or_default(),
-    ) {
-        return Err(format!("写入备份清单失败：{e}"));
-    }
-    Ok(done)
+
+    let manifest = TransactionManifestV2 {
+        version: 2,
+        transaction_id: tx_id.to_string(),
+        plugin_id: entry.id.clone(),
+        target,
+        claude_version: version.map(|v| v.to_string()),
+        created_at: iso_now(),
+        entries,
+    };
+
+    save_manifest_v2(dest, &manifest)?;
+    Ok(manifest)
 }
 
-/// 按 `manifest.json` 把备份还原回去。**不看目录里有什么，只看清单** —— 目录里
-/// 多出来的文件不应该被写进用户的安装目录。
-fn restore(dest: &Path) -> bool {
-    let text = match std::fs::read_to_string(dest.join("manifest.json")) {
+pub fn restore_v2(dest: &Path, version: Option<&str>) -> (bool, Vec<String>) {
+    let manifest_path = dest.join("manifest.json");
+    let text = match std::fs::read_to_string(&manifest_path) {
         Ok(t) => t,
-        Err(_) => return false,
+        Err(_) => return (false, vec!["manifest.json 不存在".into()]),
     };
-    let list: Vec<Value> = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let mut any = false;
-    for item in list {
-        let (name, path) = match (item.get("name"), item.get("path")) {
-            (Some(n), Some(p)) => (n.as_str().unwrap_or_default(), p.as_str().unwrap_or_default()),
-            _ => continue,
-        };
-        let from = dest.join(name);
-        let to = PathBuf::from(path);
-        if !from.exists() {
-            continue;
-        }
-        let ok = if from.is_dir() {
-            let _ = std::fs::remove_dir_all(&to);
-            copy_dir(&from, &to).is_ok()
-        } else {
-            if let Some(parent) = to.parent() {
-                let _ = std::fs::create_dir_all(parent);
+
+    // 优先尝试 V2 事务清单格式
+    if let Ok(mut manifest) = serde_json::from_str::<TransactionManifestV2>(&text) {
+        // Pre-flight check: 确保每个安装前存在的文件/目录，其备份均完好存在
+        for entry in &manifest.entries {
+            if entry.existed_before {
+                if let Some(backup_sub) = &entry.backup_file_or_dir {
+                    let from = dest.join(backup_sub);
+                    if !from.exists() {
+                        return (false, vec![format!("备份损坏或缺失，拒绝破坏性操作: {}", from.display())]);
+                    }
+                } else {
+                    return (false, vec![format!("备份记录异常，存在标记但无备份文件: {}", entry.relative_path)]);
+                }
             }
-            std::fs::copy(&from, &to).is_ok()
-        };
-        any |= ok;
+        }
+
+        let mut errors = Vec::new();
+
+        // 逆序回滚写入
+        for entry in manifest.entries.iter_mut().rev() {
+            let root = match resolve_plugin_root(entry.root_id, version) {
+                Some(r) => r,
+                None => {
+                    let err = format!("无法定位根目录 {:?}", entry.root_id);
+                    entry.error = Some(err.clone());
+                    errors.push(err);
+                    continue;
+                }
+            };
+
+            let to = match crate::modules::path_policy::resolve_under_root(&root, &entry.relative_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    let err = format!("恢复路径安全校验失败 {}: {e}", entry.relative_path);
+                    entry.error = Some(err.clone());
+                    errors.push(err);
+                    continue;
+                }
+            };
+
+            if entry.existed_before {
+                let from = dest.join(entry.backup_file_or_dir.as_ref().unwrap());
+                let res = if entry.kind == ManifestEntryKind::Directory {
+                    let _ = std::fs::remove_dir_all(&to);
+                    copy_dir(&from, &to)
+                } else {
+                    if let Some(parent) = to.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match std::fs::read(&from) {
+                        Ok(bytes) => {
+                            crate::modules::atomic_file::write_atomic(&to, &bytes)
+                                .map_err(|e| e.to_string())
+                                .or_else(|_| {
+                                    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+                                })
+                        }
+                        Err(e) => Err(format!("读取备份文件失败: {e}")),
+                    }
+                };
+
+                match res {
+                    Ok(()) => {
+                        entry.restored = true;
+                        entry.error = None;
+                    }
+                    Err(e) => {
+                        let err = format!("还原 {} 失败：{e}", to.display());
+                        entry.error = Some(err.clone());
+                        errors.push(err);
+                    }
+                }
+            } else {
+                // 原先不存在 -> 安全清理新生成的文件或目录
+                if to.exists() {
+                    let res = if entry.kind == ManifestEntryKind::Directory {
+                        std::fs::remove_dir_all(&to).map_err(|e| e.to_string())
+                    } else {
+                        std::fs::remove_file(&to).map_err(|e| e.to_string())
+                    };
+
+                    match res {
+                        Ok(()) => {
+                            entry.restored = true;
+                            entry.error = None;
+                        }
+                        Err(e) => {
+                            let err = format!("清理新生成文件 {} 失败：{e}", to.display());
+                            entry.error = Some(err.clone());
+                            errors.push(err);
+                        }
+                    }
+                } else {
+                    entry.restored = true;
+                    entry.error = None;
+                }
+            }
+        }
+
+        let _ = save_manifest_v2(dest, &manifest);
+        return (errors.is_empty(), errors);
     }
-    any
+
+    // 兼容回退：Legacy V1 备份清单格式
+    if let Ok(list) = serde_json::from_str::<Vec<Value>>(&text) {
+        let mut any = false;
+        let mut errors = Vec::new();
+        for item in list {
+            let (name, path) = match (item.get("name"), item.get("path")) {
+                (Some(n), Some(p)) => (n.as_str().unwrap_or_default(), p.as_str().unwrap_or_default()),
+                _ => continue,
+            };
+            let from = dest.join(name);
+            let to = PathBuf::from(path);
+            if !from.exists() {
+                continue;
+            }
+            let res = if from.is_dir() {
+                let _ = std::fs::remove_dir_all(&to);
+                copy_dir(&from, &to)
+            } else {
+                if let Some(parent) = to.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+            };
+            match res {
+                Ok(()) => any = true,
+                Err(e) => errors.push(format!("Legacy 还原 {} 失败: {e}", to.display())),
+            }
+        }
+        return (any && errors.is_empty(), errors);
+    }
+
+    (false, vec!["未知的备份清单格式".into()])
+}
+
+pub fn restore(dest: &Path) -> bool {
+    restore_v2(dest, None).0
 }
 
 /// 实际写入。**按 `installer` 分派，两条链共用一个入口但不共用任何一行逻辑。**
@@ -627,6 +830,8 @@ fn apply(
     src: &Path,
     version: Option<&str>,
     layers: &[CodeLayer],
+    manifest: &mut TransactionManifestV2,
+    dest: &Path,
 ) -> Result<Vec<String>, String> {
     match (entry.installer.as_str(), target) {
         // Desktop：我们**不自己实现补丁**。上游 16 万字节的 PowerShell 已经处理
@@ -704,6 +909,11 @@ fn apply(
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
 
+            for ent in &mut manifest.entries {
+                ent.applied = true;
+            }
+            let _ = save_manifest_v2(dest, manifest);
+
             let touched = active_desktop_resources(version)
                 .map(|r| r.display().to_string())
                 .unwrap_or_else(|| bat.display().to_string());
@@ -745,6 +955,12 @@ fn apply(
                         ensure_ps1_bom(&to)?;
                         written.push(to.display().to_string());
                         registered = true;
+                        let plug_rel = format!("plugins/{}", code_plugin_dir(entry));
+                        for ent in &mut manifest.entries {
+                            if ent.relative_path == plug_rel {
+                                ent.applied = true;
+                            }
+                        }
                     }
                     CodeLayer::Config => {
                         let overlay_path = src.join("settings-overlay.json");
@@ -770,12 +986,13 @@ fn apply(
                             std::fs::create_dir_all(parent)
                                 .map_err(|e| format!("创建 ~/.claude 失败：{e}"))?;
                         }
-                        std::fs::write(
-                            &settings_path,
-                            serde_json::to_string_pretty(&base).unwrap_or_default(),
-                        )
-                        .map_err(|e| format!("写入 settings.json：{e}"))?;
+                        write_json_pretty(&settings_path, &base)?;
                         written.push(settings_path.display().to_string());
+                        for ent in &mut manifest.entries {
+                            if ent.relative_path == "settings.json" {
+                                ent.applied = true;
+                            }
+                        }
                     }
                     CodeLayer::CliPatch => {
                         return Err(format!("{} 未通过版本闸，不应到达此处。", layer.label()))
@@ -787,7 +1004,16 @@ fn apply(
             // 上方 Err 路径会 restore 备份，绝不留下"装了但不生效"的半成品。
             if registered {
                 written.extend(register_plugin(src, entry)?);
+                for ent in &mut manifest.entries {
+                    if ent.relative_path == "plugins/known_marketplaces.json"
+                        || ent.relative_path == "plugins/installed_plugins.json"
+                        || ent.root_id == PluginRootId::PluginCache
+                    {
+                        ent.applied = true;
+                    }
+                }
             }
+            let _ = save_manifest_v2(dest, manifest);
             Ok(written)
         }
         (other, t) => Err(format!("未知的安装器 `{other}`（target={}）", t.label())),
@@ -843,8 +1069,12 @@ fn verify(entry: &PluginEntry, target: PluginTarget, version: Option<&str>) -> S
 
 /// 回滚：只认备份清单。
 fn rollback(entry: &PluginEntry, target: PluginTarget, mut stages: Vec<StageOutcome>, _m: Vec<String>) -> PluginRun {
+    let records = read_state();
+    let rec = state_for(&records, &entry.id);
     let version = probe::probe(target).into_iter().next().and_then(|s| s.version);
-    let dir = backup_dir_for(entry, target, version.as_deref());
+    let dir = rec
+        .and_then(|r| r.backup.as_deref().map(PathBuf::from))
+        .unwrap_or_else(|| backup_dir_for(entry, target, version.as_deref()));
     if !dir.exists() {
         stages.push(StageOutcome::fail(
             "rollback",
@@ -861,9 +1091,32 @@ fn rollback(entry: &PluginEntry, target: PluginTarget, mut stages: Vec<StageOutc
             backup: None,
             restored: false,
             offer_retry: false,
+            transaction_id: rec.and_then(|r| r.transaction_id.clone()),
         };
     }
-    let ok = restore(&dir);
+    let (ok, errs) = restore_v2(&dir, version.as_deref());
+    if !errs.is_empty() {
+        stages.push(StageOutcome::fail(
+            "rollback",
+            "回滚",
+            format!("部分文件还原失败（{} 项）：{}", errs.len(), errs.join("; ")),
+        ));
+        let v = verify(entry, target, version.as_deref());
+        stages.push(v);
+        // 部分失败时绝不清除已安装记录，保护回滚重试入口
+        return PluginRun {
+            plugin_id: entry.id.clone(),
+            mode: RunMode::Rollback,
+            status: RunStatus::RollbackPartial,
+            reason: format!("部分文件回滚失败，状态记录已保留：{}", errs.join("; ")),
+            stages,
+            modified: Vec::new(),
+            backup: Some(dir.display().to_string()),
+            restored: ok,
+            offer_retry: true,
+            transaction_id: rec.and_then(|r| r.transaction_id.clone()),
+        };
+    }
     stages.push(StageOutcome::ok(
         "rollback",
         "回滚",
@@ -882,6 +1135,7 @@ fn rollback(entry: &PluginEntry, target: PluginTarget, mut stages: Vec<StageOutc
         backup: Some(dir.display().to_string()),
         restored: ok,
         offer_retry: false,
+        transaction_id: rec.and_then(|r| r.transaction_id.clone()),
     }
 }
 
@@ -969,6 +1223,14 @@ fn backup_dir_for(entry: &PluginEntry, target: PluginTarget, version: Option<&st
 }
 
 fn existing_backup(entry: &PluginEntry, target: PluginTarget, version: Option<&str>) -> Option<String> {
+    let records = read_state();
+    if let Some(r) = state_for(&records, &entry.id) {
+        if let Some(b) = &r.backup {
+            if Path::new(b).exists() {
+                return Some(b.clone());
+            }
+        }
+    }
     let p = backup_dir_for(entry, target, version);
     p.exists().then(|| p.display().to_string())
 }
@@ -993,6 +1255,7 @@ fn refuse(
         backup: None,
         restored: false,
         offer_retry: true,
+        transaction_id: None,
     }
 }
 
@@ -1011,6 +1274,7 @@ fn record(
     backup: Option<&Path>,
     modified: &[String],
     layers: &[CodeLayer],
+    transaction_id: Option<&str>,
 ) -> Result<(), String> {
     let mut all = read_state();
     all.retain(|r| r.plugin_id != entry.id);
@@ -1024,6 +1288,7 @@ fn record(
         backup: backup.map(|p| p.display().to_string()),
         modified: modified.to_vec(),
         layers: layers.to_vec(),
+        transaction_id: transaction_id.map(|s| s.to_string()),
     });
     write_state(&all).map_err(|e| e.to_string())
 }
@@ -1158,7 +1423,8 @@ fn load_json_or(path: &Path, default: Value) -> Result<Value, String> {
 
 fn write_json_pretty(path: &Path, v: &Value) -> Result<(), String> {
     let body = serde_json::to_string_pretty(v).map_err(|e| e.to_string())? + "\n";
-    std::fs::write(path, body).map_err(|e| format!("写入 {}：{e}", path.display()))
+    crate::modules::atomic_file::write_atomic(path, body.as_bytes())
+        .map_err(|e| format!("写入 {}：{e}", path.display()))
 }
 
 /// ISO-8601 UTC（`2026-09-22T06:29:22.000Z`）—— 注册表两份 JSON 的时间字段要
@@ -1302,7 +1568,7 @@ fn rewrite_hooks_cmd(plugin_dir: &Path) -> Result<(), String> {
                         "@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass \
                          -File \"%~dp0{ps1_name}\"\r\n"
                     );
-                    std::fs::write(&cmd_path, wrap)
+                    crate::modules::atomic_file::write_atomic(&cmd_path, wrap.as_bytes())
                         .map_err(|e| format!("写入 {}：{e}", cmd_path.display()))?;
                 }
                 let new_cmd = format!("'${{CLAUDE_PLUGIN_ROOT}}/{stem}.cmd'");
@@ -1347,7 +1613,8 @@ fn ensure_ps1_bom(dir: &Path) -> Result<(), String> {
             let mut nb = Vec::with_capacity(bytes.len() + 3);
             nb.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
             nb.extend_from_slice(&bytes);
-            std::fs::write(&p, nb).map_err(|e| format!("写入 {}：{e}", p.display()))?;
+            crate::modules::atomic_file::write_atomic(&p, &nb)
+                .map_err(|e| format!("写入 {}：{e}", p.display()))?;
         }
     }
     Ok(())
@@ -1668,6 +1935,51 @@ mod helper_tests {
         write_marketplace_manifest(&d, &entry).unwrap();
         let again: Value = serde_json::from_str(&std::fs::read_to_string(&mp).unwrap()).unwrap();
         assert_eq!(again["extra"], json!("keep"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn transaction_manifest_v2_roundtrip_and_restore() {
+        let d = tmpd("tx-manifest");
+        let manifest = TransactionManifestV2 {
+            version: 2,
+            transaction_id: "tx-test-123".into(),
+            plugin_id: "demo".into(),
+            target: PluginTarget::ClaudeCode,
+            claude_version: Some("2.1.278".into()),
+            created_at: iso_now(),
+            entries: vec![
+                ManifestEntryV2 {
+                    root_id: PluginRootId::ClaudeHome,
+                    relative_path: "settings.json".into(),
+                    kind: ManifestEntryKind::File,
+                    existed_before: true,
+                    backup_file_or_dir: Some("000_settings.json".into()),
+                    applied: true,
+                    restored: false,
+                    error: None,
+                },
+                ManifestEntryV2 {
+                    root_id: PluginRootId::ClaudeHome,
+                    relative_path: "plugins/demo".into(),
+                    kind: ManifestEntryKind::Directory,
+                    existed_before: false,
+                    backup_file_or_dir: None,
+                    applied: true,
+                    restored: false,
+                    error: None,
+                },
+            ],
+        };
+        save_manifest_v2(&d, &manifest).unwrap();
+        let read_back: TransactionManifestV2 = serde_json::from_str(
+            &std::fs::read_to_string(d.join("manifest.json")).unwrap(),
+        ).unwrap();
+        assert_eq!(read_back.version, 2);
+        assert_eq!(read_back.transaction_id, "tx-test-123");
+        assert_eq!(read_back.entries.len(), 2);
+        assert!(read_back.entries[0].existed_before);
+        assert!(!read_back.entries[1].existed_before);
         let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AccessibleDialog } from "../AccessibleDialog";
 import type { UIPart } from "../../core/uiparts/types";
 import { UIPartRepository } from "../../core/uiparts/repository";
 import { UIPartPrototypeViewer } from "./UIPartPrototypeViewer";
@@ -22,16 +23,14 @@ export function UIPartDetailModal({
   const [activeCodeTab, setActiveCodeTab] = useState<number>(0);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   if (!isOpen || !part) return null;
 
-  const handleExportPackage = () => {
+  const handleExportPackage = async () => {
+    setIsExporting(true);
     try {
-      const pkg = {
-        format: "uipart-package.v1",
-        exportedAt: new Date().toISOString(),
-        part,
-      };
+      const pkg = await UIPartRepository.exportPackage(part.id);
       const jsonStr = JSON.stringify(pkg, null, 2);
       const blob = new Blob([jsonStr], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -44,7 +43,9 @@ export function UIPartDetailModal({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Export failed:", err);
-      alert("导出零件包失败");
+      alert("导出零件包失败: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -70,63 +71,72 @@ export function UIPartDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className="relative w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/15 bg-[#0a0d14] shadow-2xl text-slate-100 flex flex-col overflow-hidden">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#0e131f]/70">
-          <div className="flex items-center gap-3">
-            <span
-              className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold tracking-wider border uppercase ${
-                part.lifecycle === "validated"
-                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-800"
-                  : part.lifecycle === "prototyped"
-                  ? "bg-amber-950/80 text-amber-300 border-amber-800"
-                  : part.lifecycle === "enriched"
-                  ? "bg-sky-950/80 text-sky-300 border-sky-800"
-                  : "bg-slate-800 text-slate-300 border-slate-700"
-              }`}
-            >
-              {part.lifecycle}
-            </span>
-            <span className="px-2 py-0.5 rounded text-xs font-mono uppercase bg-white/5 text-slate-400 border border-white/10">
-              {part.kind}
-            </span>
-            <h2 className="text-lg font-bold text-white tracking-tight">
-              {part.title}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportPackage}
-              title="导出独立便携零件包 (.uipart.json)"
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 transition flex items-center gap-1.5"
-            >
-              <span>📦</span>
-              <span>导出包</span>
-            </button>
-            <button
-              onClick={() => onEdit(part)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 transition flex items-center gap-1.5"
-            >
-              <span>✏️</span>
-              <span>编辑</span>
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 transition"
-            >
-              删除
-            </button>
-            <button
-              onClick={onClose}
-              className="ml-2 p-1.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition"
-            >
-              ✕
-            </button>
-          </div>
+    <AccessibleDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      titleId="uipart-detail-modal-title"
+      contentClassName="relative w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/15 bg-[#0a0d14] shadow-2xl text-slate-100 flex flex-col overflow-hidden"
+    >
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#0e131f]/70">
+        <div className="flex items-center gap-3">
+          <span
+            className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold tracking-wider border uppercase ${
+              part.lifecycle === "validated"
+                ? "bg-emerald-950/80 text-emerald-300 border-emerald-800"
+                : part.lifecycle === "prototyped"
+                ? "bg-amber-950/80 text-amber-300 border-amber-800"
+                : part.lifecycle === "enriched"
+                ? "bg-sky-950/80 text-sky-300 border-sky-800"
+                : "bg-slate-800 text-slate-300 border-slate-700"
+            }`}
+          >
+            {part.lifecycle}
+          </span>
+          <span className="px-2 py-0.5 rounded text-xs font-mono uppercase bg-white/5 text-slate-400 border border-white/10">
+            {part.kind}
+          </span>
+          <h2 id="uipart-detail-modal-title" className="text-lg font-bold text-white tracking-tight">
+            {part.title}
+          </h2>
         </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportPackage}
+            disabled={isExporting}
+            aria-label="导出独立便携零件包 (.uipart.json)"
+            title="导出独立便携零件包 (.uipart.json)"
+            className="min-h-[32px] px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50 text-slate-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>{isExporting ? "⏳" : "📦"}</span>
+            <span>{isExporting ? "打包中..." : "导出包"}</span>
+          </button>
+          <button
+            onClick={() => onEdit(part)}
+            aria-label="编辑零件信息"
+            className="min-h-[32px] px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>✏️</span>
+            <span>编辑</span>
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            aria-label="从本地库删除零件"
+            className="min-h-[32px] px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 transition cursor-pointer"
+          >
+            删除
+          </button>
+          <button
+            onClick={onClose}
+            aria-label="关闭零件详情"
+            className="ml-2 min-h-[32px] min-w-[32px] flex items-center justify-center p-1.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
 
         {/* Scrollable Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -429,6 +439,6 @@ export function UIPartDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }

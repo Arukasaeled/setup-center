@@ -18,7 +18,7 @@ export function TransferHistoryTimeline() {
       case "download":
         return { label: "资产下载", icon: "⤓", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
       case "scaffold":
-        return { label: "脚手架创建", icon: "◩", color: "text-purple-400 bg-purple-500/10 border-purple-500/20" };
+        return { label: "脚手架准备", icon: "◩", color: "text-purple-400 bg-purple-500/10 border-purple-500/20" };
       case "sync":
         return { label: "Vault 同步", icon: "↻", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
       case "style-switch":

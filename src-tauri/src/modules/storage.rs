@@ -52,7 +52,7 @@ impl Default for InstallLocationSupport {
 }
 
 /// The effective storage policy for installations.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StoragePolicy {
     pub mode: StorageMode,
@@ -66,6 +66,31 @@ pub struct StoragePolicy {
     pub download_root: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<String>,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub space_assessment: Option<String>,
+}
+
+impl Default for StoragePolicy {
+    fn default() -> Self {
+        Self {
+            mode: StorageMode::SystemDefault,
+            custom_root: None,
+            resolved_root: None,
+            system_drive: None,
+            download_root: None,
+            fallback_reason: None,
+            revision: 1,
+            checked_at: None,
+            available_bytes: None,
+            space_assessment: None,
+        }
+    }
 }
 
 /// Minimum recommended free space for secondary drive (1 GiB).
@@ -73,14 +98,7 @@ pub const MIN_RECOMMENDED_FREE_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Returns the system drive letter (e.g. "C:").
 pub fn detect_system_drive() -> String {
-    let work = super::detect::work_directory();
-    let letter = work
-        .to_string_lossy()
-        .chars()
-        .next()
-        .unwrap_or('C')
-        .to_ascii_uppercase();
-    format!("{}:", letter)
+    super::detect::system_drive()
 }
 
 /// Default download directory in AppData.
@@ -118,16 +136,27 @@ pub fn resolve_storage_policy_with_system(
         .trim_end_matches(['\\', '/', ':'])
         .to_ascii_uppercase();
     let default_dl = default_download_directory().to_string_lossy().to_string();
+    let check_time = super::detect::now_iso8601();
 
     match mode {
-        StorageMode::SystemDefault => StoragePolicy {
-            mode: StorageMode::SystemDefault,
-            custom_root: None,
-            resolved_root: None,
-            system_drive: Some(format!("{}:", sys_prefix)),
-            download_root: Some(default_dl),
-            fallback_reason: None,
-        },
+        StorageMode::SystemDefault => {
+            let sys_free = disks
+                .iter()
+                .find(|d| d.root.to_ascii_uppercase().starts_with(&sys_prefix))
+                .map(|d| d.free_bytes);
+            StoragePolicy {
+                mode: StorageMode::SystemDefault,
+                custom_root: None,
+                resolved_root: None,
+                system_drive: Some(format!("{}:", sys_prefix)),
+                download_root: Some(default_dl),
+                fallback_reason: None,
+                revision: 1,
+                checked_at: Some(check_time),
+                available_bytes: sys_free,
+                space_assessment: Some("使用系统默认位置；因各个安装包体积不同，无法预估所需空间。".into()),
+            }
+        }
 
         StorageMode::PreferSecondary => {
             // Find non-system disk with sufficient free space and writable
@@ -164,8 +193,16 @@ pub fn resolve_storage_policy_with_system(
                     system_drive: Some(format!("{}:", sys_prefix)),
                     download_root: Some(download),
                     fallback_reason: None,
+                    revision: 1,
+                    checked_at: Some(check_time),
+                    available_bytes: Some(best.free_bytes),
+                    space_assessment: Some("已检测到可用副盘空间；因各个安装包体积不同，无法预估所需空间，安装时将根据实际情况写入。".into()),
                 }
             } else {
+                let sys_free = disks
+                    .iter()
+                    .find(|d| d.root.to_ascii_uppercase().starts_with(&sys_prefix))
+                    .map(|d| d.free_bytes);
                 StoragePolicy {
                     mode: StorageMode::PreferSecondary,
                     custom_root: None,
@@ -175,6 +212,10 @@ pub fn resolve_storage_policy_with_system(
                     fallback_reason: Some(
                         "未检测到可用的其他磁盘，将使用系统默认位置。".into(),
                     ),
+                    revision: 1,
+                    checked_at: Some(check_time),
+                    available_bytes: sys_free,
+                    space_assessment: Some("未检测到可用副盘，将回退至系统默认磁盘；无法预估所需空间。".into()),
                 }
             }
         }
@@ -190,12 +231,21 @@ pub fn resolve_storage_policy_with_system(
                     fallback_reason: Some(
                         "未指定自定义安装路径，将使用系统默认位置。".into(),
                     ),
+                    revision: 1,
+                    checked_at: Some(check_time),
+                    available_bytes: None,
+                    space_assessment: Some("未指定路径，无法预估所需空间。".into()),
                 };
             };
 
-            match validate_custom_path(&raw_path, system_drive) {
+            match validate_custom_path_syntax(&raw_path, system_drive) {
                 Ok(valid_path) => {
                     let download = format!("{}\\.setup-center\\downloads", valid_path);
+                    let target_letter = valid_path.chars().next().unwrap_or('C').to_ascii_uppercase();
+                    let target_free = disks
+                        .iter()
+                        .find(|d| d.root.to_ascii_uppercase().starts_with(&target_letter.to_string()))
+                        .map(|d| d.free_bytes);
                     StoragePolicy {
                         mode: StorageMode::Custom,
                         custom_root: Some(valid_path.clone()),
@@ -203,6 +253,10 @@ pub fn resolve_storage_policy_with_system(
                         system_drive: Some(format!("{}:", sys_prefix)),
                         download_root: Some(download),
                         fallback_reason: None,
+                        revision: 1,
+                        checked_at: Some(check_time),
+                        available_bytes: target_free,
+                        space_assessment: Some("自定义路径已就绪；因各个安装包体积不同，无法预估所需空间。".into()),
                     }
                 }
                 Err(reason) => StoragePolicy {
@@ -212,6 +266,10 @@ pub fn resolve_storage_policy_with_system(
                     system_drive: Some(format!("{}:", sys_prefix)),
                     download_root: Some(default_dl),
                     fallback_reason: Some(format!("自定义路径不可用（{reason}），将使用系统默认位置。")),
+                    revision: 1,
+                    checked_at: Some(check_time),
+                    available_bytes: None,
+                    space_assessment: Some("自定义路径不可用，无法预估所需空间。".into()),
                 },
             }
         }
@@ -220,57 +278,9 @@ pub fn resolve_storage_policy_with_system(
 
 /// Pure syntactic & security validator for custom folder paths.
 pub fn validate_custom_path_syntax(path_str: &str, system_drive: &str) -> Result<String, String> {
-    let trimmed = path_str.trim().trim_matches('"');
-    if trimmed.is_empty() {
-        return Err("路径不能为空".into());
-    }
-
-    if trimmed.starts_with(r"\\") {
-        return Err("不支持网络路径或 UNC 路径".into());
-    }
-
-    if trimmed.contains(['<', '>', '"', '|', '?', '*']) {
-        return Err("路径包含非法字符（不允许包含 < > \" | ? *）".into());
-    }
-
-    let chars: Vec<char> = trimmed.chars().collect();
-    if chars.len() < 2 || !chars[0].is_ascii_alphabetic() || chars[1] != ':' {
-        return Err("路径必须包含有效的盘符（如 D:\\SetupCenterApps）".into());
-    }
-
-    let drive_letter = chars[0].to_ascii_uppercase();
-    let norm_sys_drive = system_drive
-        .trim_end_matches(['\\', '/', ':'])
-        .chars()
-        .next()
-        .unwrap_or('C')
-        .to_ascii_uppercase();
-
-    // Check system drive root directory: C:\ or C: is dangerous
-    if drive_letter == norm_sys_drive {
-        let after_colon = trimmed[2..].trim_matches(['\\', '/']);
-        if after_colon.is_empty() {
-            return Err("不允许直接使用系统盘根目录作为安装路径，请指定子目录（例如 C:\\SetupCenterApps）".into());
-        }
-    }
-
-    let lower = trimmed.to_lowercase().replace('/', "\\");
-    if lower.contains(r"\windows")
-        || lower.contains(r"\system32")
-        || lower.contains(r"\syswow64")
-        || lower.contains(r"\program files")
-        || lower.contains(r"\programdata")
-        || lower.ends_with(r"\windows")
-        || lower.ends_with(r"\system32")
-    {
-        return Err("不允许使用 Windows 或系统保留目录作为安装路径".into());
-    }
-
-    let normalized = trimmed.trim_end_matches(['\\', '/']).to_string();
-    if normalized.len() == 2 && normalized.ends_with(':') {
-        Ok(format!("{}:\\", drive_letter))
-    } else {
-        Ok(normalized)
+    match super::path_policy::validate_absolute_storage_root(path_str, Some(system_drive)) {
+        Ok(pb) => Ok(pb.to_string_lossy().to_string()),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -289,24 +299,38 @@ pub fn validate_custom_path(path_str: &str, system_drive: &str) -> Result<String
         return Err(format!("磁盘 {}:\\ 不存在或当前不可用", drive_letter));
     }
 
-    // Try creating or testing writability
-    if path.exists() {
-        let probe = path.join(".setup-center-write-test");
-        match std::fs::write(&probe, b"ok") {
-            Ok(_) => {
+    // Try creating or testing writability with random unique probe file in application namespace
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let probe_name = format!(".setup-center-probe-{}-{}", pid, nanos);
+
+    let test_file = |dir: &std::path::Path| -> Result<(), String> {
+        let probe = dir.join(&probe_name);
+        let res = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe);
+        match res {
+            Ok(mut f) => {
+                use std::io::Write;
+                let _ = writeln!(f, "setup-center-probe:pid={pid}");
+                drop(f);
                 let _ = std::fs::remove_file(&probe);
+                Ok(())
             }
-            Err(e) => {
-                return Err(format!("指定目录不可写：{e}"));
-            }
+            Err(e) => Err(format!("指定目录不可写：{e}")),
         }
+    };
+
+    if path.exists() {
+        test_file(&path)?;
     } else {
         match std::fs::create_dir_all(&path) {
             Ok(_) => {
-                let probe = path.join(".setup-center-write-test");
-                if let Ok(_) = std::fs::write(&probe, b"ok") {
-                    let _ = std::fs::remove_file(&probe);
-                }
+                test_file(&path)?;
             }
             Err(e) => {
                 return Err(format!("无法创建指定目录：{e}"));
@@ -366,14 +390,11 @@ pub fn load_persisted_policy() -> Option<StoragePolicy> {
     serde_json::from_str(&content).ok()
 }
 
-/// Saves the given storage policy to disk.
+/// Saves the given storage policy to disk atomically.
 pub fn save_persisted_policy(policy: &StoragePolicy) -> Result<(), String> {
     let path = storage_policy_file();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
     let json = serde_json::to_string_pretty(policy).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    super::atomic_file::write_atomic(&path, json.as_bytes()).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -389,29 +410,197 @@ pub fn get_effective_storage_policy(disks: &[DiskInfo]) -> StoragePolicy {
     resolve_storage_policy(disks, saved.mode, saved.custom_root)
 }
 
-/// Sets and saves the storage policy.
+/// Sets and saves the storage policy atomically, returning the updated policy or error.
 pub fn set_storage_policy(
     disks: &[DiskInfo],
     mode: StorageMode,
     custom_root: Option<String>,
-) -> StoragePolicy {
-    let resolved = resolve_storage_policy(disks, mode, custom_root);
-    let _ = save_persisted_policy(&resolved);
-    resolved
+) -> Result<StoragePolicy, String> {
+    let mut resolved = resolve_storage_policy(disks, mode, custom_root);
+    let prev = load_persisted_policy();
+    let prev_rev = prev.as_ref().map(|p| p.revision).unwrap_or(0);
+    resolved.revision = prev_rev + 1;
+    save_persisted_policy(&resolved)?;
+    Ok(resolved)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OwnershipStatus {
+    Downloading,
+    Completed,
+    Terminated,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipEntry {
+    pub relative_path: String,
+    pub task_id: String,
+    pub status: OwnershipStatus,
+    pub byte_count: u64,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipManifest {
+    pub version: u32,
+    pub entries: Vec<OwnershipEntry>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub deleted_count: u32,
+    pub skipped_count: u32,
+    pub freed_bytes: u64,
+    pub errors: Vec<String>,
+    pub legacy_unmanaged_retained: u32,
+}
+
+pub fn record_download_in_manifest(
+    download_dir: &std::path::Path,
+    relative_path: &str,
+    task_id: &str,
+    status: OwnershipStatus,
+    byte_count: u64,
+) {
+    if !download_dir.exists() {
+        let _ = std::fs::create_dir_all(download_dir);
+    }
+    let manifest_path = download_dir.join(".setup-center-ownership-manifest.json");
+    let mut manifest: OwnershipManifest = if manifest_path.exists() {
+        std::fs::read(&manifest_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    } else {
+        OwnershipManifest {
+            version: 1,
+            entries: Vec::new(),
+        }
+    };
+
+    if let Some(existing) = manifest.entries.iter_mut().find(|e| e.relative_path == relative_path) {
+        existing.status = status;
+        existing.byte_count = byte_count;
+        if status == OwnershipStatus::Terminated || status == OwnershipStatus::Completed || status == OwnershipStatus::Failed {
+            existing.terminated_at = Some(super::detect::now_iso8601());
+        }
+    } else {
+        manifest.entries.push(OwnershipEntry {
+            relative_path: relative_path.to_string(),
+            task_id: task_id.to_string(),
+            status,
+            byte_count,
+            created_at: super::detect::now_iso8601(),
+            terminated_at: None,
+        });
+    }
+
+    if let Ok(updated_json) = serde_json::to_vec_pretty(&manifest) {
+        let _ = super::atomic_file::write_atomic(&manifest_path, &updated_json);
+    }
+}
+
+/// Cleans download cache strictly according to the ownership manifest.
+/// Only deletes files registered in the manifest whose tasks have terminated.
+/// Preserves unmanaged user files, active downloads, and the download root directory itself.
+pub fn clean_downloads_with_manifest(
+    policy: &StoragePolicy,
+    active_task_ids: &[String],
+) -> CleanupResult {
+    let download_dir = resolve_download_directory(policy);
+    if !download_dir.exists() {
+        return CleanupResult::default();
+    }
+
+    let manifest_path = download_dir.join(".setup-center-ownership-manifest.json");
+    if !manifest_path.exists() {
+        return CleanupResult {
+            deleted_count: 0,
+            skipped_count: 0,
+            freed_bytes: 0,
+            errors: Vec::new(),
+            legacy_unmanaged_retained: 1,
+        };
+    }
+
+    let manifest_bytes = match std::fs::read(&manifest_path) {
+        Ok(b) => b,
+        Err(e) => {
+            return CleanupResult {
+                deleted_count: 0,
+                skipped_count: 0,
+                freed_bytes: 0,
+                errors: vec![format!("无法读取所有权清单文件: {e}")],
+                legacy_unmanaged_retained: 1,
+            };
+        }
+    };
+
+    let mut manifest: OwnershipManifest = match serde_json::from_slice(&manifest_bytes) {
+        Ok(m) => m,
+        Err(e) => {
+            return CleanupResult {
+                deleted_count: 0,
+                skipped_count: 0,
+                freed_bytes: 0,
+                errors: vec![format!("所有权清单解析失败: {e}")],
+                legacy_unmanaged_retained: 1,
+            };
+        }
+    };
+
+    let mut result = CleanupResult::default();
+    let mut retained_entries = Vec::new();
+
+    for entry in manifest.entries {
+        if active_task_ids.contains(&entry.task_id) || entry.status == OwnershipStatus::Downloading {
+            result.skipped_count += 1;
+            retained_entries.push(entry);
+            continue;
+        }
+
+        let target_path = match super::path_policy::resolve_under_root(&download_dir, &entry.relative_path) {
+            Ok(p) => p,
+            Err(e) => {
+                result.errors.push(format!("清单内路径非法，已跳过 ({}): {e}", entry.relative_path));
+                retained_entries.push(entry);
+                continue;
+            }
+        };
+
+        if target_path.is_file() {
+            let file_size = std::fs::metadata(&target_path).map(|m| m.len()).unwrap_or(0);
+            match std::fs::remove_file(&target_path) {
+                Ok(_) => {
+                    result.deleted_count += 1;
+                    result.freed_bytes += file_size;
+                }
+                Err(e) => {
+                    result.errors.push(format!("删除文件失败 ({}): {e}", entry.relative_path));
+                    retained_entries.push(entry);
+                }
+            }
+        }
+    }
+
+    manifest.entries = retained_entries;
+    if let Ok(updated_json) = serde_json::to_vec_pretty(&manifest) {
+        let _ = super::atomic_file::write_atomic(&manifest_path, &updated_json);
+    }
+
+    result
 }
 
 /// Cleans downloads using the given policy.
 pub fn clean_downloads_with_policy(policy: &StoragePolicy) {
-    let default_dir = default_download_directory();
-    if default_dir.exists() {
-        let _ = std::fs::remove_dir_all(&default_dir);
-    }
-    if let Some(ref dl) = policy.download_root {
-        let custom_dir = PathBuf::from(dl);
-        if custom_dir.exists() && custom_dir != default_dir {
-            let _ = std::fs::remove_dir_all(&custom_dir);
-        }
-    }
+    clean_downloads_with_manifest(policy, &[]);
 }
 
 // ---------------------------------------------------------------------------
